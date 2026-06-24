@@ -18,6 +18,7 @@ mitchsmp_*/
 
 # Generated build output
 mitchsmp-src/build/
+_clean-server-test/
 resourcepacks/backups/
 
 # Generated distributables and secrets

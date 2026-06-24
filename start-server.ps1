@@ -15,11 +15,11 @@ $javaCandidate = if ($env:JAVA_HOME -and (Test-Path -LiteralPath (Join-Path $env
     (Get-Command java.exe -ErrorAction Stop).Source
 }
 $javaVersionText = (& $javaCandidate -version 2>&1 | Out-String).Trim()
-$javaMajor = if ($javaVersionText -match 'version "(\d+)') { [int]$Matches[1] } else { 0 }
+$javaMajor = if ($javaVersionText -match '"(\d+)\.') { [int]$Matches[1] } else { 0 }
+
 if ($javaMajor -lt 25) {
     throw "BloodboundSMP requires Java 25 or newer. Detected: $javaVersionText"
 }
-
 $diagnostics = Join-Path $root "logs\startup-diagnostics.log"
 @(
     "BloodboundSMP startup diagnostics",

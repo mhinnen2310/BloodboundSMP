@@ -1,5 +1,18 @@
 # BloodboundSMP Test Commands
 
+## P0 Launch Smoke Test
+
+1. Run `/features`, disable and enable `auctionhouse`, and confirm `/ah` is blocked only while disabled.
+2. Run `/errors recent 10`; intentionally enter an invalid subcommand and verify players receive no stacktrace.
+3. Use `/rb wand`, select a tiny cuboid, change blocks, run `/rb 20m`, then `/rb 20m confirm`.
+4. Toggle adminmode, die, try `/sell`, `/ah`, containers, item drops and each minigame; no staff item/data may leak.
+5. Run `/ahadmin listings`, create/buy/cancel a listing, reconnect for refunds, and inspect `/ahadmin logs`.
+6. Trigger a test AC detection and verify warning-only behavior, `/ac recent 10`, then `/ac review <id> test-note`.
+7. Place a bounty on an offline test account, log it in, and verify source, total and HUD warning.
+8. Run `/perf status` and `/perf profiler`; tune with `/perf config entity_per_chunk <value>`.
+9. Test an ability item: sneak + `F` toggles it; verify `READY`, `ACTIVE` and `COOLDOWN` in the HUD.
+10. Run `/setheart <player> <1-20>` and verify the client health bar updates immediately.
+
 Use this file for testing the BloodboundSMP testserver copy. Do not run these tests on the official/live server until approved.
 
 ## Player Menu

@@ -4,19 +4,19 @@ Public launch is blocked until every P0 row is `PASS` or the affected feature is
 
 | Gate | Status | Evidence required |
 | --- | --- | --- |
-| P0.1 Git/release | IN PROGRESS | Branches, clean release commit, changelog and tagged RC |
-| P0.2 Java 25 | IN PROGRESS | `--release 25` build plus clean Java 25 runtime boot |
-| P0.3 Clean server | OPEN | Empty-server first boot and generated config audit |
-| P0.4 Adminmode isolation | OPEN | Death/container/AH/pay/minigame leak tests |
-| P0.5 Rollback/snapshots | OPEN | Region rollback and inventory restore rehearsal |
-| P0.6 Economy integrity | OPEN | Craft/smelt price invariants and spike alerts |
-| P0.7 AuctionHouse security | OPEN | Full lifecycle, validation, laundering and dupe tests |
-| P0.8 Anti-cheat warnings-only | OPEN | No automatic punishment; 24-hour review flow |
-| P0.9 Command/error tracking | OPEN | Permission/usage matrix and captured command failures |
-| P0.10 Core gameplay bugs | OPEN | Ability/item/combat regression suite |
-| P0.11 Feature flags | OPEN | Disable/enable/override and startup state tests |
-| P0.12 Bounty notifications | OPEN | Online/offline/source/HUD notification tests |
-| P0.13 Performance | OPEN | Hot-path audit, entity limits and profiler evidence |
+| P0.1 Git/release | CODE COMPLETE | `release/1.0`, SemVer RC artifacts, guarded deploy, changelog/checklists; final RC commit/tag still required |
+| P0.2 Java 25 | PARTIAL | All 31 jars compile with class major 69 (`--release 25`); local runtime is Java 26, so Java 25 boot remains required |
+| P0.3 Clean server | BLOCKED | `clean-boot-test.ps1` exists; sandboxed Paperclip cannot access its cache and elevated test was unavailable |
+| P0.4 Adminmode isolation | CODE COMPLETE | Separate inventory/balance/skills, death keep, AH/sell/container/drop/minigame guards; multiplayer runtime rehearsal required |
+| P0.5 Rollback/snapshots | CODE COMPLETE | Recovery plugin, cuboid confirmation, persistent inventory snapshots including jail/admin/world/death/shutdown |
+| P0.6 Economy integrity | CODE COMPLETE | Recipe sell caps, dynamic supply/loot inputs, rare-item overrides, negative-balance guard and large-transfer alerts |
+| P0.7 AuctionHouse security | CODE COMPLETE | Atomic claims, validators, refund queue, expiry, laundering/pair alerts and `/ahadmin`; runtime lifecycle test required |
+| P0.8 Anti-cheat warnings-only | CODE COMPLETE | Automatic freeze removed; player warning, staff alerts, persistent detections, `/ac recent` and `/ac review` |
+| P0.9 Command/error tracking | CODE COMPLETE | 169 roots/aliases permission-covered; global command error persistence and `/errors` added |
+| P0.10 Core gameplay bugs | PARTIAL | Ability shortcut/HUD/Bloodforged/Aegis/Harvest/model/setheart fixed; item-stacking and full combat regression still need in-client proof |
+| P0.11 Feature flags | CODE COMPLETE | Central persistent flags, startup report, command blocking and staff override |
+| P0.12 Bounty notifications | CODE COMPLETE | Online/offline/source/increase/login notifications plus automatic HUD warning |
+| P0.13 Performance | PARTIAL | Per-chunk entity cap and own-task profiler added; cross-plugin listener profiling and full hot-path I/O migration remain open |
 
 ## Release Rule
 
@@ -29,3 +29,12 @@ Do not tag `v1.0.0`, advertise a public launch, or call the server production-re
 - Test instructions: `BLOODBOUND_TEST_COMMANDS.md`
 - Change history: `CHANGELOG.md` and `BLOODBOUND_DEV_LOG.md`
 - Release procedure: `BUILD_AND_DEPLOY.md` and `RELEASE_CHECKLIST.md`
+- Clean first-boot test: `powershell -ExecutionPolicy Bypass -File .\clean-boot-test.ps1`
+
+## Current Verification
+
+- Full build: PASS, 31 versioned jars, Java 25 bytecode.
+- Command permission map: PASS, 169 commands and aliases.
+- `git diff --check`: PASS (line-ending notices only).
+- Clean Paper boot: NOT PROVEN in this pass. Paperclip cache access was denied inside the sandbox; Java 25 is not installed locally.
+- Public launch verdict: **BLOCKED** until Java 25 clean boot and the runtime rehearsals above pass.

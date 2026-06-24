@@ -1,5 +1,32 @@
 # BloodboundSMP Development Log
 
+## 2026-06-24 - P0 Launch Hardening
+
+### Done
+
+- Added Git/SemVer release foundations, Java 25 bytecode builds, guarded deploy metadata and startup diagnostics.
+- Added central feature flags, command error persistence, Recovery rollback/inventory snapshots and stronger adminmode isolation.
+- Rebalanced EconomyWatch/QuickSell crafting chains and added large/suspicious transaction alerts.
+- Secured AuctionHouse listing lifecycle with validation, atomic purchase claims, refunds, expiry and admin audit commands.
+- Removed automatic anti-cheat freezing; added warnings-only 24-hour review tooling.
+- Added bounty source/increase/offline/login notifications and an active-bounty HUD warning.
+- Added configurable entity-per-chunk enforcement and own-task performance profiling.
+- Reworked ability toggling, Blood-Forged Edge, Aegis Guard, Harvest Lord and model cleanup.
+- Full build passed for 31 Java 25-targeted plugins; all 169 commands/aliases are permission-filtered.
+
+### Not Done
+
+- A clean Java 25 runtime boot is not proven: only Java 26 is installed locally.
+- The isolated clean boot could not run inside the filesystem sandbox because Paperclip could not access its copied cache; elevated execution was unavailable.
+- Auction, rollback, bounty, abilities and adminmode still require the documented multiplayer/in-client rehearsal before launch.
+- Cross-plugin listener/task profiling and migration of every synchronous properties save are not complete.
+- The reported generic item-stacking bug needs a reproducible item/action sequence before it can be verified fixed.
+
+### Unclear
+
+- "Item stacking bug" does not identify which item types or inventory action trigger it; no speculative inventory rewrite was made.
+- Paper 26.1.2 was previously observed on Java 26; host compatibility with the requested Java 25 runtime must be confirmed by a clean boot.
+
 ## 2026-06-18 - Post-Rebrand Gameplay/Systems Pass
 
 ### Done

@@ -7,6 +7,24 @@ All notable BloodboundSMP changes are documented here. Versions follow Semantic 
 ### Added
 
 - P0 launch-hardening program for recovery, admin isolation, economy integrity, security and diagnostics.
+- Central feature flags and persistent command-error tracking.
+- Cuboid rollback and inventory snapshot recovery plugin.
+- AuctionHouse audit/refund/expiry tooling and `/ahadmin` inspection commands.
+- Warnings-only anti-cheat review flow and bounty HUD/offline notifications.
+- Configurable per-chunk entity caps and performance task profiling.
+
+### Changed
+
+- Adminmode data is isolated from survival economy, inventories, skills, containers, drops and minigames.
+- QuickSell values now respect ingredient/output ratios, active supply and loot availability.
+- Ability toggling uses sneak + swap-hand instead of sneak + drop.
+- Blood-Forged Edge and Aegis Guard now expose configurable active phases and cooldown states.
+
+### Security
+
+- Removed automatic anti-cheat freezing; detections now warn and require staff review.
+- Auction purchases now atomically claim listings before money/item transfer.
+- Added suspicious economy and repeated-player AuctionHouse transaction alerts.
 
 ## [1.0.0-rc.1] - 2026-06-24
 
