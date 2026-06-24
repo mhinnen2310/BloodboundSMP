@@ -15,20 +15,20 @@
 - Farming XP includes breeding and farm-animal harvesting.
 - Offline-capable staff profiles, append-only staff notes and auditable reports.
 - Full source build succeeds for all 33 plugins.
+- Recovery Kits now include two 30-minute account-bound ability trials.
+- Reports have a paginated staff GUI and staff audit has category navigation.
+- Season name is available as an optional HUD component.
+- Mining, Farming, Combat, Alchemy and Enchanting received functional perk effects and clearer English lore.
+- RC2 clean Paper boot succeeds with all 33 plugins.
 
 ## Not Done
 
-- Recovery Kit does not grant sample unlocked endgame abilities; reward items remain intentionally low-power.
-- Full skilltree rebalance of every existing perk and hand-based enchant/anvil mastery is not complete in this P1 pass.
-- Staff audit's existing GUI has not been fully redesigned into every requested category; profile, notes and report command baselines are implemented.
-- Reports are command-driven, not a full GUI.
-- Season name is not forced into every player's HUD because HUD customization is preserved.
-- No Git push occurred because this repository has no configured remote.
-- The isolated Paper boot did not reach plugin loading: Paperclip was denied access to the copied `_clean-server-test/cache/mojang_26.1.2.jar` by the execution sandbox.
+- Season name is optional rather than forced into the default HUD because the requested default remains balance, kills, deaths, rank and abilities.
+- Exact Java 25 runtime testing is unavailable locally; RC2 runtime testing passed on Java 26.
 
 ## Unclear Or Requires Runtime Testing
 
 - The reported item-stacking bug has no reliable reproduction. It may involve a client view refresh, an economy UI or server inventory synchronization. No blind fix was applied.
-- Java 25 clean-runtime startup and multiplayer behavior require an installed Java 25 runtime and real client test.
+- Multiplayer combat, GUI interaction and visual resource-pack behavior still require real-client acceptance testing.
 - Skirmish spectator/respawn timing, assist edge cases and all GUI click paths need multiplayer acceptance testing.
 - Rookie playtime cannot infer hours played before this module existed.

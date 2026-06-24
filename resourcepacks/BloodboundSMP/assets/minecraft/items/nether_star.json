@@ -2,10 +2,7 @@
   "model": {
     "type": "minecraft:range_dispatch",
     "property": "minecraft:custom_model_data",
-    "fallback": {
-      "type": "minecraft:model",
-      "model": "minecraft:item/nether_star"
-    },
+    "index": 0,
     "entries": [
       {
         "threshold": 910001,
@@ -14,6 +11,10 @@
           "model": "bloodbound:item/boss_shard"
         }
       }
-    ]
+    ],
+    "fallback": {
+      "type": "minecraft:model",
+      "model": "minecraft:item/nether_star"
+    }
   }
 }

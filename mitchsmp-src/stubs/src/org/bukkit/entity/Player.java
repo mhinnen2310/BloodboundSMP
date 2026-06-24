@@ -95,4 +95,8 @@ public interface Player extends HumanEntity, LivingEntity, CommandSender, Offlin
     Entity getSpectatorTarget();
 
     void setScoreboard(org.bukkit.scoreboard.Scoreboard scoreboard);
+
+    void closeInventory();
+
+    void updateInventory();
 }

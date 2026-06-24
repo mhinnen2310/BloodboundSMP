@@ -2,10 +2,7 @@
   "model": {
     "type": "minecraft:range_dispatch",
     "property": "minecraft:custom_model_data",
-    "fallback": {
-      "type": "minecraft:model",
-      "model": "minecraft:item/echo_shard"
-    },
+    "index": 0,
     "entries": [
       {
         "threshold": 910002,
@@ -14,6 +11,10 @@
           "model": "bloodbound:item/corrupted_heart"
         }
       }
-    ]
+    ],
+    "fallback": {
+      "type": "minecraft:model",
+      "model": "minecraft:item/echo_shard"
+    }
   }
 }

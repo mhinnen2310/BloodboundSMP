@@ -20,6 +20,8 @@ public enum Material {
     CARROT,
     CHEST,
     CLOCK,
+    IRON_BARS,
+    NAME_TAG,
     COAL,
     COBBLESTONE,
     COMPASS,

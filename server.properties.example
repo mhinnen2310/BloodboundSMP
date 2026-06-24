@@ -14,4 +14,4 @@ enable-rcon=false
 require-resource-pack=true
 resource-pack=https://REPLACE_WITH_PUBLIC_DIRECT_URL/BloodboundSMP-resourcepack.zip
 resource-pack-id=6f302d82-5e7a-4f4a-9cc9-26f1118b1dbd
-resource-pack-sha1=cadbbc3b0ab5d6b17512f6897c2929be2aadbecd
+resource-pack-sha1=b4bada05354852aa8e6e1e4efbc991b88f3a4f20

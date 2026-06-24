@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.0-rc.2 Final Gameplay Hardening
+
+- Made Aegis Guard manually activated with configurable timed 100% absorption and visible HUD state.
+- Protected the Skirmish arena from building and breaking.
+- Fixed Boss Shard and Corrupted Heart `item_model` assignment for the working 26.1.2 resource pack.
+- Made inactive-season HUD stats fall back to overall deaths/kills and added an optional season HUD component.
+- Added Recovery ability trials, practical skilltree effects, portable mastery stations and buffered skill persistence.
+- Added report GUI, categorized staff audit and cross-plugin registration profiling.
+- Added delayed economy/Auction House inventory synchronization for suspected client ghost stacks.
+
 ## 1.0.0-rc.1 P1 Gameplay and Polish
 
 - Added Rookie status, restricted Starter/Recovery kits, Rookie Contracts and dynamic goals.

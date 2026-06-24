@@ -295,7 +295,7 @@ public final class EconomyPlugin extends JavaPlugin implements EconomyService, L
             returnQuickSellItems(player, top);
             menu.completed(true);
             player.closeInventory();
-            Text.msg(player, "&cJe kunt QuickSell niet gebruiken in adminmode, creative/spectator, BedWars of testworld.");
+            Text.msg(player, "&cQuickSell is unavailable in admin mode, creative/spectator, BedWars or test worlds.");
             return;
         }
         int slot = event.getRawSlot();
@@ -314,7 +314,10 @@ public final class EconomyPlugin extends JavaPlugin implements EconomyService, L
             return;
         }
 
-        Bukkit.getScheduler().runTaskLater(this, () -> updateQuickSellControls(player, menu), 1L);
+        Bukkit.getScheduler().runTaskLater(this, () -> {
+            updateQuickSellControls(player, menu);
+            player.updateInventory();
+        }, 1L);
     }
 
     @EventHandler
@@ -328,6 +331,7 @@ public final class EconomyPlugin extends JavaPlugin implements EconomyService, L
                 returnQuickSellItems(player, inventory);
             }
             restoreValueLore(player.getInventory());
+            Bukkit.getScheduler().runTaskLater(this, player::updateInventory, 1L);
         }
     }
 
@@ -345,7 +349,7 @@ public final class EconomyPlugin extends JavaPlugin implements EconomyService, L
             returnQuickSellItems(player, top);
             menu.completed(true);
             player.closeInventory();
-            Text.msg(player, "&cJe kunt QuickSell niet gebruiken in adminmode, creative/spectator, BedWars of testworld.");
+            Text.msg(player, "&cQuickSell is unavailable in admin mode, creative/spectator, BedWars or test worlds.");
             return;
         }
         for (int slot : event.getRawSlots()) {
@@ -354,7 +358,10 @@ public final class EconomyPlugin extends JavaPlugin implements EconomyService, L
                 return;
             }
         }
-        Bukkit.getScheduler().runTaskLater(this, () -> updateQuickSellControls(player, menu), 1L);
+        Bukkit.getScheduler().runTaskLater(this, () -> {
+            updateQuickSellControls(player, menu);
+            player.updateInventory();
+        }, 1L);
     }
 
     private boolean eco(CommandSender sender, String[] args) {

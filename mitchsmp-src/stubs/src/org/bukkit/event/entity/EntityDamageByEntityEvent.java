@@ -1,9 +1,7 @@
 package org.bukkit.event.entity;
 
 import org.bukkit.entity.Entity;
-import org.bukkit.event.Cancellable;
-
-public class EntityDamageByEntityEvent implements Cancellable {
+public class EntityDamageByEntityEvent extends EntityDamageEvent {
     public Entity getEntity() {
         return null;
     }

@@ -31,6 +31,8 @@ import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.FoodLevelChangeEvent;
@@ -157,6 +159,24 @@ public final class SkirmishPlugin extends JavaPlugin implements Listener, TabCom
         if (event.getEntity() instanceof Player player && queued.contains(player.getUniqueId()) && !running) {
             event.setCancelled(true);
         }
+    }
+
+    @EventHandler
+    public void onBlockBreak(BlockBreakEvent event) {
+        if (isSkirmishWorld(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler
+    public void onBlockPlace(BlockPlaceEvent event) {
+        if (isSkirmishWorld(event.getPlayer())) {
+            event.setCancelled(true);
+        }
+    }
+
+    private boolean isSkirmishWorld(Player player) {
+        return player != null && player.getWorld() != null && player.getWorld().getName().equalsIgnoreCase(WORLD);
     }
 
     @EventHandler

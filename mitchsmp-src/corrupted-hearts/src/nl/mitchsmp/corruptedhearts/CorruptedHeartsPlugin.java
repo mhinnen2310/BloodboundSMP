@@ -23,6 +23,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.event.block.Action;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.world.LootGenerateEvent;
 import org.bukkit.inventory.ItemFlag;
 import org.bukkit.inventory.ItemStack;
@@ -305,15 +306,19 @@ public final class CorruptedHeartsPlugin extends JavaPlugin implements Listener,
         return true;
     }
 
+    @EventHandler
+    public void onHeartOwnerJoin(PlayerJoinEvent event) {
+        Bukkit.getScheduler().runTaskLater(this, () -> {
+            for (ItemStack item : event.getPlayer().getInventory().getContents()) {
+                isCorruptedHeart(item);
+            }
+            event.getPlayer().updateInventory();
+        }, 20L);
+    }
+
     private void setVisualModel(ItemMeta meta, int value, String model) {
-        try {
-            meta.getClass().getMethod("setCustomModelData", Integer.class).invoke(meta, Integer.valueOf(value));
-        } catch (ReflectiveOperationException ignored) {
-        }
-        try {
-            meta.getClass().getMethod("setItemModel", NamespacedKey.class).invoke(meta, new NamespacedKey("bloodbound", model));
-        } catch (ReflectiveOperationException | RuntimeException ignored) {
-        }
+        meta.setCustomModelData(value);
+        meta.setItemModel(new NamespacedKey("bloodbound", model));
     }
 }
 

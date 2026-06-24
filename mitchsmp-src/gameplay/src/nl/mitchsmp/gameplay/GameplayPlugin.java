@@ -65,6 +65,7 @@ public final class GameplayPlugin extends JavaPlugin implements Listener, TabCom
     private PropertiesFile data;
     private PropertiesFile progression;
     private PropertiesFile homes;
+    private PropertiesFile essentials;
     private NamespacedKey restrictedKey;
     private NamespacedKey restrictionReasonKey;
     private boolean dirty;
@@ -74,6 +75,7 @@ public final class GameplayPlugin extends JavaPlugin implements Listener, TabCom
         data = new PropertiesFile(getDataFolder().toPath().resolve("gameplay.properties"));
         progression = new PropertiesFile(getDataFolder().toPath().getParent().resolve("MitchSMP-Progression").resolve("progression.properties"));
         homes = new PropertiesFile(getDataFolder().toPath().getParent().resolve("MitchSMP-Homes").resolve("homes.properties"));
+        essentials = new PropertiesFile(getDataFolder().toPath().getParent().resolve("MitchSMP-Essentials").resolve("essentials.properties"));
         restrictedKey = new NamespacedKey("bloodbound", "trade_restricted");
         restrictionReasonKey = new NamespacedKey("bloodbound", "restriction_reason");
         MitchSMP.registerService(GameplayService.class, this);
@@ -231,8 +233,16 @@ public final class GameplayPlugin extends JavaPlugin implements Listener, TabCom
     }
 
     @EventHandler
-    public void onRookieMenuClick(InventoryClickEvent event) {
-        if (!(event.getView().getTopInventory().getHolder() instanceof RookieMenu)) {
+    public void onMenuClick(InventoryClickEvent event) {
+        InventoryHolder holder = event.getView().getTopInventory().getHolder();
+        if (holder instanceof ReportsMenu reportsMenu) {
+            event.setCancelled(true);
+            if (event.getWhoClicked() instanceof Player player && isReportStaff(player)) {
+                handleReportsClick(player, reportsMenu, event.getRawSlot(), event.isShiftClick());
+            }
+            return;
+        }
+        if (!(holder instanceof RookieMenu)) {
             return;
         }
         event.setCancelled(true);
@@ -312,14 +322,20 @@ public final class GameplayPlugin extends JavaPlugin implements Listener, TabCom
             Text.msg(player, "&cRecovery kit cooldown: &f" + formatDuration(remaining) + "&c.");
             return true;
         }
-        List<ItemStack> kit = List.of(
+        List<ItemStack> kit = new ArrayList<>(List.of(
             restricted(new ItemStack(Material.STONE_PICKAXE), "Recovery Kit"),
             restricted(new ItemStack(Material.STONE_AXE), "Recovery Kit"),
             restricted(new ItemStack(Material.IRON_SWORD), "Recovery Kit"),
             restricted(new ItemStack(Material.SHIELD), "Recovery Kit"),
             restricted(new ItemStack(Material.COOKED_BEEF, 16), "Recovery Kit"),
             restricted(new ItemStack(Material.ARROW, 8), "Recovery Kit")
-        );
+        ));
+        SkillService skills = MitchSMP.skills();
+        if (skills != null) {
+            for (ItemStack sample : skills.createRecoveryAbilitySamples(player.getUniqueId())) {
+                kit.add(restricted(sample, "30-minute Recovery Ability Trial"));
+            }
+        }
         give(player, kit);
         data.set("recovery." + player.getUniqueId(), System.currentTimeMillis());
         data.save();
@@ -393,6 +409,10 @@ public final class GameplayPlugin extends JavaPlugin implements Listener, TabCom
         } else if (!filter.equals("ALL")) {
             filter = "OPEN";
         }
+        if (sender instanceof Player player) {
+            openReportsMenu(player, filter, 0);
+            return true;
+        }
         List<String> ids = reportIds(filter);
         Text.msg(sender, "&6Reports: &f" + ids.size() + " &7(" + filter.toLowerCase(Locale.ROOT) + ")");
         for (String id : ids.stream().limit(15).toList()) {
@@ -400,6 +420,64 @@ public final class GameplayPlugin extends JavaPlugin implements Listener, TabCom
             Text.msg(sender, "&8#" + id + " &f" + data.getString(base + "targetName", "?") + " &7by &f" + data.getString(base + "reporterName", "?") + " &8- &7" + data.getString(base + "reason", ""));
         }
         return true;
+    }
+
+    private void openReportsMenu(Player player, String filter, int page) {
+        List<String> ids = reportIds(filter);
+        int maxPage = Math.max(0, (ids.size() - 1) / 45);
+        int current = Math.max(0, Math.min(page, maxPage));
+        ReportsMenu holder = new ReportsMenu(filter, current);
+        Inventory inventory = Bukkit.createInventory(holder, 54, Text.color("&8Reports: " + filter.toLowerCase(Locale.ROOT)));
+        holder.inventory = inventory;
+        int offset = current * 45;
+        for (int slot = 0; slot < 45 && offset + slot < ids.size(); slot++) {
+            String id = ids.get(offset + slot);
+            holder.ids.put(slot, id);
+            String base = "reports." + id + ".";
+            inventory.setItem(slot, named(new ItemStack(Material.PAPER), "&6Report #" + id + " &8- &f" + data.getString(base + "targetName", "?"), List.of(
+                "&7Status: &f" + data.getString(base + "status", "OPEN"),
+                "&7Reporter: &f" + data.getString(base + "reporterName", "?"),
+                "&7Reason: &f" + clip(data.getString(base + "reason", ""), 48),
+                "&7Location: &f" + data.getString(base + "location", "?"),
+                "&7Nearby: &f" + clip(data.getString(base + "nearby", "none"), 48),
+                "&7Last death: &f" + clip(data.getString(base + "lastDeath", "none"), 48),
+                "&7Snapshot: &f" + data.getString(base + "snapshot", "none"),
+                "&eClick for full details.",
+                "&cShift-click to close an open report."
+            )));
+        }
+        inventory.setItem(45, named(new ItemStack(Material.ARROW), "&aPrevious", List.of("&7Previous page.")));
+        inventory.setItem(46, named(new ItemStack(Material.PAPER), "&cOpen", List.of("&7Show unresolved reports.")));
+        inventory.setItem(47, named(new ItemStack(Material.CHEST), "&eAll", List.of("&7Show the full report archive.")));
+        inventory.setItem(48, named(new ItemStack(Material.BARRIER), "&7Closed", List.of("&7Show resolved reports.")));
+        inventory.setItem(53, named(new ItemStack(Material.ARROW), "&aNext", List.of("&7Next page.")));
+        player.openInventory(inventory);
+    }
+
+    private void handleReportsClick(Player player, ReportsMenu menu, int slot, boolean shiftClick) {
+        if (slot == 45) {
+            openReportsMenu(player, menu.filter, menu.page - 1);
+        } else if (slot == 46) {
+            openReportsMenu(player, "OPEN", 0);
+        } else if (slot == 47) {
+            openReportsMenu(player, "ALL", 0);
+        } else if (slot == 48) {
+            openReportsMenu(player, "CLOSED", 0);
+        } else if (slot == 53) {
+            openReportsMenu(player, menu.filter, menu.page + 1);
+        } else {
+            String id = menu.ids.get(slot);
+            if (id == null) {
+                return;
+            }
+            if (shiftClick && data.getString("reports." + id + ".status", "OPEN").equalsIgnoreCase("OPEN")) {
+                closeReport(player, id);
+                openReportsMenu(player, menu.filter, menu.page);
+            } else {
+                player.closeInventory();
+                viewReport(player, id);
+            }
+        }
     }
 
     private boolean staffProfile(CommandSender sender, String[] args) {
@@ -419,6 +497,7 @@ public final class GameplayPlugin extends JavaPlugin implements Listener, TabCom
         UUID id = target.getUniqueId();
         progression.load();
         homes.load();
+        essentials.load();
         EconomyService economy = MitchSMP.economy();
         BountyService bounties = MitchSMP.bounties();
         List<String> homeNames = homes.keys().stream().filter(key -> key.startsWith(id + ".")).map(key -> key.substring((id + ".").length())).sorted().toList();
@@ -433,7 +512,24 @@ public final class GameplayPlugin extends JavaPlugin implements Listener, TabCom
             Text.msg(sender, "&7Recent snapshots: &f" + (recent.isEmpty() ? "none" : recent.stream().map(info -> info.id() + "(" + info.trigger() + ")").collect(java.util.stream.Collectors.joining(", "))));
         }
         Text.msg(sender, "&7Staff notes: &f" + data.getInt("notes." + id + ".count", 0) + " &8| &7Open reports: &f" + openReportCount(id));
+        Text.msg(sender, "&7Recent punishments: &f" + recentPunishments(safeName(target)));
         return true;
+    }
+
+    private String recentPunishments(String playerName) {
+        int next = essentials.getInt("audit.next", 0);
+        List<String> matches = new ArrayList<>();
+        for (int sequence = next - 1; sequence >= Math.max(0, next - 500) && matches.size() < 3; sequence--) {
+            int index = Math.floorMod(sequence, 5000);
+            String action = essentials.getString("audit." + index + ".action", "");
+            String detail = essentials.getString("audit." + index + ".detail", "");
+            String haystack = (action + " " + detail).toLowerCase(Locale.ROOT);
+            if (haystack.contains(playerName.toLowerCase(Locale.ROOT))
+                && (haystack.contains("jail") || haystack.contains("freeze") || haystack.contains("lockdown") || haystack.contains("release") || haystack.contains("punish"))) {
+                matches.add(action + " (" + clip(detail, 28) + ")");
+            }
+        }
+        return matches.isEmpty() ? "none" : String.join(", ", matches);
     }
 
     private boolean staffNote(CommandSender sender, String[] args) {
@@ -898,11 +994,35 @@ public final class GameplayPlugin extends JavaPlugin implements Listener, TabCom
         return String.format(Locale.US, "%.2f", value);
     }
 
+    private String clip(String value, int length) {
+        if (value == null) {
+            return "";
+        }
+        return value.length() <= length ? value : value.substring(0, Math.max(0, length - 3)) + "...";
+    }
+
     private record DamageContribution(long at, double damage) {
     }
 
     private static final class RookieMenu implements InventoryHolder {
         private Inventory inventory;
+
+        @Override
+        public Inventory getInventory() {
+            return inventory;
+        }
+    }
+
+    private static final class ReportsMenu implements InventoryHolder {
+        private final String filter;
+        private final int page;
+        private final Map<Integer, String> ids = new HashMap<>();
+        private Inventory inventory;
+
+        ReportsMenu(String filter, int page) {
+            this.filter = filter;
+            this.page = page;
+        }
 
         @Override
         public Inventory getInventory() {

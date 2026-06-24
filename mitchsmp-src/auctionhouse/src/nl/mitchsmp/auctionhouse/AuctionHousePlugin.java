@@ -246,6 +246,7 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
                     return;
                 }
                 handleMyListingsClick(player, myMenu, event);
+                Bukkit.getScheduler().runTaskLater(this, player::updateInventory, 1L);
             }
             return;
         }
@@ -321,6 +322,7 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
         if (changed) {
             open(player, menu.page());
         }
+        Bukkit.getScheduler().runTaskLater(this, player::updateInventory, 1L);
     }
 
     private void open(Player player, int page) {

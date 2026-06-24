@@ -53,18 +53,18 @@ public final class HudPlugin extends JavaPlugin implements Listener, TabComplete
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!(sender instanceof Player player)) {
-            Text.msg(sender, "&cAlleen players.");
+            Text.msg(sender, "&cPlayers only.");
             return true;
         }
         if (!MitchSMP.permissions().has(player, "mitchsmp.hud.use")) {
-            Text.msg(player, "&cGeen permissie.");
+            Text.msg(player, "&cYou do not have permission.");
             return true;
         }
         if (args.length == 0 || args[0].equalsIgnoreCase("list")) {
-            Text.msg(player, "&aHUD staat " + (enabled(player) ? "&aan" : "&cuit") + "&a.");
+            Text.msg(player, "&aHUD is " + (enabled(player) ? "&aenabled" : "&cdisabled") + "&a.");
             Text.msg(player, "&7Stats mode: &f" + statsMode(player).key());
-            Text.msg(player, "&7Actief: &f" + components(player).stream().map(ComponentPart::key).collect(Collectors.joining("&7, &f")));
-            Text.msg(player, "&7Onderdelen: &f" + Arrays.stream(ComponentPart.values()).map(ComponentPart::key).collect(Collectors.joining("&7, &f")));
+            Text.msg(player, "&7Active: &f" + components(player).stream().map(ComponentPart::key).collect(Collectors.joining("&7, &f")));
+            Text.msg(player, "&7Components: &f" + Arrays.stream(ComponentPart.values()).map(ComponentPart::key).collect(Collectors.joining("&7, &f")));
             return true;
         }
 
@@ -72,21 +72,22 @@ public final class HudPlugin extends JavaPlugin implements Listener, TabComplete
         if (action.equals("on")) {
             data.set("enabled." + player.getUniqueId(), true);
             data.save();
-            Text.msg(player, "&aHUD aangezet.");
+            Text.msg(player, "&aHUD enabled.");
             return true;
         }
         if (action.equals("off")) {
             data.set("enabled." + player.getUniqueId(), false);
             data.save();
             clearSidebar(player);
-            Text.msg(player, "&cHUD uitgezet.");
+            Text.msg(player, "&cHUD disabled.");
             return true;
         }
         if (action.equals("reset")) {
             data.set("enabled." + player.getUniqueId(), true);
             data.set("components." + player.getUniqueId(), DEFAULT_COMPONENTS);
+            data.set("mode." + player.getUniqueId(), StatsMode.OVERALL.key());
             data.save();
-            Text.msg(player, "&aHUD gereset.");
+            Text.msg(player, "&aHUD reset to the Bloodbound defaults.");
             return true;
         }
         if (action.equals("mode")) {
@@ -106,7 +107,7 @@ public final class HudPlugin extends JavaPlugin implements Listener, TabComplete
         }
         if (action.equals("toggle") || action.equals("add") || action.equals("remove")) {
             if (args.length < 2) {
-                Text.msg(player, "&cGebruik: /hud " + action + " <onderdeel>");
+                Text.msg(player, "&cUsage: /hud " + action + " <component>");
                 return true;
             }
             ComponentPart part = ComponentPart.parse(args[1]);
@@ -118,16 +119,16 @@ public final class HudPlugin extends JavaPlugin implements Listener, TabComplete
             boolean active = parts.contains(part);
             if (action.equals("add") || (action.equals("toggle") && !active)) {
                 parts.add(part);
-                Text.msg(player, "&aHUD onderdeel toegevoegd: &f" + part.key());
+                Text.msg(player, "&aHUD component added: &f" + part.key());
             } else {
                 parts.remove(part);
-                Text.msg(player, "&eHUD onderdeel verwijderd: &f" + part.key());
+                Text.msg(player, "&eHUD component removed: &f" + part.key());
             }
             saveComponents(player, parts);
             return true;
         }
 
-        Text.msg(player, "&cGebruik: /hud <on|off|mode|toggle|add|remove|list|reset>");
+        Text.msg(player, "&cUsage: /hud <on|off|mode|toggle|add|remove|list|reset>");
         return true;
     }
 
@@ -196,6 +197,7 @@ public final class HudPlugin extends JavaPlugin implements Listener, TabComplete
             case WORLD -> "&7World:&f" + player.getWorld().getName();
             case ONLINE -> "&bOnline:&f" + Bukkit.getOnlinePlayers().size();
             case PING -> "&7Ping:&f" + ping(player);
+            case SEASON -> "&4Season:&f#" + seasonStats.getInt("number", 1) + " " + seasonStats.getString("name", "Blood Dawn");
         };
     }
 
@@ -255,8 +257,11 @@ public final class HudPlugin extends JavaPlugin implements Listener, TabComplete
     }
 
     private StatsMode statsMode(Player player) {
-        StatsMode mode = StatsMode.parse(data.getString("mode." + player.getUniqueId(), "seasonal"));
-        return mode == null ? StatsMode.SEASONAL : mode;
+        StatsMode mode = StatsMode.parse(data.getString("mode." + player.getUniqueId(), "overall"));
+        if (mode == StatsMode.SEASONAL && !Boolean.parseBoolean(seasonStats.getString("active", "false"))) {
+            return StatsMode.OVERALL;
+        }
+        return mode == null ? StatsMode.OVERALL : mode;
     }
 
     private boolean enabled(Player player) {
@@ -403,7 +408,8 @@ public final class HudPlugin extends JavaPlugin implements Listener, TabComplete
         RANK("rank"),
         WORLD("world"),
         ONLINE("online"),
-        PING("ping");
+        PING("ping"),
+        SEASON("season");
 
         private final String key;
 

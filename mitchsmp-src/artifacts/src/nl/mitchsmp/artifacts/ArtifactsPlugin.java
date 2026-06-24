@@ -27,6 +27,7 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDamageEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityResurrectEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
@@ -360,15 +361,19 @@ public final class ArtifactsPlugin extends JavaPlugin implements Listener, TabCo
         return true;
     }
 
+    @EventHandler
+    public void onShardOwnerJoin(PlayerJoinEvent event) {
+        Bukkit.getScheduler().runTaskLater(this, () -> {
+            for (ItemStack item : event.getPlayer().getInventory().getContents()) {
+                isShard(item);
+            }
+            event.getPlayer().updateInventory();
+        }, 20L);
+    }
+
     private void setVisualModel(ItemMeta meta, int value, String model) {
-        try {
-            meta.getClass().getMethod("setCustomModelData", Integer.class).invoke(meta, Integer.valueOf(value));
-        } catch (ReflectiveOperationException ignored) {
-        }
-        try {
-            meta.getClass().getMethod("setItemModel", NamespacedKey.class).invoke(meta, new NamespacedKey("bloodbound", model));
-        } catch (ReflectiveOperationException | RuntimeException ignored) {
-        }
+        meta.setCustomModelData(value);
+        meta.setItemModel(new NamespacedKey("bloodbound", model));
     }
 
     private int countShards(Player player) {

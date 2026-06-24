@@ -19,9 +19,10 @@ $paper = Get-ChildItem -LiteralPath $workspace -File -Filter "paper-*.jar" | Sor
 if ($null -eq $paper) {
     throw "No Paper jar found in $workspace"
 }
-$pluginJars = Get-ChildItem -LiteralPath (Join-Path $workspace "mitchsmp-src\build\jars") -File -Filter "MitchSMP-*-1.0.0-rc.1.jar"
+$version = (Get-Content -LiteralPath (Join-Path $workspace "VERSION") -Raw).Trim()
+$pluginJars = Get-ChildItem -LiteralPath (Join-Path $workspace "mitchsmp-src\build\jars") -File -Filter "MitchSMP-*-$version.jar"
 if ($pluginJars.Count -lt 31) {
-    throw "Expected at least 31 RC plugin jars, found $($pluginJars.Count). Run mitchsmp-src/build.ps1 first."
+    throw "Expected at least 31 plugin jars for $version, found $($pluginJars.Count). Run mitchsmp-src/build.ps1 first."
 }
 
 Copy-Item -LiteralPath $paper.FullName -Destination (Join-Path $testRoot "paper.jar")
@@ -84,7 +85,7 @@ try {
     }
 } finally {
     if (-not $process.HasExited) {
-        $process.Kill($true)
+        $process.Kill()
         $process.WaitForExit()
     }
     while (-not $process.StandardOutput.EndOfStream) {

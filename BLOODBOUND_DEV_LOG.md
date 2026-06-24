@@ -1,5 +1,25 @@
 # BloodboundSMP Development Log
 
+## 2026-06-24 - RC2 Final Gameplay Hardening
+
+### Done
+
+- Reworked Aegis Guard to manual activation and timed 100% absorption with cooldown/HUD state.
+- Fixed overall death visibility, protected Skirmish blocks and directly assigned modern custom item models.
+- Adopted the confirmed working format-84 resource pack and updated its server SHA1.
+- Added Recovery ability trials, practical skill perks, reports GUI, audit categories and cross-plugin profiling.
+- Buffered skill hot-path persistence and added economy/AH inventory resynchronization.
+- Built 33 RC2 jars, verified 182 permission-mapped commands and passed a clean Paper runtime boot.
+
+### Not Done
+
+- Exact Java 25 runtime proof is unavailable because this machine currently has Java 26.
+- Real multiplayer/client acceptance is still required for combat feel, GUI interaction and textures.
+
+### Unclear
+
+- The original item-stacking bug still has no exact reproduction. RC2 adds safe delayed inventory synchronization, but this is not claimed as a proven root-cause fix.
+
 ## 2026-06-24 - P0 Launch Hardening
 
 ### Done

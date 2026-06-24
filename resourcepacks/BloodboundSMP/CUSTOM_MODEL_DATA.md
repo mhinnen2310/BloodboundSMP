@@ -1,6 +1,13 @@
-# BloodboundSMP CustomModelData
+# BloodboundSMP Custom Item Models
 
-- Boss Shard: `Material.NETHER_STAR`, CustomModelData `910001`, direct item model `bloodbound:boss_shard`, model `bloodbound:item/boss_shard`, texture `bloodbound:item/boss_shard.png`.
-- Corrupted Heart: `Material.ECHO_SHARD`, CustomModelData `910002`, direct item model `bloodbound:corrupted_heart`, model `bloodbound:item/corrupted_heart`, texture `bloodbound:item/corrupted_heart.png`.
+Modern item-model components:
 
-Existing items created by the plugins are repaired to these IDs and direct models when validated by the item systems. Plain Nether Stars and Echo Shards keep their vanilla models. The server still needs the resource pack hosted/configured for clients to see the textures.
+- Boss Shard: `bloodbound:boss_shard`
+- Corrupted Heart: `bloodbound:corrupted_heart`
+
+CustomModelData fallbacks:
+
+- Boss Shard: `NETHER_STAR`, `910001`
+- Corrupted Heart: `ECHO_SHARD`, `910002`
+
+RC2 writes both representations. Normal Nether Stars and Echo Shards use the vanilla fallback model.

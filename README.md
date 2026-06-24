@@ -31,7 +31,7 @@ powershell -ExecutionPolicy Bypass -File .\mitchsmp-src\build.ps1
 
 The build script creates staged Java 25 artifacts. Live deployment is a separate offline-only action documented in [BUILD_AND_DEPLOY.md](BUILD_AND_DEPLOY.md).
 
-Current release candidate: `1.0.0-rc.1`.
+Current release candidate: `1.0.0-rc.2`.
 
 Release records:
 

@@ -7,4 +7,5 @@ public class PotionEffectType {
     public static final PotionEffectType REGENERATION = null;
     public static final PotionEffectType SLOWNESS = null;
     public static final PotionEffectType WEAKNESS = null;
+    public static final PotionEffectType FIRE_RESISTANCE = null;
 }

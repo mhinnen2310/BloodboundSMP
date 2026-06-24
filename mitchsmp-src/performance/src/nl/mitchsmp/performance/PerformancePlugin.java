@@ -5,6 +5,8 @@ import java.util.List;
 import java.util.Locale;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Set;
+import java.lang.reflect.Array;
 
 import nl.mitchsmp.core.api.MitchSMP;
 import nl.mitchsmp.core.storage.PropertiesFile;
@@ -54,7 +56,7 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter,
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!canView(sender)) {
-            Text.msg(sender, "&cGeen permissie.");
+            Text.msg(sender, "&cYou do not have permission.");
             return true;
         }
         if (args.length == 0 || args[0].equalsIgnoreCase("status") || args[0].equalsIgnoreCase("detail") || args[0].equalsIgnoreCase("summary")) {
@@ -67,13 +69,13 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter,
         }
         if (args[0].equalsIgnoreCase("config")) {
             if (!MitchSMP.permissions().has(sender, "mitchsmp.performance.admin")) {
-                Text.msg(sender, "&cGeen permissie.");
+                Text.msg(sender, "&cYou do not have permission.");
                 return true;
             }
             config(sender, args);
             return true;
         }
-        Text.msg(sender, "&cGebruik: /perf status of /perf config <key> <value>");
+        Text.msg(sender, "&cUsage: /perf status, /perf profiler or /perf config <key> <value>");
         return true;
     }
 
@@ -204,8 +206,8 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter,
         boolean chunkWarn = loadedChunks >= 900;
         boolean itemWarn = lastDroppedItemCount >= 500;
 
-        Text.msg(sender, "&aPerformance overzicht:");
-        Text.msg(sender, "&7Samenvatting: " + summary(tickBad, tickWarn, memoryBad, memoryWarn, entityBad, entityWarn, chunkWarn, itemWarn));
+        Text.msg(sender, "&aPerformance overview:");
+        Text.msg(sender, "&7Summary: " + summary(tickBad, tickWarn, memoryBad, memoryWarn, entityBad, entityWarn, chunkWarn, itemWarn));
         Text.msg(sender, verdict(tickBad, tickWarn) + " &7TPS/tick: &f" + format(lastTps) + " TPS &8| &f" + format(lastElapsedMillis) + "ms &7per seconde-sample");
         Text.msg(sender, verdict(memoryBad, memoryWarn) + " &7Memory: &f" + mb(lastMemoryUsedBytes) + "/" + mb(lastMemoryMaxBytes) + "MB &8(&f" + format(lastMemoryPercent) + "%&8)");
         Text.msg(sender, verdict(entityBad, entityWarn) + " &7Entities: &f" + lastEntityCount + " &8| &7mobs/non-player &f" + lastMobCount + " &8| &7drops &f" + lastDroppedItemCount);
@@ -213,11 +215,11 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter,
         Text.msg(sender, "&7Limits: lag &f+" + format(lagLimit) + "ms&7, mem &f" + format(memoryLimit) + "%&7, entities &f" + entityLimit + "&7, alerts elke &f" + (int) setting("alert_cooldown_seconds", 60.0D) + "s&7.");
         int hottestChunk = chunkEntityCounts.values().stream().mapToInt(Integer::intValue).max().orElse(0);
         Text.msg(sender, "&7Chunk cap: &f" + (int) setting("entity_per_chunk", 120.0D) + " &8| &7enforced: &f" + (setting("enforce_entity_per_chunk", 1.0D) >= 0.5D) + " &8| &7hottest chunk: &f" + hottestChunk);
-        Text.msg(sender, "&7Werelden:");
+        Text.msg(sender, "&7Worlds:");
         for (WorldReport report : worlds) {
             Text.msg(sender, "&8- &f" + report.name + " &7P:&f" + report.players + " &7Chunks:&f" + (report.loadedChunks < 0 ? "?" : report.loadedChunks) + " &7Ent:&f" + report.entities + " &7Drops:&f" + report.droppedItems + " &7Mobs:&f" + report.mobs);
         }
-        Text.msg(sender, "&7Advies: " + advice(tickBad, memoryBad, entityBad, itemWarn, chunkWarn));
+        Text.msg(sender, "&7Advice: " + advice(tickBad, memoryBad, entityBad, itemWarn, chunkWarn));
     }
 
     private void config(CommandSender sender, String[] args) {
@@ -227,16 +229,16 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter,
         }
         String key = args[1].toLowerCase(Locale.ROOT);
         if (!List.of("lag_ms", "memory_percent", "entity_count", "entity_per_chunk", "enforce_entity_per_chunk", "alert_cooldown_seconds").contains(key)) {
-            Text.msg(sender, "&cUnknowne key.");
+            Text.msg(sender, "&cUnknown key.");
             return;
         }
         try {
             double value = Math.max(1.0D, Double.parseDouble(args[2]));
             config.set("setting." + key, value);
             config.save();
-            Text.msg(sender, "&aPerformance setting &f" + key + " &agezet op &f" + format(value) + "&a.");
+            Text.msg(sender, "&aPerformance setting &f" + key + " &aset to &f" + format(value) + "&a.");
         } catch (NumberFormatException exception) {
-            Text.msg(sender, "&cValue moet een nummer zijn.");
+            Text.msg(sender, "&cValue must be a number.");
         }
     }
 
@@ -247,7 +249,44 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter,
         Text.msg(sender, "&7Plugin/task: &fMitchSMP-Performance / entity-memory sample");
         Text.msg(sender, "&7Calls: &f" + profileCalls + " &8| &7avg: &f" + format(averageMs) + "ms &8| &7max: &f" + format(maxMs) + "ms");
         Text.msg(sender, "&7Estimated tick impact: " + (maxMs >= 50.0D ? "&cHIGH" : averageMs >= 10.0D ? "&eMEDIUM" : "&aLOW"));
-        Text.msg(sender, "&8Note: this profiler measures this plugin's own sample task; use Paper timings/spark-equivalent host tooling for cross-plugin listener timings.");
+        List<PluginLoad> loads = crossPluginLoads();
+        Text.msg(sender, "&7Cross-plugin registrations (top 12):");
+        for (PluginLoad load : loads.stream().limit(12).toList()) {
+            Text.msg(sender, "&8- &f" + load.name + " &7listeners:&f" + load.listeners + " &7pending tasks:&f" + load.tasks);
+        }
+        Text.msg(sender, "&8Registration counts locate broad plugins; Paper timings are still required for per-listener execution time.");
+    }
+
+    private List<PluginLoad> crossPluginLoads() {
+        Map<String, Integer> tasks = new HashMap<>();
+        Map<String, Integer> listeners = new HashMap<>();
+        try {
+            Object pending = Bukkit.getScheduler().getClass().getMethod("getPendingTasks").invoke(Bukkit.getScheduler());
+            if (pending instanceof Iterable<?> iterable) {
+                for (Object task : iterable) {
+                    Object owner = task.getClass().getMethod("getOwner").invoke(task);
+                    String name = String.valueOf(owner.getClass().getMethod("getName").invoke(owner));
+                    tasks.merge(name, 1, Integer::sum);
+                }
+            }
+            Object pluginArray = Bukkit.getPluginManager().getClass().getMethod("getPlugins").invoke(Bukkit.getPluginManager());
+            Class<?> pluginClass = Class.forName("org.bukkit.plugin.Plugin");
+            Class<?> handlerList = Class.forName("org.bukkit.event.HandlerList");
+            for (int index = 0; index < Array.getLength(pluginArray); index++) {
+                Object plugin = Array.get(pluginArray, index);
+                String name = String.valueOf(plugin.getClass().getMethod("getName").invoke(plugin));
+                Object registered = handlerList.getMethod("getRegisteredListeners", pluginClass).invoke(null, plugin);
+                listeners.put(name, Array.getLength(registered));
+            }
+        } catch (ReflectiveOperationException | RuntimeException exception) {
+            getLogger().warning("Cross-plugin registration profile unavailable: " + exception.getMessage());
+        }
+        Set<String> names = new java.util.HashSet<>(tasks.keySet());
+        names.addAll(listeners.keySet());
+        return names.stream()
+            .map(name -> new PluginLoad(name, listeners.getOrDefault(name, 0), tasks.getOrDefault(name, 0)))
+            .sorted(java.util.Comparator.comparingInt((PluginLoad load) -> load.listeners + load.tasks).reversed())
+            .toList();
     }
 
     private String chunkKey(Entity entity) {
@@ -276,6 +315,9 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter,
     private boolean canView(CommandSender sender) {
         return MitchSMP.permissions().has(sender, "mitchsmp.performance.alerts")
             || MitchSMP.permissions().has(sender, "mitchsmp.performance.admin");
+    }
+
+    private record PluginLoad(String name, int listeners, int tasks) {
     }
 
     private boolean canReceiveAlerts(Player player) {

@@ -8,33 +8,42 @@ Mining:
 
 - Mining Speed: grants frequent Haste while mining.
 - Mining Yield: ores can drop extra ore blocks.
-- Deep Miner, Ore Surveyor, Vein Discipline, Mining Mastery: progression/prestige anchors for deeper mining expansion.
+- Deep Miner: bonus Mining XP at Y 0 and below.
+- Ore Surveyor: additional bonus-ore chance.
+- Vein Discipline: longer Haste after mining.
+- Mining Mastery: improves both Haste and bonus ore yield.
 
 Farming:
 
 - Farming Yield: crops and logs can drop extra block loot.
 - Replanter: crop blocks can auto-replant after breaking.
 - Harvest Flow: hoes can harvest nearby crops in one action.
-- Forester, Supply Gardener, Farming Mastery: progression/prestige anchors for farming and order gameplay.
+- Forester: more Farming XP and bonus-log chance.
+- Supply Gardener: more XP from crop harvesting.
+- Farming Mastery: further crop/log yield and animal-farming progression.
 
 Combat:
 
 - Combat Sustain: heals slightly after real kills.
-- Bounty Focus: bounty-hunter progression identity.
-- Duelist: PvP progression anchor for future tuning.
-- Escape Discipline: reserved for the timed escape utility.
-- Kingslayer Focus: reserved for high-heart/high-bounty target pressure.
+- Bounty Focus: extra Combat XP when fighting bounty targets, rate limited.
+- Duelist: up to +5% direct PvP damage.
+- Escape Discipline: prevents a critical hit and teleports up to 50 blocks away, with a 60-minute cooldown.
+- Kingslayer Focus: highlights nearby 20-heart or bounty targets up to 128 blocks and warns them.
 - Combat Mastery: combat prestige.
 
 Alchemy:
 
-- Alchemy perks currently focus on progression identity and future potion/consumable upgrades.
-- Golden apples, enchanted golden apples and XP bottles grant alchemy XP.
+- Consumed potions, golden apples and honey grant Alchemy XP.
+- Brewing Focus shortens an active brewing timer by up to 50% once per 30 seconds.
+- Infernal Resolve maintains Fire Resistance in the Nether.
+- Alchemy Grandmaster extends consumed potion durations by up to 25%.
 
 Enchanting:
 
 - Enchanting Mastery: speeds item-ability challenge progress.
-- Rune Sense, Table Attunement, Booksmith, Anvil Care, Enchanting Grandmaster: progression anchors for deeper enchanting systems.
+- Rune Sense and Table Attunement improve Bloodbound ability-enchant odds.
+- Anvil Care accelerates item-bound ability challenges.
+- Max Booksmith unlocks `/skills anvil`; max Enchanting Grandmaster unlocks `/skills enchant`.
 
 Economy:
 
@@ -44,7 +53,7 @@ Economy:
 
 ## Item Abilities
 
-Use `/abilities` to inspect the held item. Use `/abilities toggle`, the GUI toggle, or sneak + drop to enable or disable the held item's ability.
+Use `/abilities` to inspect the held item. Use `/abilities toggle`, the GUI toggle, or sneak + swap-hands to enable or disable the held item's ability.
 
 The right-side HUD automatically shows the relevant ability state while holding an ability item:
 
@@ -73,15 +82,15 @@ Current abilities:
 - Blood-Forged Edge: sword ability. Deals x2 damage while the attacker is below 33% of their actual maximum health. This scales naturally with Lifesteal hearts.
 - Echo Quiver: bow/crossbow ability. Calls lightning onto the entity hit by the projectile.
 - Storm Bind: trident ability. Creates an impact explosion when the thrown trident hits.
-- Aegis Guard: passive shield ability. Progresses from attacks blocked, absorbs configured damage, shows shield health, and recharges after its cooldown.
+- Aegis Guard: progresses only from attacks blocked with a shield. Once unlocked and enabled, manually activate it by sneak-right-clicking its item or using `/abilities activate`. It absorbs 100% of damage for its configured duration, then enters cooldown. Void damage is never absorbed.
 
 Default PvP cooldowns:
 
 - Blood-Forged Edge: 2 seconds.
 - Echo Quiver: 10 seconds.
 - Storm Bind: 15 seconds.
-- Aegis Guard recharge: 1800 seconds.
+- Aegis Guard: 12 seconds active, then 1800 seconds cooldown by default.
 
 Note on middle mouse:
 
-Paper does not reliably expose normal survival middle-mouse/pick-block as a standalone server-side click. The reliable no-command shortcut is sneak + drop; `/abilities toggle` and the `/abilities` GUI remain available.
+Paper does not reliably expose normal survival middle-mouse/pick-block as a standalone server-side click. The reliable toggle shortcut is sneak + swap-hands; `/abilities toggle` and the `/abilities` GUI remain available.

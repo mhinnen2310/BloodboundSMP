@@ -4,8 +4,8 @@
 
 - Zip: `BloodboundSMP-resourcepack.zip`
 - Source: `resourcepacks/BloodboundSMP`
-- Client pack format range for Paper/Minecraft 26.1.2: `85-99`
-- SHA1: `cadbbc3b0ab5d6b17512f6897c2929be2aadbecd`
+- Client pack format for Paper/Minecraft 26.1.2: `84`
+- SHA1: `b4bada05354852aa8e6e1e4efbc991b88f3a4f20`
 - Resource pack ID: `6f302d82-5e7a-4f4a-9cc9-26f1118b1dbd`
 
 CustomModelData:
@@ -13,14 +13,14 @@ CustomModelData:
 - Boss Shard: `NETHER_STAR`, CustomModelData `910001`
 - Corrupted Heart: `ECHO_SHARD`, CustomModelData `910002`
 
-The zip contains modern direct `bloodbound` item-model definitions, CustomModelData fallbacks and legacy model overrides. Normal Nether Stars and Echo Shards retain their vanilla model.
+The zip contains direct `bloodbound:boss_shard` and `bloodbound:corrupted_heart` item-model definitions plus CustomModelData fallbacks. RC2 writes both `item_model` and CustomModelData directly. Existing tagged items are migrated when their owner joins. Normal Nether Stars and Echo Shards retain their vanilla model.
 
 ## Local Test
 
 1. Start `start-resourcepack-host.bat` and leave it running.
 2. Keep these values in `server.properties`:
    - `resource-pack=http://127.0.0.1:8123/BloodboundSMP-resourcepack.zip`
-   - `resource-pack-sha1=cadbbc3b0ab5d6b17512f6897c2929be2aadbecd`
+   - `resource-pack-sha1=b4bada05354852aa8e6e1e4efbc991b88f3a4f20`
    - `resource-pack-id=6f302d82-5e7a-4f4a-9cc9-26f1118b1dbd`
    - `require-resource-pack=false`
 3. Restart the Minecraft server.

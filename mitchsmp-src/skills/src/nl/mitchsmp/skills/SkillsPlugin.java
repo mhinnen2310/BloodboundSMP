@@ -43,6 +43,7 @@ import org.bukkit.event.block.Action;
 import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.enchantment.EnchantItemEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
+import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityBreedEvent;
 import org.bukkit.event.entity.ProjectileHitEvent;
@@ -51,6 +52,7 @@ import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerItemConsumeEvent;
 import org.bukkit.event.world.LootGenerateEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
@@ -69,24 +71,40 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
     private static final int CATEGORY_COUNT = 6;
     private final Set<UUID> abilityBreaking = new HashSet<>();
     private final Map<UUID, Long> abilityToggleCooldowns = new HashMap<>();
+    private final Map<UUID, Long> bountyXpCooldowns = new HashMap<>();
+    private final Map<UUID, Long> kingslayerWarnings = new HashMap<>();
+    private final Set<UUID> kingslayerGlowing = new HashSet<>();
+    private final Map<UUID, Long> brewingBoostCooldowns = new HashMap<>();
     private final Random random = new Random();
     private PropertiesFile data;
     private NamespacedKey guideKey;
+    private NamespacedKey recoveryPreviewExpiryKey;
+    private boolean skillDataDirty;
 
     @Override
     public void onEnable() {
         data = new PropertiesFile(getDataFolder().toPath().resolve("skills.properties"));
         guideKey = new NamespacedKey(this, "mechanics_guide");
+        recoveryPreviewExpiryKey = new NamespacedKey(this, "recovery_preview_expiry");
         MitchSMP.registerService(SkillService.class, this);
         Bukkit.getPluginManager().registerEvents(this, this);
         command("skills");
         command("abilities");
         command("mechanics");
         Bukkit.getScheduler().runTaskTimer(this, this::mechanicsTip, 20L * 60L * 15L, 20L * 60L * 15L);
+        Bukkit.getScheduler().runTaskTimer(this, this::updateKingslayerTargets, 100L, 100L);
+        Bukkit.getScheduler().runTaskTimer(this, this::flushSkillData, 100L, 100L);
+        Bukkit.getScheduler().runTaskTimer(this, this::applyPassiveSkillEffects, 100L, 100L);
     }
 
     @Override
     public void onDisable() {
+        for (UUID id : new HashSet<>(kingslayerGlowing)) {
+            Player player = Bukkit.getPlayer(id);
+            if (player != null) {
+                setGlowing(player, false);
+            }
+        }
         data.save();
     }
 
@@ -109,11 +127,12 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         String name = command.getName().toLowerCase(Locale.ROOT);
         if (name.equals("skills")) {
-            if (!MitchSMP.permissions().has(sender, "mitchsmp.skills.admin")) {
-                return List.of();
-            }
+            boolean admin = MitchSMP.permissions().has(sender, "mitchsmp.skills.admin");
             if (args.length == 1) {
-                return Tab.complete(args[0], "admin");
+                return admin ? Tab.complete(args[0], "enchant", "anvil", "admin") : Tab.complete(args[0], "enchant", "anvil");
+            }
+            if (!admin) {
+                return List.of();
             }
             if (args.length == 2 && args[0].equalsIgnoreCase("admin")) {
                 return Tab.complete(args[1], "addxp", "points", "reset");
@@ -128,7 +147,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         if (name.equals("abilities")) {
             boolean admin = MitchSMP.permissions().has(sender, "mitchsmp.skills.admin");
             if (args.length == 1) {
-                List<String> options = new ArrayList<>(List.of("toggle", "clean"));
+                List<String> options = new ArrayList<>(List.of("toggle", "activate", "clean"));
                 if (admin) {
                     options.addAll(List.of("grant", "complete", "testkit", "config"));
                 }
@@ -148,7 +167,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
                 }
                 Ability ability = Ability.from(args[1]);
                 if (ability == Ability.AEGIS_GUARD) {
-                    return Tab.complete(args[2], "required", "enabled", "cooldown", "duration", "hits", "mitigation");
+                    return Tab.complete(args[2], "required", "enabled", "cooldown", "duration");
                 }
                 if (ability == Ability.BLOOD_FORGED_EDGE) {
                     return Tab.complete(args[2], "required", "enabled", "cooldown", "duration");
@@ -172,6 +191,9 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         if (!(sender instanceof Player player)) {
             Text.msg(sender, "&cPlayers only.");
             return true;
+        }
+        if (args.length > 0 && args[0].matches("(?i)enchant|anvil")) {
+            return openPortableStation(player, args[0]);
         }
         if (!MitchSMP.permissions().has(player, "mitchsmp.skills.use")) {
             Text.msg(player, "&cYou do not have permission.");
@@ -201,6 +223,9 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         if (!MitchSMP.permissions().has(player, "mitchsmp.skills.use")) {
             Text.msg(player, "&cYou do not have permission.");
             return true;
+        }
+        if (args.length > 0 && args[0].equalsIgnoreCase("activate")) {
+            return activateHeldAbility(player);
         }
         if (args.length > 0 && args[0].equalsIgnoreCase("clean")) {
             int cleaned = cleanAbilityLore(player);
@@ -350,7 +375,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         if (!data.contains("seen." + id)) {
             data.set("seen." + id, Instant.now().toString());
             data.save();
-            Bukkit.getScheduler().runTaskLater(this, () -> Text.msg(event.getPlayer(), "&aTip: gebruik &f/mechanics &afor an overview of all MitchSMP systemen."), 80L);
+            Bukkit.getScheduler().runTaskLater(this, () -> Text.msg(event.getPlayer(), "&aTip: use &f/mechanics &afor an overview of every Bloodbound system."), 80L);
         }
         Bukkit.getScheduler().runTaskLater(this, () -> cleanAbilityLore(event.getPlayer()), 40L);
     }
@@ -372,11 +397,16 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         boolean enchantedUse = hasKnownEnchant(tool);
 
         if (isMiningBlock(block)) {
-            addSkillXp(player, Category.MINING, block.name().contains("ORE") ? 8 : 2);
+            int miningXp = block.name().contains("ORE") ? 8 : 2;
+            if (event.getBlock().getLocation().getBlockY() <= 0) {
+                miningXp += Math.max(0, perk(player, Perk.DEEP_MINER) / 2);
+            }
+            addSkillXp(player, Category.MINING, miningXp);
             applyMiningPerks(player, event.getBlock(), tool);
         }
         if (isFarmBlock(block) || isLog(block)) {
-            addSkillXp(player, Category.FARMING, isLog(block) ? 3 : 5);
+            int farmingXp = isLog(block) ? 3 + perk(player, Perk.FORESTER) / 5 : 5 + perk(player, Perk.SUPPLY_GARDENER) / 4;
+            addSkillXp(player, Category.FARMING, farmingXp);
             applyFarmingPerks(player, event.getBlock(), tool);
         }
         if (enchantedUse) {
@@ -406,19 +436,30 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         if (event.isCancelled()) {
             return;
         }
-        if (event.getEntity() instanceof Player defender && !restricted(defender)) {
-            handleAegisBlock(defender, event);
-        }
         Player attacker = attacker(event.getDamager());
         if (attacker == null || restricted(attacker)) {
             return;
+        }
+        if (event.getEntity() instanceof Player target) {
+            int duelist = perk(attacker, Perk.DUELIST);
+            if (duelist > 0) {
+                multiplyDamage(event, 1.0D + Math.min(0.05D, duelist * 0.005D));
+            }
+            if (MitchSMP.bounties() != null && MitchSMP.bounties().getBounty(target.getUniqueId()) > 0.0D) {
+                long now = System.currentTimeMillis();
+                if (now - bountyXpCooldowns.getOrDefault(attacker.getUniqueId(), 0L) >= 10_000L) {
+                    bountyXpCooldowns.put(attacker.getUniqueId(), now);
+                    addSkillXp(attacker, Category.COMBAT, 2 + perk(attacker, Perk.BOUNTY_FOCUS));
+                }
+            }
+            tryEscape(target, event);
         }
         ItemStack tool = combatItem(attacker, event.getDamager());
         Ability ability = abilityFor(tool);
         if (ability == null) {
             return;
         }
-        AbilityState state = progress(attacker, tool, ability, state(tool, ability), 1 + perk(attacker, Perk.ENCHANTING_MASTERY) / 5);
+        AbilityState state = progress(attacker, tool, ability, state(tool, ability), abilityChallengeGain(attacker, 1));
         if (!state.unlocked() || !state.enabled() || !abilityGloballyEnabled(ability)) {
             return;
         }
@@ -427,6 +468,15 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             attacker.getWorld().spawnParticle(org.bukkit.Particle.CRIT, attacker.getLocation(), 6, 0.25D, 0.35D, 0.25D, 0.02D);
             attacker.sendActionBar(Text.color("&4Blood-Forged Edge &6ACTIVE &8| &cx2 damage"));
         }
+    }
+
+    @EventHandler
+    public void onAnyDamage(EntityDamageEvent event) {
+        if (event.isCancelled() || !(event.getEntity() instanceof Player defender) || restricted(defender)
+            || event.getCause() == EntityDamageEvent.DamageCause.VOID) {
+            return;
+        }
+        handleAegisBlock(defender, event);
     }
 
     @EventHandler
@@ -440,7 +490,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         if (ability == null) {
             return;
         }
-        AbilityState state = progress(player, tool, ability, state(tool, ability), 1 + perk(player, Perk.ENCHANTING_MASTERY) / 5);
+        AbilityState state = progress(player, tool, ability, state(tool, ability), abilityChallengeGain(player, 1));
         if (!state.unlocked() || !state.enabled() || !abilityGloballyEnabled(ability)) {
             return;
         }
@@ -470,7 +520,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         ItemStack weapon = killer.getInventory().getItemInMainHand();
         Ability ability = abilityFor(weapon);
         if (ability != null) {
-            AbilityState state = progress(killer, weapon, ability, state(weapon, ability), 1 + perk(killer, Perk.ENCHANTING_MASTERY) / 5);
+            AbilityState state = progress(killer, weapon, ability, state(weapon, ability), abilityChallengeGain(killer, 1));
             if (ability == Ability.BLOOD_FORGED_EDGE && state.unlocked() && state.enabled() && abilityGloballyEnabled(ability)) {
                 heal(killer, 1.0D + perk(killer, Perk.COMBAT_SUSTAIN) * 0.10D);
             }
@@ -511,19 +561,53 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         if (item == null || item.getType() == Material.AIR) {
             return;
         }
-        if (item.getType() == Material.GOLDEN_APPLE || item.getType() == Material.ENCHANTED_GOLDEN_APPLE || item.getType() == Material.EXPERIENCE_BOTTLE) {
-            addSkillXp(player, Category.ALCHEMY, item.getType() == Material.ENCHANTED_GOLDEN_APPLE ? 25 : 5);
+        if (event.getClickedBlock() != null && event.getClickedBlock().getType().name().equals("BREWING_STAND")) {
+            accelerateBrewing(player, event.getClickedBlock());
         }
         Ability ability = abilityFor(item);
         if (ability == null) {
             return;
         }
         AbilityState state = state(item, ability);
+        if (ability == Ability.AEGIS_GUARD && state.unlocked() && state.enabled() && abilityGloballyEnabled(ability)
+            && isSneaking(player) && isRightClick(event.getAction())) {
+            event.setCancelled(true);
+            activateAegis(player, item);
+            return;
+        }
         if (ability == Ability.HARVEST_LORD && state.unlocked() && state.enabled() && abilityGloballyEnabled(ability) && isRightClick(event.getAction())) {
             plantSeedPatch(player, event.getClickedBlock());
             event.setCancelled(true);
         }
         writeLore(item, ability, state);
+    }
+
+    @EventHandler
+    public void onConsume(PlayerItemConsumeEvent event) {
+        Player player = event.getPlayer();
+        ItemStack item = event.getItem();
+        if (player == null || item == null || restricted(player)) {
+            return;
+        }
+        String type = item.getType().name();
+        int base = type.equals("ENCHANTED_GOLDEN_APPLE") ? 30
+            : type.equals("GOLDEN_APPLE") ? 10
+            : type.contains("POTION") ? 8
+            : type.equals("HONEY_BOTTLE") ? 4 : 0;
+        if (base <= 0) {
+            return;
+        }
+        int bonus = perk(player, Perk.ALCHEMY_MASTERY) / 4;
+        if (type.contains("APPLE")) {
+            bonus += perk(player, Perk.APPLE_LORE) / 2;
+        }
+        if (type.equals("ENCHANTED_GOLDEN_APPLE") || type.contains("POTION")) {
+            bonus += perk(player, Perk.RELIC_ALCHEMY) / 2;
+        }
+        addSkillXp(player, Category.ALCHEMY, base + bonus);
+        if (type.contains("POTION") && perk(player, Perk.ALCHEMY_GRANDMASTER) > 0) {
+            Bukkit.getScheduler().runTaskLater(this, () -> extendActivePotionEffects(player), 2L);
+        }
     }
 
     @EventHandler
@@ -569,6 +653,8 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         }
         chance += Math.min(3.0D, Math.max(0, effectiveLevel - minLevel) * 0.15D);
         chance += Math.min(2.0D, perk(player, Perk.ENCHANTING_MASTERY) * 0.10D);
+        chance += Math.min(2.0D, perk(player, Perk.RUNE_SENSE) * 0.20D);
+        chance += Math.min(3.5D, perk(player, Perk.TABLE_ATTUNEMENT) * 0.35D);
         if (random.nextDouble() * 100.0D > chance) {
             return;
         }
@@ -897,7 +983,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
                 String details = ability == Ability.BLOOD_FORGED_EDGE
                     ? " &7duration=&f" + formatSeconds(data.getDouble("ability.blood_forged_edge.active_duration_seconds", 8.0D)) + "s"
                     : ability == Ability.AEGIS_GUARD
-                        ? " &7duration=&f" + formatSeconds(data.getDouble("ability.aegis_guard.active_duration_seconds", 12.0D)) + "s &7hits=&f" + data.getInt("ability.aegis_guard.hits_before_cooldown", 5) + " &7mitigation=&f" + formatSeconds(data.getDouble("ability.aegis_guard.mitigation_percent", 35.0D)) + "%"
+                        ? " &7duration=&f" + formatSeconds(data.getDouble("ability.aegis_guard.active_duration_seconds", 12.0D)) + "s &7absorption=&f100%"
                         : "";
                 Text.msg(sender, "&d" + ability.id() + " &7required=&f" + required(ability) + " &7enabled=&f" + abilityGloballyEnabled(ability) + cooldown + details);
             }
@@ -1000,7 +1086,19 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
                 player.sendTitle(Text.color("&6" + category.display() + " Level " + newLevel), Text.color("&f+" + gained + " skillpoint"), 10, 50, 15);
             }
         }
-        data.save();
+        if (newLevel > oldLevel) {
+            data.save();
+            skillDataDirty = false;
+        } else {
+            skillDataDirty = true;
+        }
+    }
+
+    private void flushSkillData() {
+        if (skillDataDirty) {
+            data.save();
+            skillDataDirty = false;
+        }
     }
 
     private int levelFromXp(int xp) {
@@ -1104,17 +1202,24 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
     private void applyMiningPerks(Player player, Block block, ItemStack tool) {
         int speed = perk(player, Perk.MINING_SPEED);
         if (speed > 0) {
-            player.addPotionEffect(new PotionEffect(PotionEffectType.HASTE, 120, Math.min(2, speed / 5), false, false, true));
+            int discipline = perk(player, Perk.VEIN_DISCIPLINE);
+            int mastery = perk(player, Perk.MINING_MASTERY);
+            player.addPotionEffect(new PotionEffect(PotionEffectType.HASTE, 120 + discipline * 10, Math.min(3, (speed + mastery) / 6), false, false, true));
         }
         int yield = perk(player, Perk.MINING_YIELD);
-        if (yield > 0 && block.getType().name().contains("ORE") && Math.random() * 100.0D < yield * 2.0D) {
+        double yieldChance = yield * 2.0D + perk(player, Perk.ORE_SURVEYOR) + perk(player, Perk.MINING_MASTERY) * 2.0D;
+        if (yieldChance > 0.0D && block.getType().name().contains("ORE") && Math.random() * 100.0D < Math.min(75.0D, yieldChance)) {
             player.getWorld().dropItemNaturally(block.getLocation(), new ItemStack(block.getType()));
         }
     }
 
     private void applyFarmingPerks(Player player, Block block, ItemStack tool) {
         int yield = perk(player, Perk.FARMING_YIELD);
-        if (yield > 0 && Math.random() * 100.0D < yield * 3.5D) {
+        double yieldChance = yield * 3.5D + perk(player, Perk.FARMING_MASTERY) * 2.5D;
+        if (block.getType().name().contains("LOG")) {
+            yieldChance += perk(player, Perk.FORESTER) * 1.5D;
+        }
+        if (yieldChance > 0.0D && Math.random() * 100.0D < Math.min(95.0D, yieldChance)) {
             player.getWorld().dropItemNaturally(block.getLocation(), new ItemStack(block.getType()));
         }
         int replanter = perk(player, Perk.REPLANTER);
@@ -1133,6 +1238,159 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             int radius = flow >= 8 ? 2 : 1;
             int cap = Math.min(20, 3 + flow * 2);
             breakArea(player, block, tool, radius, this::isCropLike, cap);
+        }
+    }
+
+    private boolean openPortableStation(Player player, String type) {
+        boolean anvil = type.equalsIgnoreCase("anvil");
+        Perk required = anvil ? Perk.BOOKSMITH : Perk.ENCHANTING_GRANDMASTER;
+        if (perk(player, required) < required.max()) {
+            Text.msg(player, "&cPortable " + type.toLowerCase(Locale.ROOT) + " requires maxed &f" + required.display() + "&c.");
+            return true;
+        }
+        String method = anvil ? "openAnvil" : "openEnchanting";
+        try {
+            player.getClass().getMethod(method, Location.class, boolean.class).invoke(player, player.getLocation(), true);
+            player.sendActionBar(Text.color("&5" + required.display() + " &8| &aPortable " + type.toLowerCase(Locale.ROOT) + " opened"));
+        } catch (ReflectiveOperationException | RuntimeException exception) {
+            Text.msg(player, "&cPortable " + type.toLowerCase(Locale.ROOT) + " is unavailable on this server build.");
+            getLogger().warning("Could not open portable " + type + " for " + player.getName() + ": " + exception.getMessage());
+        }
+        return true;
+    }
+
+    private void accelerateBrewing(Player player, Block block) {
+        int level = perk(player, Perk.BREWING_FOCUS);
+        long now = System.currentTimeMillis();
+        if (level <= 0 || now - brewingBoostCooldowns.getOrDefault(player.getUniqueId(), 0L) < 30_000L) {
+            return;
+        }
+        try {
+            Object state = block.getClass().getMethod("getState").invoke(block);
+            int current = ((Number) state.getClass().getMethod("getBrewingTime").invoke(state)).intValue();
+            if (current <= 0) {
+                return;
+            }
+            int reduced = Math.max(1, (int) Math.round(current * (1.0D - Math.min(0.50D, level * 0.05D))));
+            state.getClass().getMethod("setBrewingTime", int.class).invoke(state, reduced);
+            state.getClass().getMethod("update").invoke(state);
+            brewingBoostCooldowns.put(player.getUniqueId(), now);
+            player.sendActionBar(Text.color("&5Brewing Focus &8| &a" + (current - reduced) + " ticks saved"));
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+        }
+    }
+
+    private void extendActivePotionEffects(Player player) {
+        int level = perk(player, Perk.ALCHEMY_GRANDMASTER);
+        if (level <= 0) {
+            return;
+        }
+        try {
+            Object raw = player.getClass().getMethod("getActivePotionEffects").invoke(player);
+            if (!(raw instanceof Iterable<?> effects)) {
+                return;
+            }
+            for (Object effect : effects) {
+                PotionEffectType type = (PotionEffectType) effect.getClass().getMethod("getType").invoke(effect);
+                int duration = ((Number) effect.getClass().getMethod("getDuration").invoke(effect)).intValue();
+                int amplifier = ((Number) effect.getClass().getMethod("getAmplifier").invoke(effect)).intValue();
+                boolean ambient = (Boolean) effect.getClass().getMethod("isAmbient").invoke(effect);
+                boolean particles = (Boolean) effect.getClass().getMethod("hasParticles").invoke(effect);
+                boolean icon = (Boolean) effect.getClass().getMethod("hasIcon").invoke(effect);
+                int extended = (int) Math.round(duration * (1.0D + level * 0.05D));
+                player.addPotionEffect(new PotionEffect(type, extended, amplifier, ambient, particles, icon));
+            }
+            player.sendActionBar(Text.color("&5Alchemy Grandmaster &8| &aPotion duration extended"));
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+        }
+    }
+
+    private void applyPassiveSkillEffects() {
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            if (restricted(player) || player.getWorld() == null || player.getWorld().getEnvironment() != org.bukkit.World.Environment.NETHER) {
+                continue;
+            }
+            int resolve = perk(player, Perk.INFERNAL_RESOLVE);
+            if (resolve > 0) {
+                player.addPotionEffect(new PotionEffect(PotionEffectType.FIRE_RESISTANCE, 140, 0, false, false, true));
+            }
+        }
+    }
+
+    private void tryEscape(Player defender, EntityDamageByEntityEvent event) {
+        int level = perk(defender, Perk.ESCAPE_DISCIPLINE);
+        if (level <= 0 || data.getLong(aegisActiveKey(defender.getUniqueId()), 0L) > System.currentTimeMillis()) {
+            return;
+        }
+        AttributeInstance attribute = defender.getAttribute(Attribute.MAX_HEALTH);
+        double maxHealth = attribute == null ? 20.0D : Math.max(1.0D, attribute.getBaseValue());
+        if (defender.getHealth() - damageAmount(event) > maxHealth * 0.20D) {
+            return;
+        }
+        String key = "perk.escape_discipline.cooldown." + profileKey(defender.getUniqueId());
+        long now = System.currentTimeMillis();
+        if (data.getLong(key, 0L) > now) {
+            return;
+        }
+        Location origin = defender.getLocation();
+        Location attackerLocation = event.getDamager() == null ? null : event.getDamager().getLocation();
+        double dx = attackerLocation == null ? 1.0D : origin.getX() - attackerLocation.getX();
+        double dz = attackerLocation == null ? 1.0D : origin.getZ() - attackerLocation.getZ();
+        double length = Math.max(0.01D, Math.sqrt(dx * dx + dz * dz));
+        double distance = 10.0D + level * 4.0D;
+        Location destination = new Location(origin.getWorld(), origin.getX() + dx / length * distance, origin.getY() + 2.0D, origin.getZ() + dz / length * distance, origin.getYaw(), origin.getPitch());
+        multiplyDamage(event, 0.0D);
+        defender.teleport(destination);
+        defender.setFallDistance(0.0F);
+        defender.setNoDamageTicks(60);
+        data.set(key, now + 60L * 60L * 1000L);
+        data.save();
+        if (origin.getWorld() != null) {
+            origin.getWorld().createExplosion(origin, 0.0F, false, false);
+            origin.getWorld().spawnParticle(org.bukkit.Particle.EXPLOSION, origin, 1, 0.0D, 0.0D, 0.0D, 0.0D);
+        }
+        defender.sendActionBar(Text.color("&5Escape Discipline &8| &aTriggered &8| &c60m cooldown"));
+    }
+
+    private void updateKingslayerTargets() {
+        for (UUID id : new HashSet<>(kingslayerGlowing)) {
+            Player target = Bukkit.getPlayer(id);
+            if (target != null) {
+                setGlowing(target, false);
+            }
+        }
+        kingslayerGlowing.clear();
+        long now = System.currentTimeMillis();
+        for (Player hunter : Bukkit.getOnlinePlayers()) {
+            int level = perk(hunter, Perk.KINGSLAYER_FOCUS);
+            if (level <= 0 || restricted(hunter)) {
+                continue;
+            }
+            double range = Math.min(128.0D, 32.0D + level * 9.6D);
+            for (Player target : Bukkit.getOnlinePlayers()) {
+                if (target.equals(hunter) || restricted(target) || target.getWorld() == null || !target.getWorld().equals(hunter.getWorld())
+                    || target.getLocation().distanceSquared(hunter.getLocation()) > range * range) {
+                    continue;
+                }
+                boolean valuable = MitchSMP.hearts() != null && MitchSMP.hearts().getHearts(target.getUniqueId()) >= 20
+                    || MitchSMP.bounties() != null && MitchSMP.bounties().getBounty(target.getUniqueId()) > 0.0D;
+                if (!valuable) {
+                    continue;
+                }
+                setGlowing(target, true);
+                kingslayerGlowing.add(target.getUniqueId());
+                if (now - kingslayerWarnings.getOrDefault(target.getUniqueId(), 0L) >= 5L * 60L * 1000L) {
+                    kingslayerWarnings.put(target.getUniqueId(), now);
+                    target.sendActionBar(Text.color("&4A Kingslayer hunter has detected you within &f" + Math.round(range) + " blocks&4."));
+                }
+            }
+        }
+    }
+
+    private void setGlowing(Player player, boolean glowing) {
+        try {
+            player.getClass().getMethod("setGlowing", boolean.class).invoke(player, glowing);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
         }
     }
 
@@ -1412,11 +1670,57 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
     }
 
     private Ability abilityFor(ItemStack item) {
+        if (recoveryPreviewExpired(item)) {
+            return null;
+        }
         Ability ability = baseAbilityFor(item);
         if (ability == null || !hasAwakenedAbility(item, ability)) {
             return null;
         }
         return ability;
+    }
+
+    @Override
+    public List<ItemStack> createRecoveryAbilitySamples(UUID playerId) {
+        long expiry = System.currentTimeMillis() + 30L * 60L * 1000L;
+        return List.of(
+            recoveryAbilityItem(Material.STONE_PICKAXE, Ability.GODS_DRILL, "&7Recovery Drill Trial", expiry),
+            recoveryAbilityItem(Material.SHIELD, Ability.AEGIS_GUARD, "&7Recovery Aegis Trial", expiry)
+        );
+    }
+
+    private ItemStack recoveryAbilityItem(Material material, Ability ability, String name, long expiry) {
+        ItemStack item = new ItemStack(material);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.setDisplayName(Text.color(name));
+            meta.getPersistentDataContainer().set(recoveryPreviewExpiryKey, PersistentDataType.STRING, String.valueOf(expiry));
+            item.setItemMeta(meta);
+        }
+        writeLore(item, ability, new AbilityState(required(ability), true, true));
+        meta = item.getItemMeta();
+        if (meta != null) {
+            List<String> lore = meta.getLore() == null ? new ArrayList<>() : new ArrayList<>(meta.getLore());
+            lore.add(Text.color("&cTrial expires in 30 minutes."));
+            meta.setLore(lore);
+            item.setItemMeta(meta);
+        }
+        return item;
+    }
+
+    private boolean recoveryPreviewExpired(ItemStack item) {
+        if (item == null || !item.hasItemMeta() || item.getItemMeta() == null) {
+            return false;
+        }
+        String raw = item.getItemMeta().getPersistentDataContainer().get(recoveryPreviewExpiryKey, PersistentDataType.STRING);
+        if (raw == null || raw.isBlank()) {
+            return false;
+        }
+        try {
+            return System.currentTimeMillis() >= Long.parseLong(raw);
+        } catch (NumberFormatException exception) {
+            return true;
+        }
     }
 
     private Ability baseAbilityFor(ItemStack item) {
@@ -1657,9 +1961,46 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         writeLore(item, ability, toggled);
         Text.msg(player, toggled.enabled() ? "&aAbility enabled." : "&cAbility disabled.");
         player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.28F, toggled.enabled() ? 1.45F : 0.85F);
-        if (toggled.enabled()) {
-            abilityActivationEffects(player, ability);
+    }
+
+    private boolean activateHeldAbility(Player player) {
+        ItemStack item = player.getInventory().getItemInMainHand();
+        Ability ability = abilityFor(item);
+        if (ability == null) {
+            item = player.getInventory().getItemInOffHand();
+            ability = abilityFor(item);
         }
+        if (ability != Ability.AEGIS_GUARD) {
+            Text.msg(player, "&cHold an unlocked Aegis Guard item to activate it.");
+            return true;
+        }
+        activateAegis(player, item);
+        return true;
+    }
+
+    private void activateAegis(Player player, ItemStack shield) {
+        AbilityState state = state(shield, Ability.AEGIS_GUARD);
+        if (!state.unlocked() || !state.enabled() || !abilityGloballyEnabled(Ability.AEGIS_GUARD)) {
+            player.sendActionBar(Text.color("&5Aegis Guard &cLOCKED OR DISABLED"));
+            return;
+        }
+        long now = System.currentTimeMillis();
+        long activeUntil = data.getLong(aegisActiveKey(player.getUniqueId()), 0L);
+        if (activeUntil > now) {
+            player.sendActionBar(Text.color("&5Aegis Guard &6ACTIVE &7" + Math.max(1L, (activeUntil - now + 999L) / 1000L) + "s"));
+            return;
+        }
+        long remaining = cooldownRemainingMillis(player.getUniqueId(), Ability.AEGIS_GUARD);
+        if (remaining > 0L) {
+            player.sendActionBar(Text.color("&5Aegis Guard &cCOOLDOWN &7" + Math.max(1L, (remaining + 999L) / 1000L) + "s"));
+            return;
+        }
+        long duration = Math.max(500L, Math.round(data.getDouble("ability.aegis_guard.active_duration_seconds", 12.0D) * 1000.0D));
+        long until = now + duration;
+        data.set(aegisActiveKey(player.getUniqueId()), until);
+        data.set(cooldownKey(player.getUniqueId(), Ability.AEGIS_GUARD), until + Math.round(cooldownSeconds(Ability.AEGIS_GUARD) * 1000.0D));
+        data.save();
+        abilityActivationEffects(player, Ability.AEGIS_GUARD);
     }
 
     private boolean isRightClick(Action action) {
@@ -1684,12 +2025,16 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
 
     private int challengeGain(Player player, Ability ability, Material block, Entity entity) {
         return switch (ability) {
-            case GODS_DRILL -> isMiningBlock(block) ? 1 + perk(player, Perk.ENCHANTING_MASTERY) / 5 : 0;
-            case ANCIENT_TIMBER -> isLog(block) ? 1 : 0;
-            case EARTHSHAPER -> isShovelBlock(block) ? 1 : 0;
-            case HARVEST_LORD -> isFarmBlock(block) ? 1 : 0;
+            case GODS_DRILL -> isMiningBlock(block) ? abilityChallengeGain(player, 1) : 0;
+            case ANCIENT_TIMBER -> isLog(block) ? abilityChallengeGain(player, 1) : 0;
+            case EARTHSHAPER -> isShovelBlock(block) ? abilityChallengeGain(player, 1) : 0;
+            case HARVEST_LORD -> isFarmBlock(block) ? abilityChallengeGain(player, 1) : 0;
             default -> 0;
         };
+    }
+
+    private int abilityChallengeGain(Player player, int base) {
+        return Math.max(1, base + perk(player, Perk.ENCHANTING_MASTERY) / 5 + perk(player, Perk.ANVIL_CARE) / 5);
     }
 
     private int required(Ability ability) {
@@ -1935,57 +2280,40 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         }
     }
 
-    private void handleAegisBlock(Player defender, EntityDamageByEntityEvent event) {
+    private void handleAegisBlock(Player defender, EntityDamageEvent event) {
         ItemStack shield = aegisShield(defender);
         Ability ability = abilityFor(shield);
         if (ability != Ability.AEGIS_GUARD) {
             return;
         }
-        AbilityState state = progress(defender, shield, ability, state(shield, ability), 1 + perk(defender, Perk.ENCHANTING_MASTERY) / 8);
+        AbilityState state = state(shield, ability);
+        if (!state.unlocked() && event instanceof EntityDamageByEntityEvent && isPlayerBlocking(defender)) {
+            state = progress(defender, shield, ability, state, abilityChallengeGain(defender, 1));
+        }
         if (state.unlocked() && state.enabled() && abilityGloballyEnabled(ability)) {
-            double activeSeconds = Math.max(0.5D, data.getDouble("ability.aegis_guard.active_duration_seconds", 12.0D));
-            int maxHits = Math.max(1, data.getInt("ability.aegis_guard.hits_before_cooldown", 5));
-            String activeKey = "ability.aegis_guard.active_until." + profileKey(defender.getUniqueId());
-            String hitsKey = "ability.aegis_guard.hits_remaining." + profileKey(defender.getUniqueId());
-            String cooldownKey = cooldownKey(defender.getUniqueId(), ability);
             long now = System.currentTimeMillis();
-            long cooldownUntil = data.getLong(cooldownKey, 0L);
-            long activeUntil = data.getLong(activeKey, 0L);
-            int hits = data.getInt(hitsKey, 0);
-            if ((activeUntil > 0L && now >= activeUntil) || hits <= 0 && activeUntil > 0L) {
-                data.set(activeKey, 0L);
-                data.set(hitsKey, 0);
-                data.set(cooldownKey, now + Math.round(cooldownSeconds(ability) * 1000.0D));
-                activeUntil = 0L;
-                cooldownUntil = data.getLong(cooldownKey, 0L);
-            }
-            if (activeUntil <= now && now < cooldownUntil) {
-                long seconds = Math.max(1L, (cooldownUntil - now) / 1000L);
-                defender.sendActionBar(Text.color("&8Aegis Guard &cCOOLDOWN &7" + seconds + "s"));
+            long activeUntil = data.getLong(aegisActiveKey(defender.getUniqueId()), 0L);
+            if (activeUntil <= now) {
                 return;
             }
-            if (activeUntil <= now) {
-                activeUntil = now + Math.round(activeSeconds * 1000.0D);
-                hits = maxHits;
-                data.set(activeKey, activeUntil);
-                abilityActivationEffects(defender, ability);
-            }
-            double mitigationPercent = Math.max(0.0D, Math.min(95.0D, data.getDouble("ability.aegis_guard.mitigation_percent", 35.0D)));
-            multiplyDamage(event, 1.0D - mitigationPercent / 100.0D);
-            hits = Math.max(0, hits - 1);
-            data.set(hitsKey, hits);
-            if (hits <= 0) {
-                data.set(activeKey, 0L);
-                long cooldown = Math.max(0L, Math.round(cooldownSeconds(ability) * 1000.0D));
-                data.set(cooldownKey, now + cooldown);
-                defender.sendActionBar(Text.color("&8Aegis Guard &cDEPLETED"));
-            } else {
-                long seconds = Math.max(1L, (activeUntil - now) / 1000L);
-                defender.sendActionBar(Text.color("&8Aegis Guard &bACTIVE &7" + hits + "/" + maxHits + " hits | " + seconds + "s"));
-            }
-            data.save();
+            event.setCancelled(true);
+            long seconds = Math.max(1L, (activeUntil - now + 999L) / 1000L);
+            defender.sendActionBar(Text.color("&5Aegis Guard &bACTIVE &8| &f100% absorbed &8| &7" + seconds + "s"));
             defender.setNoDamageTicks(10);
             defender.getWorld().spawnParticle(org.bukkit.Particle.TOTEM_OF_UNDYING, defender.getLocation(), 8, 0.35D, 0.45D, 0.35D, 0.02D);
+        }
+    }
+
+    private String aegisActiveKey(UUID playerId) {
+        return "ability.aegis_guard.active_until." + profileKey(playerId);
+    }
+
+    private boolean isPlayerBlocking(Player player) {
+        try {
+            Object value = player.getClass().getMethod("isBlocking").invoke(player);
+            return value instanceof Boolean blocking && blocking;
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return false;
         }
     }
 
@@ -2310,35 +2638,35 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
     private enum Perk {
         MINING_SPEED("mining_speed", "Mining Speed", Category.MINING, Material.DIAMOND_PICKAXE, 19, 1, 20, "Effect: frequent Haste while mining so long sessions feel faster.|Per tier: stronger and more reliable mining speed boosts."),
         MINING_YIELD("mining_yield", "Mining Yield", Category.MINING, Material.DIAMOND_ORE, 20, 5, 25, "Effect: ore blocks can drop an extra ore block on break.|Per tier: +2% bonus-drop chance, max +50%."),
-        DEEP_MINER("deep_miner", "Deep Miner", Category.MINING, Material.DEEPSLATE_DIAMOND_ORE, 21, 15, 15, "Effect: more XP value from long deep-mining sessions.|Per tier: this is a progression perk, not a direct drop multiplier yet."),
-        ORE_SURVEYOR("ore_surveyor", "Ore Surveyor", Category.MINING, Material.COMPASS, 22, 25, 10, "Effect: future ore-route utility anchor.|Per tier: currently grants visible progression and prestige."),
-        VEIN_DISCIPLINE("vein_discipline", "Vein Discipline", Category.MINING, Material.IRON_PICKAXE, 23, 40, 10, "Effect: supports big mining grinds and future vein perks.|Per tier: progression and prestige today."),
-        MINING_MASTERY("mining_mastery", "Mining Mastery", Category.MINING, Material.NETHERITE_PICKAXE, 24, 75, 5, "Effect: endgame mining prestige.|Per tier: shows commitment while direct boosts come from earlier mining perks."),
+        DEEP_MINER("deep_miner", "Deep Miner", Category.MINING, Material.DEEPSLATE_DIAMOND_ORE, 21, 15, 15, "Effect: grants bonus Mining XP at Y 0 and below.|Per tiers: up to +7 XP for every deep-mined block."),
+        ORE_SURVEYOR("ore_surveyor", "Ore Surveyor", Category.MINING, Material.COMPASS, 22, 25, 10, "Effect: improves the chance that ore produces a bonus ore block.|Per tier: +1% bonus ore chance."),
+        VEIN_DISCIPLINE("vein_discipline", "Vein Discipline", Category.MINING, Material.IRON_PICKAXE, 23, 40, 10, "Effect: extends the Haste supplied by Mining Speed.|Per tier: +0.5 seconds of Haste after mining."),
+        MINING_MASTERY("mining_mastery", "Mining Mastery", Category.MINING, Material.NETHERITE_PICKAXE, 24, 75, 5, "Effect: strengthens Haste and bonus ore yield.|Per tier: +2% bonus ore chance and contributes to Haste level."),
         FARMING_YIELD("farming_yield", "Farming Yield", Category.FARMING, Material.WHEAT, 21, 1, 25, "Effect: crops and logs can drop extra block loot.|Per tier: +3.5% bonus-drop chance, max 87.5%."),
-        FORESTER("forester", "Forester", Category.FARMING, Material.OAK_LOG, 22, 8, 15, "Effect: wood-gathering progression for builders.|Per tier: prestige and future tree utility."),
+        FORESTER("forester", "Forester", Category.FARMING, Material.OAK_LOG, 22, 8, 15, "Effect: logs grant more Farming XP and can duplicate.|Per tier: extra XP plus +1.5% bonus-log chance."),
         REPLANTER("replanter", "Replanter", Category.FARMING, Material.CARROT, 23, 15, 10, "Effect: broken crop blocks can auto-replant.|Per tier: higher replant chance, up to 95%."),
         HARVEST_FLOW("harvest_flow", "Harvest Flow", Category.FARMING, Material.GOLDEN_HOE, 24, 25, 10, "Effect: hoes harvest nearby crops in one action.|Per tier: more crops cleared per click, radius grows near max."),
-        SUPPLY_GARDENER("supply_gardener", "Supply Gardener", Category.FARMING, Material.HAY_BLOCK, 25, 40, 10, "Effect: supports farming resource-order gameplay.|Per tier: progression hook for order-focused players."),
-        FARMING_MASTERY("farming_mastery", "Farming Mastery", Category.FARMING, Material.NETHERITE_HOE, 26, 75, 5, "Effect: endgame farming prestige.|Per tier: cosmetic/status value while earlier perks carry the direct power."),
-        COMBAT_SUSTAIN("combat_sustain", "Combat Sustain", Category.COMBAT, Material.TOTEM_OF_UNDYING, 23, 10, 20, "Effect: kleine heal na echte kills.|Geen extra hearts of damage."),
-        BOUNTY_FOCUS("bounty_focus", "Bounty Focus", Category.COMBAT, Material.NETHER_STAR, 24, 15, 10, "Effect: progression route for bounty hunters.|Per tier: future bounty reward hooks and visible combat identity."),
-        DUELIST("duelist", "Duelist", Category.COMBAT, Material.DIAMOND_SWORD, 25, 25, 10, "Effect: PvP prestige for active fighters.|Per tier: intended for lightweight duel bonuses in the next tuning pass."),
-        ESCAPE_DISCIPLINE("escape_discipline", "Escape Discipline", Category.COMBAT, Material.SHIELD, 26, 35, 10, "Effect: defensive escape route.|Per tier: reserved for the timed escape ability."),
-        KINGSLAYER_FOCUS("kingslayer_focus", "Kingslayer Focus", Category.COMBAT, Material.GOLD_BLOCK, 27, 50, 10, "Effect: hunter identity for 20-heart and high-bounty targets.|Per tier: reserved for target highlighting."),
+        SUPPLY_GARDENER("supply_gardener", "Supply Gardener", Category.FARMING, Material.HAY_BLOCK, 25, 40, 10, "Effect: crops grant extra Farming XP.|Per tiers: up to +2 XP per harvested crop."),
+        FARMING_MASTERY("farming_mastery", "Farming Mastery", Category.FARMING, Material.NETHERITE_HOE, 26, 75, 5, "Effect: improves crop/log duplication and animal-farming feedback.|Per tier: +2.5% farming drop chance."),
+        COMBAT_SUSTAIN("combat_sustain", "Combat Sustain", Category.COMBAT, Material.TOTEM_OF_UNDYING, 23, 10, 20, "Effect: heals after a real kill.|Per tier: restores 0.15 health without adding hearts."),
+        BOUNTY_FOCUS("bounty_focus", "Bounty Focus", Category.COMBAT, Material.NETHER_STAR, 24, 15, 10, "Effect: damaging a bounty target grants extra Combat XP.|Per tier: +1 Combat XP, limited to once per 10 seconds."),
+        DUELIST("duelist", "Duelist", Category.COMBAT, Material.DIAMOND_SWORD, 25, 25, 10, "Effect: slightly increases direct player-vs-player damage.|Per tier: +0.5% PvP damage, max +5%."),
+        ESCAPE_DISCIPLINE("escape_discipline", "Escape Discipline", Category.COMBAT, Material.SHIELD, 26, 35, 10, "Effect: prevents a critical hit and teleports you away below 20% health.|Per tier: escape distance grows from 14 to 50 blocks; 60-minute cooldown."),
+        KINGSLAYER_FOCUS("kingslayer_focus", "Kingslayer Focus", Category.COMBAT, Material.GOLD_BLOCK, 27, 50, 10, "Effect: highlights nearby 20-heart or bounty targets.|Per tier: detection range grows from 42 to 128 blocks; targets are warned."),
         COMBAT_MASTERY("combat_mastery", "Combat Mastery", Category.COMBAT, Material.NETHERITE_SWORD, 28, 80, 5, "Effect: combat prestige status.|Per tier: endgame status without selling hearts."),
         ALCHEMY_MASTERY("alchemy_mastery", "Alchemy Mastery", Category.ALCHEMY, Material.GOLDEN_APPLE, 24, 10, 20, "Effect: alchemy progression and consumable identity.|Per tier: stronger utility hooks over time."),
-        BREWING_FOCUS("brewing_focus", "Brewing Focus", Category.ALCHEMY, Material.EXPERIENCE_BOTTLE, 25, 15, 10, "Effect: brewing-focused progression.|Per tier: reserved for faster brewing implementation."),
+        BREWING_FOCUS("brewing_focus", "Brewing Focus", Category.ALCHEMY, Material.EXPERIENCE_BOTTLE, 25, 15, 10, "Effect: interacting with an active brewing stand shortens its timer.|Per tier: 5% faster, max 50%; once per 30 seconds."),
         APPLE_LORE("apple_lore", "Apple Lore", Category.ALCHEMY, Material.ENCHANTED_GOLDEN_APPLE, 26, 30, 10, "Effect: rare consumables give stronger alchemy progression.|Per tier: apples matter more for the category grind."),
-        RELIC_ALCHEMY("relic_alchemy", "Relic Alchemy", Category.ALCHEMY, Material.ECHO_SHARD, 27, 45, 10, "Effect: connects alchemy to relic and boss materials.|Per tier: future rare-item utility."),
-        INFERNAL_RESOLVE("infernal_resolve", "Infernal Resolve", Category.ALCHEMY, Material.MAGMA_BLOCK, 28, 60, 10, "Effect: endboss preparation identity.|Per tier: future infernal fight utility."),
-        ALCHEMY_GRANDMASTER("alchemy_grandmaster", "Alchemy Grandmaster", Category.ALCHEMY, Material.DRAGON_EGG, 29, 85, 5, "Effect: alchemy prestige status.|Per tier: late-game identity and future utility."),
+        RELIC_ALCHEMY("relic_alchemy", "Relic Alchemy", Category.ALCHEMY, Material.ECHO_SHARD, 27, 45, 10, "Effect: raises Alchemy progression from rare consumables.|Per tier: contributes to mastery rewards without consuming boss currency."),
+        INFERNAL_RESOLVE("infernal_resolve", "Infernal Resolve", Category.ALCHEMY, Material.MAGMA_BLOCK, 28, 60, 10, "Effect: grants maintained Fire Resistance while exploring the Nether.|Any purchased tier unlocks the passive protection."),
+        ALCHEMY_GRANDMASTER("alchemy_grandmaster", "Alchemy Grandmaster", Category.ALCHEMY, Material.DRAGON_EGG, 29, 85, 5, "Effect: consumed potion effects last longer.|Per tier: +5% duration, max +25%."),
         ENCHANTING_MASTERY("enchanting_mastery", "Enchanting Mastery", Category.ENCHANTING, Material.EXPERIENCE_BOTTLE, 25, 10, 20, "Effect: sneller item-ability challenges.|Per tier: meer progress uit ability acties."),
-        RUNE_SENSE("rune_sense", "Rune Sense", Category.ENCHANTING, Material.BOOK, 26, 15, 10, "Effect: clearer ability-enchant progression.|Per tier: future enchant preview and rune-awareness hooks."),
-        TABLE_ATTUNEMENT("table_attunement", "Table Attunement", Category.ENCHANTING, Material.ANVIL, 27, 25, 10, "Effect: rare Bloodbound enchant route.|Per tier: intended to improve enchanting table outcomes."),
-        BOOKSMITH("booksmith", "Booksmith", Category.ENCHANTING, Material.ENCHANTED_BOOK, 28, 35, 10, "Effect: enchanted books become more important.|Per tier: future book-to-item quality of life."),
-        ANVIL_CARE("anvil_care", "Anvil Care", Category.ENCHANTING, Material.IRON_INGOT, 29, 50, 10, "Effect: item maintenance route.|Per tier: future repair/anvil cost protection."),
-        ENCHANTING_GRANDMASTER("enchanting_grandmaster", "Enchanting Grandmaster", Category.ENCHANTING, Material.NETHER_STAR, 30, 80, 5, "Effect: enchanting prestige status.|Per tier: endgame ability progression identity."),
-        ECONOMY_QUICKSELL_EFFICIENCY("economy_quicksell_efficiency", "QuickSell Efficiency", Category.ECONOMY, Material.EMERALD, 31, 1, 15, "Effect: /sell betaalt iets beter.|Per tier: +1% QuickSell waarde, max +15%."),
+        RUNE_SENSE("rune_sense", "Rune Sense", Category.ENCHANTING, Material.BOOK, 26, 15, 10, "Effect: increases the chance to roll a Bloodbound ability enchant.|Per tier: improves rare ability discovery."),
+        TABLE_ATTUNEMENT("table_attunement", "Table Attunement", Category.ENCHANTING, Material.ANVIL, 27, 25, 10, "Effect: improves high-level Bloodbound enchant rolls.|Per tier: further raises ability-enchant chance."),
+        BOOKSMITH("booksmith", "Booksmith", Category.ENCHANTING, Material.ENCHANTED_BOOK, 28, 35, 10, "Effect: max rank unlocks `/skills anvil` from anywhere.|The portable anvil still follows normal item rules."),
+        ANVIL_CARE("anvil_care", "Anvil Care", Category.ENCHANTING, Material.IRON_INGOT, 29, 50, 10, "Effect: represents mastery of repair and combination work.|Per tier: increases Enchanting progression gained from ability challenges."),
+        ENCHANTING_GRANDMASTER("enchanting_grandmaster", "Enchanting Grandmaster", Category.ENCHANTING, Material.NETHER_STAR, 30, 80, 5, "Effect: max rank unlocks `/skills enchant` from anywhere.|Portable enchanting still uses normal XP and lapis."),
+        ECONOMY_QUICKSELL_EFFICIENCY("economy_quicksell_efficiency", "QuickSell Efficiency", Category.ECONOMY, Material.EMERALD, 31, 1, 15, "Effect: improves the final `/sell` payout.|Per tier: +1% QuickSell value, max +15%."),
         MARKET_ANALYST("market_analyst", "Market Analyst", Category.ECONOMY, Material.PAPER, 32, 5, 10, "Effect: beter inzicht in dynamische prijzen.|Per tier: sterkere market-awareness hooks."),
         BULK_SELLER("bulk_seller", "Bulk Seller", Category.ECONOMY, Material.HOPPER, 33, 10, 10, "Effect: bulk verkoop wordt waardevoller.|Per tier: betere grote-sale progression."),
         ORDER_RUNNER("order_runner", "Order Runner", Category.ECONOMY, Material.CHEST, 34, 15, 10, "Effect: resource orders pay more.|Per tier: +1.5% order payout, max +15%."),
@@ -2396,7 +2724,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         BLOOD_FORGED_EDGE("blood_forged_edge", "Blood-Forged Edge", "Kill mobs/players", 25_000, List.of("&7Small sustain on kills.", "&7Below 33% health, hits deal x2 damage.")),
         ECHO_QUIVER("echo_quiver", "Echo Quiver", "Land projectile hits", 100_000, List.of("&7Arrows call lightning onto the hit target.", "&7Works on bow/crossbow items.")),
         STORM_BIND("storm_bind", "Storm Bind", "Land trident hits", 75_000, List.of("&7Thrown tridents explode on impact.", "&7Explosion does not break blocks.")),
-        AEGIS_GUARD("aegis_guard", "Aegis Guard", "Block attacks", 50_000, List.of("&7Passive shield ability from inventory.", "&7Mitigates burst damage when charged."));
+        AEGIS_GUARD("aegis_guard", "Aegis Guard", "Block attacks", 50_000, List.of("&7Manually activate by sneak-right-clicking the Aegis item.", "&7Absorbs 100% damage during its configured active duration."));
 
         private final String id;
         private final String display;

@@ -752,7 +752,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
                 possessed.setFireTicks(0);
             } catch (RuntimeException exception) {
                 possessedEntities.remove(event.getPlayer().getUniqueId());
-                Text.msg(event.getPlayer(), "&cPossession gestopt omdat de entity niet meer geldig is.");
+                Text.msg(event.getPlayer(), "&cPossession stopped because the entity is no longer valid.");
             }
         }
         Entity disguise = modelDisguises.get(event.getPlayer().getUniqueId());
@@ -771,7 +771,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         if (jail != null && event.getTo() != null && sameWorld(jail, event.getTo()) && event.getTo().distanceSquared(jail) > 9.0D) {
             event.setCancelled(true);
             event.getPlayer().teleport(jail);
-            Text.msg(event.getPlayer(), "&cJe zit in jail.");
+            Text.msg(event.getPlayer(), "&cYou are confined to this jail cell.");
             return;
         }
         if (frozen == null || event.getTo() == null) {
@@ -792,7 +792,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         }
         if (isJailArea(event.getBlock().getLocation())) {
             event.setCancelled(true);
-            Text.msg(event.getPlayer(), "&cDeze jail area is protected.");
+            Text.msg(event.getPlayer(), "&cThis jail area is protected.");
             return;
         }
         Player player = event.getPlayer();
@@ -826,7 +826,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         }
         if (isJailArea(event.getBlock().getLocation())) {
             event.setCancelled(true);
-            Text.msg(event.getPlayer(), "&cDeze jail area is protected.");
+            Text.msg(event.getPlayer(), "&cThis jail area is protected.");
         }
     }
 
@@ -900,6 +900,13 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             event.setCancelled(true);
             if (event.getWhoClicked() instanceof Player player && isAuditOwner(player)) {
                 handleAuditClick(player, menu, event.getRawSlot());
+            }
+            return;
+        }
+        if (top.getHolder() instanceof AuditCategoryMenu) {
+            event.setCancelled(true);
+            if (event.getWhoClicked() instanceof Player player && isAuditOwner(player)) {
+                handleAuditCategoryClick(player, event.getRawSlot());
             }
             return;
         }
@@ -1012,7 +1019,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             return true;
         }
         if (!MitchSMP.permissions().isAdminMode(player)) {
-            Text.msg(player, "&c/back is alleen beschikbaar in adminmode.");
+            Text.msg(player, "&c/back is only available in admin mode.");
             return true;
         }
         if (!MitchSMP.permissions().has(player, "mitchsmp.essentials.back")) {
@@ -1438,7 +1445,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         }
         if (args.length >= 1 && args[0].equalsIgnoreCase("cancel")) {
             fakeOreSelections.remove(player.getUniqueId());
-            Text.msg(player, "&aFake ore selectie gestopt.");
+            Text.msg(player, "&aFake-ore selection stopped.");
             return true;
         }
         if (args.length >= 1 && args[0].equalsIgnoreCase("delete")) {
@@ -1483,7 +1490,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             return;
         }
         if (ore == Material.ANCIENT_DEBRIS && !isNetherWorld(player.getWorld())) {
-            Text.msg(player, "&cAncient Debris bait kan alleen in de Nether gekozen worden.");
+            Text.msg(player, "&cAncient Debris bait can only be selected in the Nether.");
             return;
         }
         fakeOreSelections.put(player.getUniqueId(), new FakeOreSelection(menu.selector(), menu.radius(), menu.seconds(), ore));
@@ -1824,7 +1831,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         target.setFlying(false);
         target.setGameMode(GameMode.ADVENTURE);
         target.setNoDamageTicks(200);
-        Text.msg(sender, "&cLockdown actief for &f" + target.getName() + "&c.");
+        Text.msg(sender, "&cLockdown enabled for &f" + target.getName() + "&c.");
         Text.msg(target, "&cStaff lockdown active. You cannot move or exploit.");
         alertStaff("&c[Lockdown] &f" + senderName(sender) + " &7heeft &f" + target.getName() + " &7volledig vastgezet.");
         return true;
@@ -1855,7 +1862,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             return true;
         }
         if (args.length < 1) {
-            Text.msg(sender, "&cGebruik: /jail <player> [minutes] of /jail visit <player>");
+            Text.msg(sender, "&cUsage: /jail <player> [minutes] or /jail visit <player>");
             return true;
         }
         if (args[0].equalsIgnoreCase("visit")) {
@@ -1892,7 +1899,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         target.setNoDamageTicks(200);
         Text.msg(sender, "&c" + target.getName() + " is now jailed" + (minutes <= 0 ? " permanently" : " for " + minutes + " minutes") + ".");
         Text.msg(target, "&cYou are in staff jail. Wait for staff or for your timer to expire.");
-        alertStaff("&c[Jail] &f" + senderName(sender) + " &7plaatste &f" + target.getName() + " &7in jail.");
+        alertStaff("&c[Jail] &f" + senderName(sender) + " &7placed &f" + target.getName() + " &7in jail.");
         return true;
     }
 
@@ -1902,7 +1909,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             return true;
         }
         if (args.length < 2) {
-            Text.msg(sender, "&cGebruik: /jail visit <player>");
+            Text.msg(sender, "&cUsage: /jail visit <player>");
             return true;
         }
         Player target = Bukkit.getPlayerExact(args[1]);
@@ -1915,7 +1922,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             cell = decode(data.getString("jail." + target.getUniqueId() + ".cell", ""));
         }
         if (cell == null) {
-            Text.msg(sender, "&cDeze speler zit niet in jail.");
+            Text.msg(sender, "&cThis player is not jailed.");
             return true;
         }
         Location visit = new Location(cell.getWorld(), cell.getX() + 4.5D, cell.getY(), cell.getZ() + 0.5D, -90.0F, 0.0F);
@@ -1942,8 +1949,8 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             return true;
         }
         releaseJail(target, true);
-        Text.msg(sender, "&a" + target.getName() + " is uit jail gehaald.");
-        alertStaff("&a[Jail] &f" + senderName(sender) + " &7haalde &f" + target.getName() + " &7uit jail.");
+        Text.msg(sender, "&a" + target.getName() + " was released from jail.");
+        alertStaff("&a[Jail] &f" + senderName(sender) + " &7released &f" + target.getName() + " &7from jail.");
         return true;
     }
 
@@ -2030,11 +2037,11 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             return true;
         }
         if (target.getUniqueId().equals(staff.getUniqueId())) {
-            Text.msg(staff, "&cJe kunt geen PvP request naar jezelf sturen.");
+            Text.msg(staff, "&cYou cannot send a PvP request to yourself.");
             return true;
         }
         if (MitchSMP.permissions().isAdminMode(target)) {
-            Text.msg(staff, "&cTarget zit zelf in staffmode. Zet eerst een van beide uit of gebruik een normale speler.");
+            Text.msg(staff, "&cThe target is also in staff mode. Disable one staff session or choose a normal player.");
             return true;
         }
         staffPvpRequests.put(target.getUniqueId(), staff.getUniqueId());
@@ -2050,7 +2057,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
     private boolean staffPvpResponse(Player player, String action) {
         if (action.equalsIgnoreCase("pvpstop") || action.equalsIgnoreCase("stop")) {
             boolean stopped = clearStaffPvp(player, true);
-            Text.msg(player, stopped ? "&aStaff PvP sessie gestopt." : "&7Je hebt geen actieve staff PvP sessie.");
+            Text.msg(player, stopped ? "&aStaff PvP session stopped." : "&7You have no active staff PvP session.");
             return true;
         }
         UUID staffId = staffPvpRequests.remove(player.getUniqueId());
@@ -2123,7 +2130,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             if (notifyOther) {
                 Player other = otherPvpParticipant(key, player.getUniqueId());
                 if (other != null) {
-                    Text.msg(other, "&7Staff PvP sessie met &f" + player.getName() + " &7is gestopt.");
+                    Text.msg(other, "&7The staff PvP session with &f" + player.getName() + " &7has ended.");
                 }
             }
         }
@@ -2976,7 +2983,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
                 }
             }
         }
-        Bukkit.broadcastMessage(Text.PREFIX + Text.color("&aCleanup: &f" + removed + " &adropped items verwijderd."));
+        Bukkit.broadcastMessage(Text.PREFIX + Text.color("&aCleanup: removed &f" + removed + " &adropped items."));
         audit(sender instanceof Player player ? player : null, "lagclear", removed + " dropped items");
         return true;
     }
@@ -3424,12 +3431,12 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             inventory.setItem(slot, auditIcon(entries.get(offset + slot)));
         }
         inventory.setItem(45, item(Material.ARROW, "&aPrevious", "&7Previous page."));
-        inventory.setItem(46, item(Material.PAPER, "&eAlle logs", "&7Reset filter."));
+        inventory.setItem(46, item(Material.COMPASS, "&eCategories", "&7Choose an audit category."));
         inventory.setItem(47, item(Material.COMPASS, "&bCommands", "&7Filter command logs."));
         inventory.setItem(48, item(Material.CHEST, "&dInventory", "&7Filter inventory logs."));
         inventory.setItem(49, item(Material.STONE, "&6Blocks", "&7Filter block logs."));
         inventory.setItem(50, item(Material.NETHERITE_PICKAXE, "&cAdmin mode", "&7Filter adminmode/staff tools."));
-        inventory.setItem(51, item(Material.PLAYER_HEAD, "&eStaff ranks", "&7Toon staff/rank overzicht."));
+        inventory.setItem(51, item(Material.PLAYER_HEAD, "&eStaff ranks", "&7Show the staff/rank overview."));
         inventory.setItem(53, item(Material.ARROW, "&aVolgende", "&7Pagina verder."));
         player.openInventory(inventory);
     }
@@ -3447,7 +3454,10 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
                 continue;
             }
             String haystack = (action + " " + detail + " " + name).toLowerCase(Locale.ROOT);
-            if (normalized.isBlank() || haystack.contains(normalized)) {
+            boolean matches = normalized.isBlank()
+                || normalized.startsWith("category:") && matchesAuditCategory(action, detail, normalized.substring("category:".length()))
+                || !normalized.startsWith("category:") && haystack.contains(normalized);
+            if (matches) {
                 entries.add(index);
             }
         }
@@ -3485,7 +3495,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         if (slot == 45) {
             openAudit(player, menu.page() - 1, menu.filter());
         } else if (slot == 46) {
-            openAudit(player, 0, "");
+            openAuditCategories(player);
         } else if (slot == 47) {
             openAudit(player, 0, "command");
         } else if (slot == 48) {
@@ -3501,8 +3511,60 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         }
     }
 
+    private void openAuditCategories(Player player) {
+        AuditCategoryMenu holder = new AuditCategoryMenu();
+        Inventory inventory = Bukkit.createInventory(holder, 27, Text.color("&8Staff Audit Categories"));
+        holder.inventory = inventory;
+        String[][] categories = {
+            {"economy", "&aEconomy"}, {"adminmode", "&cAdmin Mode"}, {"punishments", "&4Punishments"},
+            {"rollback", "&6Rollback"}, {"inventory", "&dInventory"}, {"teleport", "&bTeleport"},
+            {"gamemode", "&eGamemode"}, {"permissions", "&5Permissions"}, {"reports", "&fReports"}
+        };
+        Material[] icons = { Material.EMERALD, Material.NETHERITE_PICKAXE, Material.IRON_BARS, Material.CLOCK,
+            Material.CHEST, Material.COMPASS, Material.GRASS_BLOCK, Material.NAME_TAG, Material.PAPER };
+        for (int index = 0; index < categories.length; index++) {
+            inventory.setItem(9 + index, item(icons[index], categories[index][1], "&7Filter " + categories[index][0] + " audit actions."));
+        }
+        inventory.setItem(22, item(Material.BARRIER, "&fAll actions", "&7Return to the complete audit stream."));
+        player.openInventory(inventory);
+    }
+
+    private void handleAuditCategoryClick(Player player, int slot) {
+        String[] categories = {"economy", "adminmode", "punishments", "rollback", "inventory", "teleport", "gamemode", "permissions", "reports"};
+        if (slot >= 9 && slot < 18) {
+            openAudit(player, 0, "category:" + categories[slot - 9]);
+        } else if (slot == 22) {
+            openAudit(player, 0, "");
+        }
+    }
+
+    private boolean matchesAuditCategory(String action, String detail, String category) {
+        String value = (action + " " + detail).toLowerCase(Locale.ROOT);
+        return switch (category) {
+            case "economy" -> containsAny(value, "economy", "eco", "balance", "pay", "shop", "sell", "auction", "money");
+            case "adminmode" -> containsAny(value, "admin", "vanish", "noclip", "godtool", "model-disguise");
+            case "punishments" -> containsAny(value, "jail", "freeze", "lockdown", "release", "punish", "ban", "mute");
+            case "rollback" -> containsAny(value, "rollback", "restore", "snapshot", "cleanup");
+            case "inventory" -> containsAny(value, "inventory", "container", "drop", "item", "chest");
+            case "teleport" -> containsAny(value, "teleport", " tpa", " tp ", "back", "world", "jail-visit");
+            case "gamemode" -> containsAny(value, "gamemode", "creative", "survival", "spectator", "flight", "fly", "speed");
+            case "permissions" -> containsAny(value, "permission", "rank", "owner-audit");
+            case "reports" -> containsAny(value, "report");
+            default -> true;
+        };
+    }
+
+    private boolean containsAny(String value, String... needles) {
+        for (String needle : needles) {
+            if (value.contains(needle)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     private void sendStaffOverview(Player player) {
-        Text.msg(player, "&6Staff/rank overzicht:");
+        Text.msg(player, "&6Staff and rank overview:");
         for (Player online : Bukkit.getOnlinePlayers()) {
             MitchRank rank = MitchSMP.ranks().getRank(online.getUniqueId());
             if (rank.staff() || isAuditOwner(online)) {
@@ -3618,7 +3680,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             player.teleport(back);
         }
         captureSnapshot(player, "jail-exit-restored");
-        Text.msg(player, "&aJe bent uit jail.");
+        Text.msg(player, "&aYou were released from jail.");
     }
 
     private void clearJailData(UUID id) {
@@ -3758,7 +3820,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         }
         World world = sender instanceof Player player ? player.getWorld() : Bukkit.getWorlds().get(0);
         world.setTime(time);
-        Text.msg(sender, "&aTijd gezet naar &f" + label + "&a.");
+        Text.msg(sender, "&aTime set to &f" + label + "&a.");
         return true;
     }
 
@@ -3768,7 +3830,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         }
         World world = sender instanceof Player player ? player.getWorld() : Bukkit.getWorlds().get(0);
         world.setStorm(rain);
-        Text.msg(sender, rain ? "&aRegen gestart." : "&aWeer op zon gezet.");
+        Text.msg(sender, rain ? "&aRain started." : "&aWeather set to clear.");
         return true;
     }
 
@@ -4245,6 +4307,15 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         void inventory(Inventory inventory) {
             this.inventory = inventory;
         }
+
+        @Override
+        public Inventory getInventory() {
+            return inventory;
+        }
+    }
+
+    private static final class AuditCategoryMenu implements InventoryHolder {
+        private Inventory inventory;
 
         @Override
         public Inventory getInventory() {
