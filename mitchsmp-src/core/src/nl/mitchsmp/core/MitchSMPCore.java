@@ -48,7 +48,7 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
         "MitchSMP-AuctionHouse", "MitchSMP-HUD", "MitchSMP-RTP", "MitchSMP-Essentials", "MitchSMP-Hub",
         "MitchSMP-Skyblock", "MitchSMP-Performance", "MitchSMP-Artifacts", "MitchSMP-Bosses", "MitchSMP-BedWars",
         "MitchSMP-TNTRun", "MitchSMP-Spleef", "MitchSMP-Cosmetics", "MitchSMP-Events", "MitchSMP-Progression",
-        "MitchSMP-Skills", "MitchSMP-EndBoss", "MitchSMP-Chat", "MitchSMP-AntiCheat", "MitchSMP-Seasons"
+        "MitchSMP-Gameplay", "MitchSMP-Skirmish", "MitchSMP-Skills", "MitchSMP-EndBoss", "MitchSMP-Chat", "MitchSMP-AntiCheat", "MitchSMP-Seasons"
     );
     private final Map<Class<?>, Object> services = new HashMap<>();
     private CoreRankService rankService;
@@ -301,7 +301,7 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
     private static final class CoreFeatureFlagService implements FeatureFlagService {
         private static final List<String> DEFAULT_FEATURES = List.of(
             "auctionhouse", "quicksell", "pay", "bounties", "abilities", "endboss", "events", "bosses",
-            "bedwars", "tntrun", "spleef", "skyblock", "homes", "tpa", "rtp", "shop", "contracts",
+            "bedwars", "tntrun", "spleef", "skirmish", "skyblock", "homes", "tpa", "rtp", "shop", "contracts",
             "orders", "collections"
         );
         private static final Map<String, String> COMMAND_FEATURES = Map.ofEntries(
@@ -313,6 +313,7 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
             Map.entry("event", "events"), Map.entry("boss", "bosses"), Map.entry("bosses", "bosses"),
             Map.entry("bw", "bedwars"), Map.entry("bedwars", "bedwars"), Map.entry("tntrun", "tntrun"), Map.entry("tr", "tntrun"),
             Map.entry("spleef", "spleef"), Map.entry("sf", "spleef"), Map.entry("skyblock", "skyblock"), Map.entry("sb", "skyblock"), Map.entry("island", "skyblock"),
+            Map.entry("skirmish", "skirmish"), Map.entry("skirm", "skirmish"),
             Map.entry("home", "homes"), Map.entry("homes", "homes"), Map.entry("sethome", "homes"), Map.entry("delhome", "homes"), Map.entry("deletehome", "homes"),
             Map.entry("tpa", "tpa"), Map.entry("tpaccept", "tpa"), Map.entry("tpdeny", "tpa"), Map.entry("rtp", "rtp"), Map.entry("wild", "rtp"),
             Map.entry("shop", "shop"), Map.entry("contracts", "contracts"), Map.entry("orders", "orders"), Map.entry("resourceorders", "orders"),
@@ -682,7 +683,9 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
                 "mitchsmp.skyblock.use",
                 "mitchsmp.bedwars.play",
                 "mitchsmp.tntrun.play",
-                "mitchsmp.spleef.play"
+                "mitchsmp.spleef.play",
+                "mitchsmp.skirmish.play",
+                "mitchsmp.gameplay.use"
             );
             addDefault(MitchRank.VIP,
                 "mitchsmp.cosmetics.vip",
@@ -706,7 +709,8 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
                 "mitchsmp.performance.alerts",
                 "mitchsmp.errors.view",
                 "mitchsmp.economy.alerts",
-                "mitchsmp.auctionhouse.alerts"
+                "mitchsmp.auctionhouse.alerts",
+                "mitchsmp.reports.staff"
             );
             addDefault(MitchRank.ADMIN,
                 "mitchsmp.core.reload",

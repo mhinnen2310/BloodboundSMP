@@ -336,9 +336,11 @@ Build-Module "bosses" "bosses" "MitchSMP-Bosses-0.1.0.jar" $coreClassPath
 Build-Module "bedwars" "bedwars" "MitchSMP-BedWars-0.1.0.jar" $coreClassPath
 Build-Module "tntrun" "tntrun" "MitchSMP-TNTRun-0.1.0.jar" $coreClassPath
 Build-Module "spleef" "spleef" "MitchSMP-Spleef-0.1.0.jar" $coreClassPath
+Build-Module "skirmish" "skirmish" "MitchSMP-Skirmish-0.1.0.jar" $coreClassPath
 Build-Module "cosmetics" "cosmetics" "MitchSMP-Cosmetics-0.1.0.jar" $coreClassPath
 Build-Module "events" "events" "MitchSMP-Events-0.1.0.jar" $coreClassPath
 Build-Module "progression" "progression" "MitchSMP-Progression-0.1.0.jar" $coreClassPath
+Build-Module "gameplay" "gameplay" "MitchSMP-Gameplay-0.1.0.jar" $coreClassPath
 Build-Module "skills" "skills" "MitchSMP-Skills-0.1.0.jar" $coreClassPath
 Build-Module "endboss" "endboss" "MitchSMP-EndBoss-0.1.0.jar" $coreClassPath
 Build-Module "chat" "chat" "MitchSMP-Chat-0.1.0.jar" $coreClassPath

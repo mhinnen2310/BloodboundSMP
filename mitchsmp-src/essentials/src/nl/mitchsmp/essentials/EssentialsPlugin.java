@@ -139,6 +139,17 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         Map.entry("ownerconfirm", "mitchsmp.owner.confirm"),
         Map.entry("serverconfig", "mitchsmp.essentials.admin"),
         Map.entry("confighelp", "mitchsmp.essentials.admin"),
+        Map.entry("goals", "mitchsmp.gameplay.use"),
+        Map.entry("rookie", "mitchsmp.gameplay.use"),
+        Map.entry("rookiecontracts", "mitchsmp.gameplay.use"),
+        Map.entry("recoverykit", "mitchsmp.gameplay.use"),
+        Map.entry("recovery", "mitchsmp.gameplay.use"),
+        Map.entry("report", "mitchsmp.gameplay.use"),
+        Map.entry("reports", "mitchsmp.reports.staff"),
+        Map.entry("staffprofile", "mitchsmp.reports.staff"),
+        Map.entry("playerprofile", "mitchsmp.reports.staff"),
+        Map.entry("staffnote", "mitchsmp.reports.staff"),
+        Map.entry("notes", "mitchsmp.reports.staff"),
         Map.entry("balance", "mitchsmp.economy.use"),
         Map.entry("bal", "mitchsmp.economy.use"),
         Map.entry("money", "mitchsmp.economy.use"),
@@ -158,6 +169,8 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         Map.entry("tr", "mitchsmp.tntrun.play"),
         Map.entry("spleef", "mitchsmp.spleef.play"),
         Map.entry("sf", "mitchsmp.spleef.play"),
+        Map.entry("skirmish", "mitchsmp.skirmish.play"),
+        Map.entry("skirm", "mitchsmp.skirmish.play"),
         Map.entry("skills", "mitchsmp.skills.use"),
         Map.entry("skilltree", "mitchsmp.skills.use"),
         Map.entry("sk", "mitchsmp.skills.use"),
@@ -665,7 +678,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         }
         if (jailedCells.containsKey(player.getUniqueId())) {
             event.setCancelled(true);
-            Text.msg(player, "&cJe kunt geen commands gebruiken vanuit jail.");
+            Text.msg(player, "&cYou cannot use commands while jailed.");
             audit(player, "jail-command-blocked", message);
             return;
         }
@@ -1036,6 +1049,9 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             "/help [page] - Same as /commands",
             "/spawn - Return to spawn",
             "/starterkit - Claim the starter kit",
+            "/recoverykit - Claim a cooldown recovery kit when eligible",
+            "/goals - Show personal next objectives",
+            "/rookie - Open Rookie Contracts",
             "/shop - Open the configurable shop",
             "/sell - Open quick sell",
             "/tpa <player> - Request teleport",
@@ -1067,6 +1083,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             "/tntrun leave - Leave TNT Run",
             "/spleef join [arena] - Join Spleef",
             "/spleef leave - Leave Spleef",
+            "/skirmish [join|leave|start|stats] - Low-stakes PvP practice",
             "/skyblock create|home|leave|reset|info - Skyblock island commands",
             "/msg <player> <message> - Private message",
             "/reply <message> - Reply",
@@ -1080,7 +1097,11 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             "/abilities - Tool abilities",
             "/mechanics - Mechanics guide",
             "/endboss ritual - Endboss ritual guide",
+            "/report <player> <reason> - Report a player with context",
             "/staffchat <message> - Staff chat",
+            "/reports [open|closed|all] - Review player reports",
+            "/staffprofile <player> - Review a player profile",
+            "/staffnote <add|view> <player> [note] - Manage staff notes",
             "/admin - Open admin UI",
             "/back - Adminmode-only return",
             "/invsee <player> - Inspect inventory",
@@ -2386,13 +2407,25 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             Text.msg(player, "&cJe hebt je starter kit al geclaimd.");
             return true;
         }
-        player.getInventory().addItem(
+        List<ItemStack> kit = new ArrayList<>(List.of(
             new ItemStack(Material.STONE_PICKAXE),
             new ItemStack(Material.STONE_AXE),
             new ItemStack(Material.STONE_SHOVEL),
+            new ItemStack(Material.IRON_SWORD),
+            new ItemStack(Material.SHIELD),
+            new ItemStack(Material.BOW),
+            new ItemStack(Material.ARROW, 8),
             new ItemStack(Material.COOKED_BEEF, 16),
+            new ItemStack(Material.TORCH, 16),
             new ItemStack(Material.OAK_PLANKS, 32)
-        );
+        ));
+        if (MitchSMP.gameplay() == null) {
+            Text.msg(player, "&cStarter kit safety service is unavailable. Try again after the server is checked.");
+            return true;
+        }
+        kit.forEach(item -> MitchSMP.gameplay().markTradeRestricted(item, "Starter Kit"));
+        player.getInventory().addItem(kit.toArray(ItemStack[]::new)).values()
+            .forEach(left -> player.getWorld().dropItemNaturally(player.getLocation(), left));
         data.set(key, System.currentTimeMillis());
         data.save();
         player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 0.8F, 1.2F);
@@ -3800,6 +3833,8 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         addMenuButton(player, holder, inventory, 4, Material.ENDER_CHEST, "&dTeleport Requests", "tpa", "&7Request player teleports.");
         addMenuButton(player, holder, inventory, 5, Material.WOODEN_SWORD, "&aStarter Kit", "starterkit", "&7Claim your early-game kit.");
         addMenuButton(player, holder, inventory, 6, Material.NETHER_STAR, "&6Hub", "hub", "&7Open the server hub navigator.");
+        addMenuButton(player, holder, inventory, 7, Material.COMPASS, "&6Personal Goals", "goals", "&7See your next recommended objectives.");
+        addMenuButton(player, holder, inventory, 8, Material.SHIELD, "&cRecovery Kit", "recoverykit", "&7Rookie and low-heart recovery supplies.");
 
         setMenuHeader(inventory, 9, "&6Economy");
         addMenuButton(player, holder, inventory, 10, Material.EMERALD, "&aShop", "shop", "&7Buy and sell basic supplies.");
@@ -3807,6 +3842,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         addMenuButton(player, holder, inventory, 12, Material.CHEST, "&eAuction House", "ah", "&7Browse and list player auctions.");
         addMenuButton(player, holder, inventory, 13, Material.GOLD_INGOT, "&eBalance", "balance", "&7View your active economy balance.");
         addMenuButton(player, holder, inventory, 14, Material.DIAMOND_SWORD, "&4Bounties", "bounties", "&7Hunt high-value heart targets.");
+        addMenuButton(player, holder, inventory, 15, Material.IRON_SWORD, "&6Rookie Contracts", "rookie", "&7Complete your first combat-ready objectives.");
 
         setMenuHeader(inventory, 18, "&5Progression");
         addMenuButton(player, holder, inventory, 19, Material.EXPERIENCE_BOTTLE, "&bSkills", "skills", "&7Open your skilltree.");
@@ -3823,6 +3859,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         addMenuButton(player, holder, inventory, 29, Material.RED_BED, "&cBedWars", "bw join", "&7Join Bloodbound BedWars.");
         addMenuButton(player, holder, inventory, 30, Material.TNT, "&4TNT Run", "tntrun join", "&7Join TNT Run.");
         addMenuButton(player, holder, inventory, 31, Material.SNOWBALL, "&fSpleef", "spleef join", "&7Join snowball Spleef.");
+        addMenuButton(player, holder, inventory, 32, Material.IRON_SWORD, "&cSkirmish", "skirmish join", "&7Practice PvP without risking hearts or gear.");
 
         setMenuHeader(inventory, 36, "&8Endgame");
         addMenuButton(player, holder, inventory, 37, Material.NETHER_STAR, "&4Endboss Ritual", "endboss ritual", "&7Learn the physical boss ritual.");

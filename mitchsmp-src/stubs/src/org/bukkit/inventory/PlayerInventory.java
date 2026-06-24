@@ -10,10 +10,14 @@ public interface PlayerInventory extends Inventory {
     void setItemInOffHand(ItemStack item);
 
     ItemStack getHelmet();
+    void setHelmet(ItemStack item);
 
     ItemStack getChestplate();
+    void setChestplate(ItemStack item);
 
     ItemStack getLeggings();
+    void setLeggings(ItemStack item);
 
     ItemStack getBoots();
+    void setBoots(ItemStack item);
 }

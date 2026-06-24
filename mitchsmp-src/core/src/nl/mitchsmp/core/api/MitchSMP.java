@@ -59,6 +59,10 @@ public final class MitchSMP {
         return service(BountyService.class);
     }
 
+    public static GameplayService gameplay() {
+        return service(GameplayService.class);
+    }
+
     public static EconomyWatchService economyWatch() {
         return service(EconomyWatchService.class);
     }

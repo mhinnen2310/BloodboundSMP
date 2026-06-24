@@ -767,6 +767,9 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
         if (item == null || item.getType() == Material.AIR || item.getAmount() <= 0 || item.getAmount() > 64) {
             return "invalid item amount";
         }
+        if (MitchSMP.gameplay() != null && MitchSMP.gameplay().isTradeRestricted(item)) {
+            return "trade-restricted reward item: " + MitchSMP.gameplay().restrictionReason(item);
+        }
         String type = item.getType().name();
         if (type.equals("BEDROCK") || type.equals("BARRIER") || type.contains("COMMAND_BLOCK") || type.contains("STRUCTURE_BLOCK")
             || type.equals("JIGSAW") || type.equals("DEBUG_STICK") || type.equals("KNOWLEDGE_BOOK") || type.contains("SHULKER_BOX") || type.equals("BUNDLE")) {

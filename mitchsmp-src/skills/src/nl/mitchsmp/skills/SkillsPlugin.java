@@ -44,6 +44,7 @@ import org.bukkit.event.block.BlockBreakEvent;
 import org.bukkit.event.enchantment.EnchantItemEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
+import org.bukkit.event.entity.EntityBreedEvent;
 import org.bukkit.event.entity.ProjectileHitEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
@@ -463,6 +464,9 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             return;
         }
         addSkillXp(killer, Category.COMBAT, entity instanceof Player ? 80 : 8);
+        if (!(entity instanceof Player) && isFarmAnimal(entity)) {
+            addSkillXp(killer, Category.FARMING, 6);
+        }
         ItemStack weapon = killer.getInventory().getItemInMainHand();
         Ability ability = abilityFor(weapon);
         if (ability != null) {
@@ -475,6 +479,26 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         if (sustain > 0) {
             heal(killer, sustain * 0.15D);
         }
+    }
+
+    @EventHandler
+    public void onBreed(EntityBreedEvent event) {
+        if (event.getBreeder() instanceof Player player && !restricted(player)) {
+            addSkillXp(player, Category.FARMING, 12);
+            int mastery = perk(player, Perk.FARMING_MASTERY);
+            if (mastery > 0) {
+                player.sendActionBar(Text.color("&aFarming XP &8+ &7animal breeding"));
+            }
+        }
+    }
+
+    private boolean isFarmAnimal(Entity entity) {
+        if (entity == null || entity.getType() == null) {
+            return false;
+        }
+        String type = entity.getType().name();
+        return type.equals("COW") || type.equals("SHEEP") || type.equals("PIG") || type.equals("CHICKEN")
+            || type.equals("RABBIT") || type.equals("GOAT") || type.equals("BEE") || type.equals("MOOSHROOM");
     }
 
     @EventHandler
@@ -1324,7 +1348,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         }
         if (planted > 0) {
             Text.msg(player, "&aHarvest Lord planted &f" + planted + " &acrop(s).");
-            player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.6F, 1.8F);
+            player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.25F, 1.8F);
         } else {
             Text.msg(player, "&cNo valid empty crop spots found.");
         }
@@ -1632,7 +1656,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         AbilityState toggled = new AbilityState(state.progress(), state.unlocked(), !state.enabled());
         writeLore(item, ability, toggled);
         Text.msg(player, toggled.enabled() ? "&aAbility enabled." : "&cAbility disabled.");
-        player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.7F, toggled.enabled() ? 1.6F : 0.6F);
+        player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.28F, toggled.enabled() ? 1.45F : 0.85F);
         if (toggled.enabled()) {
             abilityActivationEffects(player, ability);
         }
@@ -1730,7 +1754,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         Location location = player.getLocation().add(0.0D, 1.0D, 0.0D);
         player.getWorld().spawnParticle(org.bukkit.Particle.CRIT, location, 18, 0.45D, 0.65D, 0.45D, 0.04D);
         player.getWorld().spawnParticle(org.bukkit.Particle.TOTEM_OF_UNDYING, location, 10, 0.35D, 0.55D, 0.35D, 0.02D);
-        player.playSound(player.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, 0.55F, 1.45F);
+        player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.25F, 1.55F);
         player.sendActionBar(Text.color("&4" + ability.display() + " &6activated"));
     }
 
@@ -2134,23 +2158,34 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
 
     @Override
     public String getAbilityHud(UUID playerId) {
+        List<String> lines = getAbilityHudLines(playerId);
+        return lines.isEmpty() ? "" : lines.get(0);
+    }
+
+    @Override
+    public List<String> getAbilityHudLines(UUID playerId) {
         Player player = playerId == null ? null : Bukkit.getPlayer(playerId);
         if (player == null || restricted(player)) {
-            return "";
+            return List.of();
         }
+        List<String> lines = new ArrayList<>();
         ItemStack item = player.getInventory().getItemInMainHand();
         Ability ability = abilityFor(item);
         if (ability == null) {
             item = player.getInventory().getItemInOffHand();
             ability = abilityFor(item);
         }
-        if (ability == null) {
-            item = aegisShield(player);
-            ability = abilityFor(item);
+        if (ability != null) {
+            lines.add(renderAbilityHud(playerId, item, ability));
         }
-        if (ability == null) {
-            return "";
+        ItemStack aegis = aegisShield(player);
+        if (aegis != null && ability != Ability.AEGIS_GUARD) {
+            lines.add(renderAbilityHud(playerId, aegis, Ability.AEGIS_GUARD));
         }
+        return lines;
+    }
+
+    private String renderAbilityHud(UUID playerId, ItemStack item, Ability ability) {
         AbilityState state = state(item, ability);
         String status;
         if (!abilityGloballyEnabled(ability)) {

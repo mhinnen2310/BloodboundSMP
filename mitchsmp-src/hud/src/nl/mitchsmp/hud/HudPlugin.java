@@ -28,7 +28,7 @@ import org.bukkit.event.Listener;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class HudPlugin extends JavaPlugin implements Listener, TabCompleter {
-    private static final String DEFAULT_COMPONENTS = "balance,kills,deaths,biome,xyz";
+    private static final String DEFAULT_COMPONENTS = "balance,kills,deaths,rank";
 
     private PropertiesFile data;
     private PropertiesFile seasonStats;
@@ -167,9 +167,10 @@ public final class HudPlugin extends JavaPlugin implements Listener, TabComplete
         }
         SkillService skills = MitchSMP.skills();
         if (skills != null) {
-            String ability = skills.getAbilityHud(player.getUniqueId());
-            if (ability != null && !ability.isBlank()) {
-                parts.add(ability);
+            for (String ability : skills.getAbilityHudLines(player.getUniqueId())) {
+                if (ability != null && !ability.isBlank()) {
+                    parts.add(ability);
+                }
             }
         }
         BountyService bounties = MitchSMP.bounties();

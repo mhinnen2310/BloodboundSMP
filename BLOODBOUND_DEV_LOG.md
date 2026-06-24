@@ -348,3 +348,20 @@ Unclear / Needs care:
 - PvP cooldown defaults are conservative starting values and need multiplayer balancing before launch.
 - Newly generated underground structures need an in-world test to confirm the 6-10 block bedrock offset feels fair in every dimension used for SMP generation.
 - It is not yet confirmed whether Paper's cache access error exists outside the Codex sandbox. The cache file is readable, not read-only, and owned by the correct Windows account; no cache file was deleted or moved.
+# 2026-06-24 - P1 Gameplay and Polish
+
+## Done
+
+- Implemented Rookie onboarding, assists, First Blood, Skirmish, goals, contract grace, season names, staff profiles/notes and reports.
+- Updated default HUD and simultaneous ability display; reduced ability audio to a quiet pling at most.
+- Built all 33 plugins successfully.
+
+## Not Done
+
+- No remote Git push: this repository has no configured remote.
+- Full skilltree and staff-audit GUI redesign remain beyond this pass.
+- Clean Paper runtime boot was attempted, but the sandbox denied Paperclip access to its copied Mojang cache before plugins loaded.
+
+## Unclear
+
+- Item stacking issue remains unreproduced; no speculative inventory rewrite was made.

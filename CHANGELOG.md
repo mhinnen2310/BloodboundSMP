@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.0-rc.1 P1 Gameplay and Polish
+
+- Added Rookie status, restricted Starter/Recovery kits, Rookie Contracts and dynamic goals.
+- Added assist rewards, protected First Blood and isolated low-stakes Skirmish PvP.
+- Added multi-ability HUD lines and quiet ability interaction audio.
+- Added EconomyWatch-aware persistent contract rotations and expired claim grace.
+- Added named seasons, farming-animal XP, staff profiles, staff notes and reports.
+- Added player, staff and technical launch documentation.
+
 All notable BloodboundSMP changes are documented here. Versions follow Semantic Versioning.
 
 ## [Unreleased]

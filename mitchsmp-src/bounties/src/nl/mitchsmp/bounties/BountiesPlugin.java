@@ -384,7 +384,8 @@ public final class BountiesPlugin extends JavaPlugin implements Listener, TabCom
     private boolean isBedWarsWorld(Player player) {
         return player != null
             && player.getWorld() != null
-            && player.getWorld().getName().toLowerCase(java.util.Locale.ROOT).startsWith("bedwars_");
+            && (player.getWorld().getName().toLowerCase(java.util.Locale.ROOT).startsWith("bedwars_")
+                || player.getWorld().getName().toLowerCase(java.util.Locale.ROOT).startsWith("skirmish_"));
     }
 
     private void command(String name) {

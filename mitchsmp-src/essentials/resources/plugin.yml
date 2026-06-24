@@ -8,6 +8,7 @@ depend:
   - MitchSMP-Core
 softdepend:
   - MitchSMP-Recovery
+  - MitchSMP-Gameplay
 commands:
   spawn:
     description: Teleport to spawn.

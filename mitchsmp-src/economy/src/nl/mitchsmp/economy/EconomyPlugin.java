@@ -645,7 +645,9 @@ public final class EconomyPlugin extends JavaPlugin implements EconomyService, L
     }
 
     private boolean isSellable(ItemStack item) {
-        return item != null && item.getType() != Material.AIR && item.getAmount() > 0 && !isMechanicsGuide(item) && !isBossShard(item);
+        return item != null && item.getType() != Material.AIR && item.getAmount() > 0
+            && !isMechanicsGuide(item) && !isBossShard(item)
+            && (MitchSMP.gameplay() == null || !MitchSMP.gameplay().isTradeRestricted(item));
     }
 
     private boolean isBossShard(ItemStack item) {

@@ -45,7 +45,7 @@ public final class SeasonsPlugin extends JavaPlugin implements Listener, TabComp
         data = new PropertiesFile(getDataFolder().toPath().resolve("season.properties"));
         hallOfFame = getDataFolder().toPath().resolve("hall-of-fame.txt");
         if (!data.contains("started-at") && !data.contains("active")) {
-            startSeason(30);
+            startSeason(30, defaultSeasonName(1));
         }
         if (getCommand("season") != null) {
             getCommand("season").setExecutor(this);
@@ -64,7 +64,7 @@ public final class SeasonsPlugin extends JavaPlugin implements Listener, TabComp
                 return true;
             }
             long remaining = endAt() - System.currentTimeMillis();
-            Text.msg(sender, "&aSeason #" + data.getInt("number", 1) + " &7eindigt over &f" + Math.max(0, remaining / DAY_MILLIS) + " &7dagen.");
+            Text.msg(sender, "&aSeason #" + data.getInt("number", 1) + " &8- &6" + seasonName() + " &7ends in &f" + Math.max(0, remaining / DAY_MILLIS) + " &7days.");
             Text.msg(sender, "&7Gebruik &f/season top <hearts|money|kills|deaths> &7of &f/season stats&7.");
             return true;
         }
@@ -112,8 +112,23 @@ public final class SeasonsPlugin extends JavaPlugin implements Listener, TabComp
                 } catch (NumberFormatException ignored) {
                 }
             }
-            startSeason(days);
-            Text.msg(sender, "&aNieuwe season gestart for &f" + days + " &adagen.");
+            String name = args.length >= 3 ? String.join(" ", java.util.Arrays.copyOfRange(args, 2, args.length)) : defaultSeasonName(data.getInt("number", 0) + 1);
+            startSeason(days, name);
+            Text.msg(sender, "&aStarted Season #" + data.getInt("number", 1) + ": &6" + seasonName() + " &afor &f" + days + " &adays.");
+            return true;
+        }
+        if (args[0].equalsIgnoreCase("name")) {
+            if (!MitchSMP.permissions().has(sender, "mitchsmp.season.admin")) {
+                Text.msg(sender, "&cYou do not have permission.");
+                return true;
+            }
+            if (args.length < 2) {
+                Text.msg(sender, "&7Current season name: &6" + seasonName() + "&7. Usage: &f/season name <name>");
+                return true;
+            }
+            data.set("name", sanitizeSeasonName(String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length))));
+            data.save();
+            Text.msg(sender, "&aSeason name updated to &6" + seasonName() + "&a.");
             return true;
         }
         if (args[0].equalsIgnoreCase("delete")) {
@@ -122,14 +137,14 @@ public final class SeasonsPlugin extends JavaPlugin implements Listener, TabComp
         if (args[0].equalsIgnoreCase("purge")) {
             return purgeSeasons(sender);
         }
-        Text.msg(sender, "&cGebruik: /season, /season top <hearts|money|kills|deaths>, /season stats [player], /season king, /season list, /season reset <seasonal|overall>, /season start|end|delete|purge");
+        Text.msg(sender, "&cUsage: /season, /season top <hearts|money|kills|deaths>, /season stats [player], /season king, /season list, /season name <name>, /season reset <seasonal|overall>, /season start <days> [name]|end|delete|purge");
         return true;
     }
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
-            return Tab.complete(args[0], "top", "stats", "king", "list", "reset", "start", "end", "delete", "purge");
+            return Tab.complete(args[0], "top", "stats", "king", "list", "name", "reset", "start", "end", "delete", "purge");
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("top")) {
             return Tab.complete(args[1], "hearts", "money", "kills", "deaths");
@@ -274,7 +289,7 @@ public final class SeasonsPlugin extends JavaPlugin implements Listener, TabComp
 
     private void seasonList(CommandSender sender) {
         Text.msg(sender, "&6Seasons:");
-        Text.msg(sender, "&7Actief: &f#" + data.getInt("number", 0) + " &7status=&f" + (seasonActive() ? "running" : "paused/ended"));
+        Text.msg(sender, "&7Active: &f#" + data.getInt("number", 0) + " &6" + seasonName() + " &7status=&f" + (seasonActive() ? "running" : "paused/ended"));
         if (!Files.exists(hallOfFame)) {
             Text.msg(sender, "&7Hall of Fame tekstarchief is leeg.");
             return;
@@ -366,6 +381,7 @@ public final class SeasonsPlugin extends JavaPlugin implements Listener, TabComp
         data.set("number", 0);
         data.set("started-at", null);
         data.set("duration-days", null);
+        data.set("name", null);
         data.set("active", false);
         data.set("king", null);
         data.save();
@@ -381,7 +397,7 @@ public final class SeasonsPlugin extends JavaPlugin implements Listener, TabComp
         }
     }
 
-    private void startSeason(int days) {
+    private void startSeason(int days, String name) {
         for (String key : new java.util.ArrayList<>(data.keys())) {
             if (key.startsWith("stats.")) {
                 data.set(key, null);
@@ -391,6 +407,7 @@ public final class SeasonsPlugin extends JavaPlugin implements Listener, TabComp
         data.set("number", number);
         data.set("started-at", System.currentTimeMillis());
         data.set("duration-days", days);
+        data.set("name", sanitizeSeasonName(name));
         data.set("active", true);
         data.set("king", null);
         data.save();
@@ -398,8 +415,9 @@ public final class SeasonsPlugin extends JavaPlugin implements Listener, TabComp
 
     private void endSeason() {
         int seasonNumber = data.getInt("number", 1);
+        String seasonName = seasonName();
         StringBuilder builder = new StringBuilder();
-        builder.append("Season #").append(seasonNumber).append(" ended at ").append(Instant.now()).append(System.lineSeparator());
+        builder.append("Season #").append(seasonNumber).append(" - ").append(seasonName).append(" ended at ").append(Instant.now()).append(System.lineSeparator());
         HeartService hearts = MitchSMP.hearts();
         if (hearts != null) {
             builder.append("Top hearts:").append(System.lineSeparator());
@@ -423,7 +441,26 @@ public final class SeasonsPlugin extends JavaPlugin implements Listener, TabComp
         }
         data.set("active", false);
         data.save();
-        trySyncVisualHall("legacy snapshot " + seasonNumber);
+        trySyncVisualHall("legacy snapshot " + seasonNumber + " " + seasonName.replace(' ', '_'));
+    }
+
+    private String seasonName() {
+        return data.getString("name", defaultSeasonName(Math.max(1, data.getInt("number", 1))));
+    }
+
+    private String defaultSeasonName(int number) {
+        return switch (Math.floorMod(number - 1, 5)) {
+            case 0 -> "Blood Dawn";
+            case 1 -> "Crownfall";
+            case 2 -> "Ashen Hunt";
+            case 3 -> "Crimson Reckoning";
+            default -> "Legacy of Ruin";
+        };
+    }
+
+    private String sanitizeSeasonName(String input) {
+        String cleaned = input == null ? "" : input.replaceAll("[\\r\\n;&]", " ").replaceAll("\\s+", " ").trim();
+        return cleaned.isBlank() ? defaultSeasonName(Math.max(1, data.getInt("number", 1))) : cleaned.substring(0, Math.min(40, cleaned.length()));
     }
 
     private long endAt() {
@@ -614,7 +651,7 @@ public final class SeasonsPlugin extends JavaPlugin implements Listener, TabComp
             return false;
         }
         String world = player.getWorld().getName().toLowerCase(java.util.Locale.ROOT);
-        return world.startsWith("bedwars_") || world.startsWith("bw_") || world.contains("bedwars") || world.startsWith("mitchtest_");
+        return world.startsWith("bedwars_") || world.startsWith("bw_") || world.contains("bedwars") || world.startsWith("skirmish_") || world.startsWith("mitchtest_");
     }
 }
 

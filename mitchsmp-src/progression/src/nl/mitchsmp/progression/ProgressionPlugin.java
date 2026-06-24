@@ -5,6 +5,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -149,11 +150,13 @@ public final class ProgressionPlugin extends JavaPlugin implements Listener, Tab
             return Tab.complete(args[0], "relics");
         }
         if (name.equals("contracts") && args.length == 1) {
-            return Tab.complete(args[0], "claim", "config");
+            return Tab.complete(args[0], "claim", "expired", "config");
         }
         if (name.equals("contracts") && args.length == 2 && args[0].equalsIgnoreCase("claim")) {
             if (sender instanceof Player player) {
-                return Tab.complete(args[1], activeContracts(player).stream().map(ContractDef::id).toList());
+                List<String> ids = new ArrayList<>(activeContracts(player).stream().map(ContractDef::id).toList());
+                ids.addAll(expiredClaimableContracts(player).stream().map(ContractDef::id).toList());
+                return Tab.complete(args[1], ids);
             }
             return Tab.complete(args[1], CONTRACTS.stream().map(ContractDef::id).toList());
         }
@@ -185,7 +188,7 @@ public final class ProgressionPlugin extends JavaPlugin implements Listener, Tab
                 return Tab.complete(args[1], "overall");
             }
             if (args.length == 2 && args[0].equalsIgnoreCase("config")) {
-            return Tab.complete(args[1], "economyBaseline", "economyScaleMax", "contractDurationMinutes", "orderDurationMinutes", "contractMoneyMultiplier", "orderMoneyMultiplier", "relicChance", "eliteRelicChance");
+            return Tab.complete(args[1], "economyBaseline", "economyScaleMax", "contractDurationMinutes", "contractClaimGraceMinutes", "orderDurationMinutes", "contractMoneyMultiplier", "orderMoneyMultiplier", "relicChance", "eliteRelicChance");
             }
             if (args.length == 3 && args[0].equalsIgnoreCase("config")) {
                 return Tab.complete(args[2], "0.5", "1", "2", "5", "10", "25", "120", "5000");
@@ -373,11 +376,23 @@ public final class ProgressionPlugin extends JavaPlugin implements Listener, Tab
         }
         int slot = event.getRawSlot();
         if (menu.type().equals("contracts")) {
+            if (slot == 50) {
+                openExpiredContracts(player);
+                return;
+            }
             String id = menu.contract(slot);
             if (id != null) {
                 claimContract(player, id);
             }
             openContracts(player);
+            return;
+        }
+        if (menu.type().equals("expired_contracts")) {
+            String id = menu.contract(slot);
+            if (id != null) {
+                claimContract(player, id);
+            }
+            openExpiredContracts(player);
             return;
         }
         if (menu.type().equals("orders")) {
@@ -452,6 +467,10 @@ public final class ProgressionPlugin extends JavaPlugin implements Listener, Tab
                 return true;
             }
             return claimContract(player, args[1].toLowerCase(Locale.ROOT));
+        }
+        if (args.length >= 1 && args[0].equalsIgnoreCase("expired")) {
+            openExpiredContracts(player);
+            return true;
         }
         openContracts(player);
         if (args.length == 0) {
@@ -591,10 +610,12 @@ public final class ProgressionPlugin extends JavaPlugin implements Listener, Tab
                 return true;
             }
             int season = args.length >= 2 ? parseInt(args[1], data.getInt("hof.count", 0) + 1) : data.getInt("hof.count", 0) + 1;
+            String seasonName = args.length >= 3 ? String.join(" ", java.util.Arrays.copyOfRange(args, 2, args.length)).replace('_', ' ') : "Unnamed Season";
             int index = data.getInt("hof.count", 0);
             List<HallChampion> champions = hallChampions();
             data.set("hof.count", index + 1);
             data.set("hof." + index + ".season", season);
+            data.set("hof." + index + ".seasonName", seasonName);
             data.set("hof." + index + ".champions", champions.size());
             for (int i = 0; i < champions.size(); i++) {
                 HallChampion champion = champions.get(i);
@@ -652,7 +673,7 @@ public final class ProgressionPlugin extends JavaPlugin implements Listener, Tab
         }
         if (args.length == 0 || (args.length == 1 && args[0].equalsIgnoreCase("config"))) {
             Text.msg(sender, "&6Progression tuning:");
-            for (String key : List.of("economyBaseline", "economyScaleMax", "contractDurationMinutes", "orderDurationMinutes", "contractMoneyMultiplier", "orderMoneyMultiplier", "relicChance", "eliteRelicChance")) {
+            for (String key : List.of("economyBaseline", "economyScaleMax", "contractDurationMinutes", "contractClaimGraceMinutes", "orderDurationMinutes", "contractMoneyMultiplier", "orderMoneyMultiplier", "relicChance", "eliteRelicChance")) {
                 Text.msg(sender, "&7" + key + ": &f" + setting(key, defaultSetting(key)));
             }
             Text.msg(sender, "&7Economy scale nu: &f" + format(economyScale()) + "x");
@@ -726,6 +747,34 @@ public final class ProgressionPlugin extends JavaPlugin implements Listener, Tab
             "&7Default 3, VIP 4, MVP 5, Legend 6.",
             "&7Reroll over: &f" + contractTimeLeft(player)
         )));
+        inventory.setItem(50, button(Material.CHEST, "&6Completed Archive", List.of(
+            "&7Completed contracts from the previous rotation.",
+            "&7Claim grace: &f" + Math.round(setting("contractClaimGraceMinutes", 1440.0D)) + " minutes",
+            "&eClick to open."
+        )));
+    }
+
+    private void openExpiredContracts(Player player) {
+        ProgressionMenu holder = new ProgressionMenu("expired_contracts");
+        Inventory inventory = Bukkit.createInventory(holder, 54, Text.color("&8Completed Contract Archive"));
+        holder.inventory(inventory);
+        List<ContractDef> contracts = expiredClaimableContracts(player);
+        long cycle = previousContractCycle();
+        for (int index = 0; index < contracts.size() && index < CONTRACT_SLOTS.length; index++) {
+            ContractDef contract = contracts.get(index);
+            int slot = CONTRACT_SLOTS[index];
+            holder.contract(slot, contract.id());
+            double progress = data.getDouble(contractKey(player, cycle, contract.id()), 0.0D);
+            inventory.setItem(slot, button(contract.icon(), "&a" + contract.label(), List.of(
+                "&7Progress: &f" + Math.min(contract.target(), (int) progress) + "/" + contract.target(),
+                "&7Reward: &a$" + format(contractMoney(contract.reward())),
+                "&eClick to claim before grace expires."
+            )));
+        }
+        if (contracts.isEmpty()) {
+            inventory.setItem(22, button(Material.PAPER, "&7No archived rewards", List.of("&7No completed unclaimed contracts are available.")));
+        }
+        player.openInventory(inventory);
     }
 
     private void refreshProgressionMenus() {
@@ -863,6 +912,7 @@ public final class ProgressionPlugin extends JavaPlugin implements Listener, Tab
             case "economyBaseline" -> 5_000.0D;
             case "economyScaleMax" -> 0.0D;
             case "contractDurationMinutes" -> 120.0D;
+            case "contractClaimGraceMinutes" -> 1440.0D;
             case "orderDurationMinutes" -> 360.0D;
             case "contractMoneyMultiplier" -> 1.0D;
             case "orderMoneyMultiplier" -> 1.0D;
@@ -1037,20 +1087,24 @@ public final class ProgressionPlugin extends JavaPlugin implements Listener, Tab
 
     private boolean claimContract(Player player, String id) {
         ContractDef contract = contract(id);
-        if (contract == null || activeContracts(player).stream().noneMatch(active -> active.id().equals(contract.id()))) {
+        long currentCycle = contractCycle(player);
+        boolean current = contract != null && contractsForCycle(player, currentCycle).stream().anyMatch(active -> active.id().equals(contract.id()));
+        boolean expired = contract != null && expiredClaimableContracts(player).stream().anyMatch(active -> active.id().equals(contract.id()));
+        if (contract == null || !current && !expired) {
             Text.msg(player, "&cUnknown contract.");
             return true;
         }
-        if (data.contains(contractDoneKey(player, id))) {
+        long claimCycle = current ? currentCycle : previousContractCycle();
+        if (data.contains(contractDoneKey(player, claimCycle, id))) {
             Text.msg(player, "&cDit contract is in deze rotatie al geclaimd. Reroll over: &f" + contractTimeLeft(player));
             return true;
         }
-        double progress = data.getDouble(contractKey(player, id), 0.0D);
+        double progress = data.getDouble(contractKey(player, claimCycle, id), 0.0D);
         if (progress < contract.target()) {
             Text.msg(player, "&cNog niet klaar. Progress: &f" + Math.round(progress) + "/" + contract.target());
             return true;
         }
-        data.set(contractDoneKey(player, id), true);
+        data.set(contractDoneKey(player, claimCycle, id), true);
         data.save();
         EconomyService economy = MitchSMP.economy();
         double reward = contractMoney(contract.reward()) * (1.0D + Math.min(10, skillPerk(player, "contract_broker")) * 0.02D);
@@ -1161,12 +1215,80 @@ public final class ProgressionPlugin extends JavaPlugin implements Listener, Tab
         if (cached != null && cached.cycle() == cycle && cached.limit() == limit) {
             return cached.contracts();
         }
-        List<ContractDef> pool = new ArrayList<>(CONTRACTS);
-        long seed = (cycle + ":" + player.getUniqueId()).hashCode();
-        Collections.shuffle(pool, new java.util.Random(seed));
-        List<ContractDef> rotation = List.copyOf(pool.subList(0, Math.min(limit, pool.size())));
+        List<ContractDef> rotation = contractsForCycle(player, cycle);
         contractRotationCache.put(player.getUniqueId(), new ContractRotation(cycle, limit, rotation));
         return rotation;
+    }
+
+    private List<ContractDef> contractsForCycle(Player player, long cycle) {
+        int limit = contractLimit(player);
+        String rotationKey = "contractRotation." + cycle + "." + player.getUniqueId();
+        String stored = data.getString(rotationKey, "");
+        if (!stored.isBlank()) {
+            Map<String, ContractDef> byId = CONTRACTS.stream().collect(java.util.stream.Collectors.toMap(ContractDef::id, contract -> contract));
+            List<ContractDef> restored = java.util.Arrays.stream(stored.split(","))
+                .map(String::trim)
+                .map(byId::get)
+                .filter(java.util.Objects::nonNull)
+                .toList();
+            if (restored.size() == CONTRACTS.size()) {
+                return List.copyOf(restored.subList(0, Math.min(limit, restored.size())));
+            }
+        }
+        List<ContractDef> pool = new ArrayList<>(CONTRACTS);
+        long seed = (cycle + ":" + player.getUniqueId()).hashCode();
+        java.util.Random seeded = new java.util.Random(seed);
+        Collections.shuffle(pool, seeded);
+        Map<String, Double> jitter = new HashMap<>();
+        for (ContractDef contract : pool) {
+            jitter.put(contract.id(), seeded.nextDouble() * 1.5D);
+        }
+        pool.sort(Comparator.comparingDouble((ContractDef contract) -> contractEconomyScore(contract) + jitter.getOrDefault(contract.id(), 0.0D)).reversed());
+        data.set(rotationKey, pool.stream().map(ContractDef::id).collect(java.util.stream.Collectors.joining(",")));
+        data.save();
+        return List.copyOf(pool.subList(0, Math.min(limit, pool.size())));
+    }
+
+    private double contractEconomyScore(ContractDef contract) {
+        Material material = contractMaterial(contract.type());
+        EconomyWatchService watch = MitchSMP.economyWatch();
+        if (material == null || watch == null) {
+            return 1.0D;
+        }
+        double scarcity = Math.max(0.5D, Math.min(3.0D, watch.scarcityMultiplier(material)));
+        double valueSignal = Math.log10(Math.max(1.0D, watch.quickSellPrice(material) + 1.0D));
+        return scarcity + Math.min(1.0D, valueSignal * 0.25D);
+    }
+
+    private Material contractMaterial(ContractType type) {
+        return switch (type) {
+            case DIAMOND_ORE -> Material.DIAMOND;
+            case EMERALD_ORE -> Material.EMERALD;
+            case ANCIENT_DEBRIS -> Material.ANCIENT_DEBRIS;
+            case GOLD_ORE -> Material.GOLD_INGOT;
+            case REDSTONE_ORE -> Material.REDSTONE;
+            case IRON_ORE -> Material.IRON_INGOT;
+            case LOG_BREAK -> Material.OAK_LOG;
+            case CROP_HARVEST -> Material.WHEAT;
+            default -> null;
+        };
+    }
+
+    private long previousContractCycle() {
+        return Math.max(0L, System.currentTimeMillis() / contractDurationMillis() - 1L);
+    }
+
+    private List<ContractDef> expiredClaimableContracts(Player player) {
+        long cycle = previousContractCycle();
+        long expiredAt = (cycle + 1L) * contractDurationMillis();
+        long grace = Math.max(0L, Math.round(setting("contractClaimGraceMinutes", 1440.0D) * 60_000.0D));
+        if (System.currentTimeMillis() - expiredAt > grace) {
+            return List.of();
+        }
+        return contractsForCycle(player, cycle).stream().filter(contract ->
+            data.getDouble(contractKey(player, cycle, contract.id()), 0.0D) >= contract.target()
+                && !data.contains(contractDoneKey(player, cycle, contract.id()))
+        ).toList();
     }
 
     private long contractCycle(Player player) {
@@ -1222,11 +1344,19 @@ public final class ProgressionPlugin extends JavaPlugin implements Listener, Tab
     }
 
     private String contractKey(Player player, String id) {
-        return "contracts." + contractCycle(player) + "." + player.getUniqueId() + "." + id;
+        return contractKey(player, contractCycle(player), id);
+    }
+
+    private String contractKey(Player player, long cycle, String id) {
+        return "contracts." + cycle + "." + player.getUniqueId() + "." + id;
     }
 
     private String contractDoneKey(Player player, String id) {
         return contractKey(player, id) + ".done";
+    }
+
+    private String contractDoneKey(Player player, long cycle, String id) {
+        return contractKey(player, cycle, id) + ".done";
     }
 
     private ItemStack relicItem(String id) {
@@ -1444,7 +1574,7 @@ public final class ProgressionPlugin extends JavaPlugin implements Listener, Tab
                 } catch (IllegalArgumentException ignored) {
                 }
             }
-            snapshots.add(new HallSnapshot(season, data.getString("hof." + index + ".date", "?"), champions));
+            snapshots.add(new HallSnapshot(season, data.getString("hof." + index + ".seasonName", "Unnamed Season"), data.getString("hof." + index + ".date", "?"), champions));
         }
         snapshots.sort(Comparator.comparingInt(HallSnapshot::season));
         return snapshots;
@@ -1472,6 +1602,7 @@ public final class ProgressionPlugin extends JavaPlugin implements Listener, Tab
         for (int index = 0; index < snapshots.size(); index++) {
             HallSnapshot snapshot = snapshots.get(index);
             data.set("hof." + index + ".season", snapshot.season());
+            data.set("hof." + index + ".seasonName", snapshot.name());
             data.set("hof." + index + ".date", snapshot.date());
             data.set("hof." + index + ".champions", snapshot.champions().size());
             for (int i = 0; i < snapshot.champions().size(); i++) {
@@ -1559,7 +1690,7 @@ public final class ProgressionPlugin extends JavaPlugin implements Listener, Tab
                 new Location(world, x, 101, z).getBlock().setType(material);
             }
         }
-        spawnLabel(world, 0.5D, 104.0D, baseZ - 5.5D, "&6Season #" + snapshot.season() + " &7- &f" + snapshot.date());
+        spawnLabel(world, 0.5D, 104.0D, baseZ - 5.5D, "&6Season #" + snapshot.season() + " &8- &e" + snapshot.name() + " &7- &f" + snapshot.date());
         List<HallChampion> champions = snapshot.champions();
         if (champions.isEmpty()) {
             spawnLabel(world, 0.5D, 102.8D, baseZ + 0.5D, "&7Geen winnaars opgeslagen.");
@@ -1651,7 +1782,7 @@ public final class ProgressionPlugin extends JavaPlugin implements Listener, Tab
             return false;
         }
         String world = player.getWorld().getName().toLowerCase(Locale.ROOT);
-        return world.startsWith("bedwars_") || world.startsWith("bw_") || world.contains("bedwars") || world.startsWith("mitchtest_");
+        return world.startsWith("bedwars_") || world.startsWith("bw_") || world.contains("bedwars") || world.startsWith("skirmish_") || world.startsWith("mitchtest_");
     }
 
     private String format(double value) {
@@ -1734,7 +1865,7 @@ public final class ProgressionPlugin extends JavaPlugin implements Listener, Tab
     private record HallChampion(UUID id, String name, List<String> roles) {
     }
 
-    private record HallSnapshot(int season, String date, List<HallChampion> champions) {
+    private record HallSnapshot(int season, String name, String date, List<HallChampion> champions) {
     }
 
     private static final class HallChunkGenerator extends ChunkGenerator {

@@ -147,6 +147,8 @@ public enum Material {
     SUNFLOWER,
     TOTEM_OF_UNDYING,
     TNT,
+    TARGET,
+    TORCH,
     TRIPWIRE_HOOK,
     TRIDENT,
     WATER_BUCKET,

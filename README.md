@@ -38,6 +38,13 @@ Release records:
 - `CHANGELOG.md`
 - `RELEASE_CHECKLIST.md`
 - `P0_LAUNCH_READINESS.md`
+- `P1_GAMEPLAY_READINESS.md`
+
+Launch documentation:
+
+- `docs/PLAYER_GUIDE.md`
+- `docs/STAFF_GUIDE.md`
+- `docs/TECHNICAL_REFERENCE.md`
 
 ## Public Branding
 

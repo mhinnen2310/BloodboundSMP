@@ -1,0 +1,16 @@
+name: MitchSMP-Skirmish
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.skirmish.SkirmishPlugin
+author: Mitchel
+description: Low-stakes Bloodbound PvP training arena.
+depend:
+  - MitchSMP-Core
+softdepend:
+  - MitchSMP-Economy
+  - MitchSMP-Skills
+commands:
+  skirmish:
+    aliases: [skirm]
+    description: Join or manage the low-stakes PvP arena.
+    usage: /skirmish [join|leave|start|stats]

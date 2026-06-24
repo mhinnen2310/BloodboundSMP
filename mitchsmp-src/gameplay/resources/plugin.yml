@@ -1,0 +1,45 @@
+name: MitchSMP-Gameplay
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.gameplay.GameplayPlugin
+author: Mitchel
+description: Bloodbound rookie onramp, assists, goals, First Blood and reports.
+depend:
+  - MitchSMP-Core
+softdepend:
+  - MitchSMP-Lifesteal
+  - MitchSMP-Economy
+  - MitchSMP-Skills
+  - MitchSMP-Bounties
+  - MitchSMP-Progression
+commands:
+  goals:
+    description: Show personal next-step goals.
+    usage: /goals
+  rookie:
+    aliases: [rookiecontracts]
+    description: Open rookie contracts.
+    usage: /rookie
+  recoverykit:
+    aliases: [recovery]
+    description: Claim a restricted recovery kit when eligible.
+    usage: /recoverykit
+  report:
+    description: Report a player or inspect a report as staff.
+    usage: /report <player> <reason> | /report view|close <id>
+  reports:
+    description: List open reports.
+    usage: /reports [open|closed]
+  staffprofile:
+    aliases: [playerprofile]
+    description: View an offline-capable staff profile.
+    usage: /staffprofile <player>
+  staffnote:
+    aliases: [notes]
+    description: Add or view persistent staff notes.
+    usage: /staffnote <add|view> <player> [note]
+permissions:
+  mitchsmp.gameplay.use:
+    default: false
+  mitchsmp.reports.staff:
+    default: false
