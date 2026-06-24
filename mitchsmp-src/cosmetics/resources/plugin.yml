@@ -1,0 +1,16 @@
+name: MitchSMP-Cosmetics
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.cosmetics.CosmeticsPlugin
+author: Mitchel
+description: Cosmetic tags, trails and effects.
+depend:
+  - MitchSMP-Core
+commands:
+  cosmetics:
+    aliases: [cos]
+    description: Cosmetic settings.
+    usage: /cosmetics <tag|trail>
+  emote:
+    description: Play an emote.
+    usage: /emote <wave|dance|laugh>

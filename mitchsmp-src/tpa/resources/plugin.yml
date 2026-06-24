@@ -1,0 +1,20 @@
+name: MitchSMP-TPA
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.tpa.TpaPlugin
+author: Mitchel
+description: MitchSMP teleport requests.
+depend:
+  - MitchSMP-Core
+softdepend:
+  - MitchSMP-CombatTag
+commands:
+  tpa:
+    description: Request teleport.
+    usage: /tpa <player>
+  tpaccept:
+    description: Accept teleport request.
+    usage: /tpaccept [player]
+  tpdeny:
+    description: Deny teleport request.
+    usage: /tpdeny [player]

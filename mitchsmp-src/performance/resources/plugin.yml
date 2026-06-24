@@ -1,0 +1,12 @@
+name: MitchSMP-Performance
+version: 0.1.0
+main: nl.mitchsmp.performance.PerformancePlugin
+api-version: '1.21'
+depend:
+  - MitchSMP-Core
+description: Performance drop detector and staff alert system for MitchSMP.
+commands:
+  perf:
+    aliases: [performance, lagwatch]
+    description: Shows performance status and tuning.
+    usage: /perf status

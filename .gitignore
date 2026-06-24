@@ -1,0 +1,49 @@
+# Runtime/server state
+cache/
+debug/
+libraries/
+logs/
+versions/
+plugins/
+config/
+world/
+world_*/
+bedwars_*/
+tntrun_*/
+spleef_*/
+bloodbound_*/
+mitchsmp_*/
+*.log
+*.lck
+
+# Generated build output
+mitchsmp-src/build/
+resourcepacks/backups/
+
+# Generated distributables and secrets
+BloodboundSMP-resourcepack.zip
+paper-*.jar
+server.properties
+ops.json
+whitelist.json
+banned-ips.json
+banned-players.json
+usercache.json
+eula.txt
+version_history.json
+*.pid
+
+# Local/editor files
+.idea/
+.vscode/
+.agents/
+.codex/
+.console_history
+addtmrw.md
+addtmrw.txt
+start.bat.txt
+server-icon.before-bloodbound.png
+*.tmp
+*.bak
+Thumbs.db
+desktop.ini

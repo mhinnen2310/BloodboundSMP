@@ -1,0 +1,24 @@
+name: MitchSMP-Homes
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.homes.HomesPlugin
+author: Mitchel
+description: MitchSMP rank based homes.
+depend:
+  - MitchSMP-Core
+softdepend:
+  - MitchSMP-CombatTag
+commands:
+  sethome:
+    description: Set a home.
+    usage: /sethome [name]
+  home:
+    description: Teleport to a home.
+    usage: /home <name>
+  homes:
+    description: List homes.
+    usage: /homes
+  delhome:
+    aliases: [deletehome]
+    description: Delete a home.
+    usage: /delhome <name>

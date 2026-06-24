@@ -1,0 +1,15 @@
+name: MitchSMP-AuctionHouse
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.auctionhouse.AuctionHousePlugin
+author: Mitchel
+description: Inventory based MitchSMP auction house.
+depend:
+  - MitchSMP-Core
+softdepend:
+  - MitchSMP-Economy
+commands:
+  auctionhouse:
+    aliases: [ah]
+    description: Auction house UI with search, sorting and my listings.
+    usage: /ah [sell|buy|cancel|search|sort|clear|help]

@@ -1,0 +1,39 @@
+name: MitchSMP-Progression
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.progression.ProgressionPlugin
+author: Mitchel
+description: Collection log, contracts, resource orders, login streaks, explorer ranking and legacy records.
+depend:
+  - MitchSMP-Core
+softdepend:
+  - MitchSMP-Economy
+  - MitchSMP-Lifesteal
+commands:
+  collection:
+    aliases: [clog]
+    description: View collection log.
+    usage: /collection [relics]
+  contracts:
+    description: View and claim high risk contracts.
+    usage: /contracts [claim]
+  orders:
+    aliases: [resourceorders]
+    description: View and deliver daily resource orders.
+    usage: /orders [deliver <material> <amount>]
+  login:
+    aliases: [daily]
+    description: Claim daily login streak rewards.
+    usage: /login
+  explorer:
+    description: View explorer ranking.
+    usage: /explorer [top]
+  legacy:
+    description: View legacy records and hall of fame snapshots.
+    usage: /legacy [hof|snapshot|delete|purgehof|rebuild]
+  relic:
+    description: Admin relic command.
+    usage: /relic give <player> <id>
+  progression:
+    description: Admin tuning and reset for progression systems.
+    usage: /progression config [key] [value] | /progression reset overall

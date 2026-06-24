@@ -1,0 +1,15 @@
+name: MitchSMP-CorruptedHearts
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.corruptedhearts.CorruptedHeartsPlugin
+author: Mitchel
+description: Rare recovery hearts for players below 10 hearts.
+depend:
+  - MitchSMP-Core
+softdepend:
+  - MitchSMP-Lifesteal
+commands:
+  corruptedheart:
+    aliases: [cheart]
+    description: Admin corrupted heart command.
+    usage: /corruptedheart give <player> [amount]

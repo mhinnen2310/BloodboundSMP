@@ -1,0 +1,17 @@
+name: MitchSMP-Artifacts
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.artifacts.ArtifactsPlugin
+author: Mitchel
+description: Rare boss currency and OP shop for MitchSMP.
+depend:
+  - MitchSMP-Core
+commands:
+  opshop:
+    aliases: [bossShop, shardshop]
+    description: Open the Boss Shard shop.
+    usage: /opshop
+  bossshards:
+    aliases: [shards]
+    description: Admin Boss Shard command.
+    usage: /bossshards give <player> [amount]

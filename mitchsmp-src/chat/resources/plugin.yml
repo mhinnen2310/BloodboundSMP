@@ -1,0 +1,29 @@
+name: MitchSMP-Chat
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.chat.ChatPlugin
+author: Mitchel
+description: MitchSMP chat, private messages, staff chat and mutes.
+depend:
+  - MitchSMP-Core
+softdepend:
+  - MitchSMP-Cosmetics
+commands:
+  msg:
+    aliases: [tell, w]
+    description: Private message.
+    usage: /msg <player> <message>
+  reply:
+    aliases: [r]
+    description: Reply to a private message.
+    usage: /reply <message>
+  staffchat:
+    aliases: [sc]
+    description: Staff chat.
+    usage: /staffchat <message>
+  mute:
+    description: Mute a player.
+    usage: /mute <player> <minutes> [reason]
+  unmute:
+    description: Unmute a player.
+    usage: /unmute <player>

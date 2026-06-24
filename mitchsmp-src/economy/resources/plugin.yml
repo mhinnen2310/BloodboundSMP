@@ -1,0 +1,26 @@
+name: MitchSMP-Economy
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.economy.EconomyPlugin
+author: Mitchel
+description: Internal MitchSMP economy.
+depend:
+  - MitchSMP-Core
+commands:
+  balance:
+    aliases: [bal, money]
+    description: View balance.
+    usage: /balance [player]
+  pay:
+    description: Pay another player.
+    usage: /pay <player> <amount>
+  moneytop:
+    description: Show top balances.
+    usage: /moneytop
+  eco:
+    description: Admin economy command.
+    usage: /eco <give|take|set|stats|adminbal|clear|resetall> <player> <amount>
+  quicksell:
+    aliases: [sell, qs, sellquick]
+    description: Open economy-aware quicksell UI.
+    usage: /sell [prices]

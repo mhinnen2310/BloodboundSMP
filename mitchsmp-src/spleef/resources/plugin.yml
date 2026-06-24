@@ -1,0 +1,12 @@
+name: MitchSMP-Spleef
+version: 0.1.0
+main: nl.mitchsmp.spleef.SpleefPlugin
+api-version: '1.21'
+depend:
+  - MitchSMP-Core
+description: Separated Spleef minigame for MitchSMP.
+commands:
+  spleef:
+    aliases: [sf]
+    description: Join or manage Spleef.
+    usage: /spleef <join|start|leave|arenas|premade|paid|end>

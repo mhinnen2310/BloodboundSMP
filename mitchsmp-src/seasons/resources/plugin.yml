@@ -1,0 +1,15 @@
+name: MitchSMP-Seasons
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.seasons.SeasonsPlugin
+author: Mitchel
+description: MitchSMP seasons, leaderboards and hall of fame.
+depend:
+  - MitchSMP-Core
+softdepend:
+  - MitchSMP-Lifesteal
+  - MitchSMP-Economy
+commands:
+  season:
+    description: Season info and admin controls.
+    usage: /season [top|stats|king|list|reset|start|end|delete|purge]

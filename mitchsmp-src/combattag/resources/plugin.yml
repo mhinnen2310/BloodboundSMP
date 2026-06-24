@@ -1,0 +1,12 @@
+name: MitchSMP-CombatTag
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.combattag.CombatTagPlugin
+author: Mitchel
+description: Combat tag system for MitchSMP.
+depend:
+  - MitchSMP-Core
+commands:
+  combat:
+    description: Show combat tag status.
+    usage: /combat

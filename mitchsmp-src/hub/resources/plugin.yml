@@ -1,0 +1,16 @@
+name: MitchSMP-Hub
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.hub.HubPlugin
+author: Mitchel
+description: Protected BloodboundSMP hub and navigator.
+depend:
+  - MitchSMP-Core
+commands:
+  hub:
+    aliases: [serverhub, navigator]
+    description: Teleport to the protected Bloodbound hub.
+    usage: /hub [menu|build]
+  protect:
+    description: Owner-only protected build access controls.
+    usage: /protect build <player> <true|false>

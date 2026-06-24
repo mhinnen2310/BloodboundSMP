@@ -1,0 +1,14 @@
+name: MitchSMP-EconomyWatch
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.economywatch.EconomyWatchPlugin
+author: Mitchel
+description: Dynamic economy watcher and market pricing service.
+depend:
+  - MitchSMP-Core
+  - MitchSMP-Economy
+commands:
+  econwatch:
+    aliases: [marketwatch, market]
+    description: View dynamic economy and item market data.
+    usage: /econwatch [stats|price|top|active]

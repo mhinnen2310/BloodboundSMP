@@ -1,0 +1,16 @@
+name: MitchSMP-Events
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.events.EventsPlugin
+author: Mitchel
+description: Automated MitchSMP events.
+depend:
+  - MitchSMP-Core
+softdepend:
+  - MitchSMP-Economy
+  - MitchSMP-Bosses
+  - MitchSMP-CorruptedHearts
+commands:
+  event:
+    description: Event control.
+    usage: /event <status|start|config>

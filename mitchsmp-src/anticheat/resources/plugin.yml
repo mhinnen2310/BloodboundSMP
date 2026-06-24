@@ -1,0 +1,13 @@
+name: MitchSMP-AntiCheat
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.anticheat.AntiCheatPlugin
+author: Mitchel
+description: Early MitchSMP anti-cheat alerts and staff tools.
+depend:
+  - MitchSMP-Core
+commands:
+  anticheat:
+    aliases: [ac]
+    description: Anti-cheat command.
+    usage: /ac [alerts|sus|check|clear]

@@ -1,0 +1,17 @@
+name: MitchSMP-HUD
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.hud.HudPlugin
+author: Mitchel
+description: Customizable MitchSMP actionbar HUD.
+depend:
+  - MitchSMP-Core
+softdepend:
+  - MitchSMP-Economy
+  - MitchSMP-Lifesteal
+  - MitchSMP-Seasons
+  - MitchSMP-Progression
+commands:
+  hud:
+    description: Configure your MitchSMP HUD.
+    usage: /hud <on|off|mode|toggle|add|remove|list|reset>

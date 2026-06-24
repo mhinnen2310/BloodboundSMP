@@ -1,0 +1,14 @@
+name: MitchSMP-Bosses
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.bosses.BossesPlugin
+author: Mitchel
+description: Fundamental Bloodbound personal bosses and guaranteed Boss Shard drops.
+depend:
+  - MitchSMP-Core
+  - MitchSMP-Artifacts
+commands:
+  boss:
+    aliases: [bosses]
+    description: View boss status or use staff boss controls.
+    usage: /boss <status|spawn|config>

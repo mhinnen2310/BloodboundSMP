@@ -1,0 +1,13 @@
+name: MitchSMP-Skyblock
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.skyblock.SkyblockPlugin
+author: Mitchel
+description: Isolated BloodboundSMP Skyblock gamemode.
+depend:
+  - MitchSMP-Core
+commands:
+  skyblock:
+    aliases: [island, sb]
+    description: Create and manage an isolated skyblock island.
+    usage: /skyblock <create|home|leave|reset|info>

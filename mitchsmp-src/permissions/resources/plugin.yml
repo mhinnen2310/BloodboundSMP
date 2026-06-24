@@ -1,0 +1,25 @@
+name: MitchSMP-Permissions
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.permissions.PermissionsPlugin
+author: Mitchel
+description: MitchSMP rank and permission commands.
+depend:
+  - MitchSMP-Core
+commands:
+  rank:
+    description: View or set player rank.
+    usage: /rank <player> [rank]
+  setrank:
+    description: Set player rank.
+    usage: /setrank <player> <rank>
+  groups:
+    description: List ranks.
+    usage: /groups
+  perm:
+    description: Manage rank permissions.
+    usage: /perm <rank> <add|remove|list> [permission]
+  rankperms:
+    aliases: [cmdperms]
+    description: Show command permissions by rank.
+    usage: /rankperms [commands|rank] [page]

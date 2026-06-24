@@ -1,0 +1,21 @@
+name: MitchSMP-Skills
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.skills.SkillsPlugin
+author: Mitchel
+description: Skilltree, endgame tool abilities and mechanics guide for MitchSMP.
+depend:
+  - MitchSMP-Core
+commands:
+  skills:
+    aliases: [skilltree, sk]
+    description: Open the MitchSMP skilltree.
+    usage: /skills [admin]
+  abilities:
+    aliases: [ability, enchants]
+    description: Open tool-bound endgame ability menu.
+    usage: /abilities [clean|config]
+  mechanics:
+    aliases: [guide, mguide]
+    description: Get the MitchSMP mechanics guide.
+    usage: /mechanics

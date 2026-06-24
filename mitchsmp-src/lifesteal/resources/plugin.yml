@@ -1,0 +1,15 @@
+name: MitchSMP-Lifesteal
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.lifesteal.LifestealPlugin
+author: Mitchel
+description: MitchSMP lifesteal hearts system.
+depend:
+  - MitchSMP-Core
+commands:
+  hearts:
+    description: View player hearts.
+    usage: /hearts [player]
+  sethearts:
+    description: Set player hearts.
+    usage: /sethearts <player> <1-20>

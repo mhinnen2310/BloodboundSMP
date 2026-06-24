@@ -1,0 +1,16 @@
+name: MitchSMP-EndBoss
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.endboss.EndBossPlugin
+author: Mitchel
+description: Endgame ritual boss battle with temporary hell worlds for MitchSMP.
+depend:
+  - MitchSMP-Core
+softdepend:
+  - MitchSMP-Artifacts
+  - MitchSMP-CorruptedHearts
+commands:
+  endboss:
+    aliases: [hellboss, ritualboss]
+    description: Start or join the endgame ritual bossfight.
+    usage: /endboss <ritual|start|join|confirm|status>

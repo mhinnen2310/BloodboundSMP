@@ -1,0 +1,17 @@
+# Sanitized BloodboundSMP production template. Paper fills additional defaults on first boot.
+server-port=25565
+online-mode=true
+enforce-secure-profile=true
+gamemode=survival
+difficulty=hard
+max-players=100
+motd=BloodboundSMP - Steal Hearts. Build Legacy. / No Claims. No Mercy.
+level-name=world
+spawn-protection=0
+view-distance=10
+simulation-distance=8
+enable-rcon=false
+require-resource-pack=true
+resource-pack=https://REPLACE_WITH_PUBLIC_DIRECT_URL/BloodboundSMP-resourcepack.zip
+resource-pack-id=6f302d82-5e7a-4f4a-9cc9-26f1118b1dbd
+resource-pack-sha1=cadbbc3b0ab5d6b17512f6897c2929be2aadbecd

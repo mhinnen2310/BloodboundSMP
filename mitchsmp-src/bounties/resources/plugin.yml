@@ -1,0 +1,18 @@
+name: MitchSMP-Bounties
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.bounties.BountiesPlugin
+author: Mitchel
+description: Automatic bounty system based on hearts.
+depend:
+  - MitchSMP-Core
+softdepend:
+  - MitchSMP-Lifesteal
+  - MitchSMP-Economy
+commands:
+  bounty:
+    description: View or place a player's bounty.
+    usage: /bounty [player|place <player> <amount>|config]
+  bounties:
+    description: View top bounties.
+    usage: /bounties

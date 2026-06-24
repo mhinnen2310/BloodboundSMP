@@ -1,0 +1,10 @@
+name: MitchSMP-Core
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.core.MitchSMPCore
+author: Mitchel
+description: Core API and services for all MitchSMP plugins.
+commands:
+  mitchcore:
+    description: MitchSMP core status and reload command.
+    usage: /mitchcore

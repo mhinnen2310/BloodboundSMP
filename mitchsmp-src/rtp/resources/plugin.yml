@@ -1,0 +1,15 @@
+name: MitchSMP-RTP
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.rtp.RtpPlugin
+author: Mitchel
+description: Random teleport command for MitchSMP.
+depend:
+  - MitchSMP-Core
+softdepend:
+  - MitchSMP-CombatTag
+commands:
+  rtp:
+    aliases: [wild]
+    description: Random teleport in the overworld.
+    usage: /rtp [radius]

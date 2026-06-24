@@ -1,0 +1,12 @@
+name: MitchSMP-TNTRun
+version: 0.1.0
+main: nl.mitchsmp.tntrun.TntRunPlugin
+api-version: '1.21'
+depend:
+  - MitchSMP-Core
+description: Separated TNT Run minigame for MitchSMP.
+commands:
+  tntrun:
+    aliases: [tr]
+    description: Join or manage TNT Run.
+    usage: /tntrun <join|leave|arenas|paid|premade|start|end>

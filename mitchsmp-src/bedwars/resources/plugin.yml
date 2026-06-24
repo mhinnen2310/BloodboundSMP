@@ -1,0 +1,13 @@
+name: MitchSMP-BedWars
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.bedwars.BedWarsPlugin
+author: Mitchel
+description: Separated BedWars arenas for MitchSMP.
+depend:
+  - MitchSMP-Core
+commands:
+  bedwars:
+    aliases: [bw]
+    description: BedWars arena command.
+    usage: /bw <join|leave|arenas|paid|premade|start|end>

@@ -1,0 +1,144 @@
+name: MitchSMP-Essentials
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.essentials.EssentialsPlugin
+author: Mitchel
+description: Essential player and admin commands for MitchSMP.
+depend:
+  - MitchSMP-Core
+commands:
+  spawn:
+    description: Teleport to spawn.
+    usage: /spawn
+  setspawn:
+    description: Set server spawn.
+    usage: /setspawn
+  heal:
+    description: Heal yourself or another player.
+    usage: /heal [player]
+  feed:
+    description: Feed yourself or another player.
+    usage: /feed [player]
+  fly:
+    description: Toggle flight.
+    usage: /fly [player]
+  gamemode:
+    aliases: [gm]
+    description: Change gamemode.
+    usage: /gm <survival|creative|adventure|spectator> [player]
+  day:
+    description: Set day.
+    usage: /day
+  night:
+    description: Set night.
+    usage: /night
+  sun:
+    description: Clear weather.
+    usage: /sun
+  rain:
+    description: Rain weather.
+    usage: /rain
+  speed:
+    description: Set walk or fly speed.
+    usage: /speed <walk|fly> <1-10> [player]
+  trash:
+    aliases: [bin]
+    description: Open trash.
+    usage: /trash
+  menu:
+    aliases: [m]
+    description: Open the main Bloodbound menu.
+    usage: /menu
+  help:
+    aliases: ['?', bloodhelp]
+    description: Show the filtered Bloodbound command list.
+    usage: /help [page]
+  admin:
+    aliases: [adminui]
+    description: Open admin menu.
+    usage: /admin
+  invsee:
+    description: Open another player's inventory.
+    usage: /invsee <player>
+  enderchest:
+    aliases: [ec]
+    description: Open an ender chest.
+    usage: /enderchest [player]
+  tp:
+    description: Teleport to another player or coordinates.
+    usage: /tp <player|x y z>
+  tphere:
+    description: Teleport a player to you.
+    usage: /tphere <player>
+  clearinventory:
+    aliases: [ci]
+    description: Clear inventory.
+    usage: /clearinventory [player]
+  back:
+    description: Teleport back to your previous location.
+    usage: /back
+  commands:
+    aliases: [cmds, mcommands]
+    description: Show MitchSMP commands.
+    usage: /commands [page]
+  noclip:
+    description: Toggle admin no-clip mode.
+    usage: /noclip [player]
+  fakeores:
+    description: Open a staff fake-ore bait selector for anti-xray testing.
+    usage: /fakeores [player|all|nearby|cancel] [radius] [seconds]
+  godtools:
+    description: Give high-end staff intervention tools.
+    usage: /godtools [player]
+  freeze:
+    description: Freeze or unfreeze a player for staff checks.
+    usage: /freeze <player>
+  lockdown:
+    description: Fully lock down a player in adventure mode.
+    usage: /lockdown <player>
+  release:
+    description: Release a player from freeze or lockdown.
+    usage: /release <player>
+  jail:
+    description: Put a player in an auto-generated staff jail cell or visit one.
+    usage: /jail <player> [minutes] | /jail visit <player>
+  unjail:
+    description: Release a player from staff jail.
+    usage: /unjail <player>
+  adminmode:
+    aliases: [staffmode]
+    description: Toggle separated staff mode with its own inventory and permissions.
+    usage: /adminmode [on|off|override]
+  vanish:
+    aliases: [v]
+    description: Toggle staff vanish.
+    usage: /vanish [player]
+  model:
+    aliases: [disguise, morph, modelchanger]
+    description: Change your visible staff model while in admin mode.
+    usage: /model <mob|off>
+  starterkit:
+    aliases: [kit]
+    description: Claim starter kit.
+    usage: /starterkit
+  shop:
+    description: Open configurable non-PvP shop.
+    usage: /shop [tab|edit|set|remove|list|reset]
+  lagclear:
+    aliases: [clearlag]
+    description: Remove dropped items for server cleanup.
+    usage: /lagclear
+  testworld:
+    aliases: [tworld, sandbox]
+    description: Create, join and reset isolated staff test worlds.
+    usage: /testworld <create|join|leave|reset|list>
+  smpworld:
+    description: Owner-only creation and activation of a new SMP wilderness world.
+    usage: /smpworld <load <name> [confirm confirm]|active>
+  ownerconfirm:
+    description: Permanently bind the staff audit to the current Owner UUID.
+    usage: /ownerconfirm confirm
+  serverconfig:
+    aliases: [confighelp]
+    description: Show all chat-configurable Bloodbound tuning systems.
+    usage: /serverconfig

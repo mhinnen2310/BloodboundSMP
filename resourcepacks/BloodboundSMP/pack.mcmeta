@@ -1,0 +1,12 @@
+{
+  "pack": {
+    "pack_format": 85,
+    "supported_formats": [
+      85,
+      99
+    ],
+    "min_format": 85,
+    "max_format": 99,
+    "description": "BloodboundSMP item textures - Boss Shard and Corrupted Heart"
+  }
+}
