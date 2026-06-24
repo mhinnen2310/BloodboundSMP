@@ -3,6 +3,7 @@ package org.bukkit.block;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.inventory.ItemStack;
+import org.bukkit.block.data.BlockData;
 
 public interface Block {
     void setType(Material material);
@@ -16,4 +17,8 @@ public interface Block {
     BlockState getState();
 
     boolean breakNaturally(ItemStack tool);
+
+    BlockData getBlockData();
+
+    void setBlockData(BlockData data, boolean applyPhysics);
 }

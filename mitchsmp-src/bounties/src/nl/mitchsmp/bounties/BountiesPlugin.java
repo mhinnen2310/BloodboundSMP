@@ -7,6 +7,7 @@ import java.util.Locale;
 import java.util.UUID;
 
 import nl.mitchsmp.core.api.EconomyService;
+import nl.mitchsmp.core.api.BountyService;
 import nl.mitchsmp.core.api.HeartService;
 import nl.mitchsmp.core.api.MitchSMP;
 import nl.mitchsmp.core.storage.PropertiesFile;
@@ -21,9 +22,10 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.PlayerDeathEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
-public final class BountiesPlugin extends JavaPlugin implements Listener, TabCompleter {
+public final class BountiesPlugin extends JavaPlugin implements Listener, TabCompleter, BountyService {
     private PropertiesFile data;
 
     @Override
@@ -32,6 +34,38 @@ public final class BountiesPlugin extends JavaPlugin implements Listener, TabCom
         Bukkit.getPluginManager().registerEvents(this, this);
         command("bounty");
         command("bounties");
+        MitchSMP.registerService(BountyService.class, this);
+        Bukkit.getScheduler().runTaskTimer(this, this::notifyOnlineBounties, 200L, 20L * 60L);
+    }
+
+    @Override
+    public void onDisable() {
+        data.save();
+    }
+
+    @Override
+    public double getBounty(UUID playerId) {
+        return bounty(playerId);
+    }
+
+    @Override
+    public String getLastSource(UUID playerId) {
+        return data.getString("source." + playerId, "server");
+    }
+
+    @EventHandler
+    public void onJoin(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+        String notice = data.getString("notice." + player.getUniqueId(), "");
+        if (!notice.isBlank()) {
+            Text.msg(player, "&cBounty update: &f" + notice);
+            data.set("notice." + player.getUniqueId(), null);
+        }
+        double value = bounty(player.getUniqueId());
+        if (value > 0.0D) {
+            Text.msg(player, "&cYou currently carry a &6$" + format(value) + " &cbounty. &7Source: &f" + getLastSource(player.getUniqueId()) + "&7.");
+        }
+        data.save();
     }
 
     @EventHandler
@@ -62,6 +96,7 @@ public final class BountiesPlugin extends JavaPlugin implements Listener, TabCom
         }
         recordBountyClaim(killer, victim);
         data.set("manual." + victim.getUniqueId(), null);
+        data.set("source." + victim.getUniqueId(), "server");
         data.set("twentySince." + victim.getUniqueId(), null);
         data.set("claims." + killer.getUniqueId(), data.getInt("claims." + killer.getUniqueId(), 0) + 1);
         data.save();
@@ -204,9 +239,39 @@ public final class BountiesPlugin extends JavaPlugin implements Listener, TabCom
         }
         String key = "manual." + target.getUniqueId();
         data.set(key, data.getDouble(key, 0.0D) + amount);
+        data.set("source." + target.getUniqueId(), player.getName());
         data.save();
+        double total = bounty(target.getUniqueId());
+        notifyTarget(target, "&f" + player.getName() + " &cplaced or increased your bounty by &6$" + format(amount)
+            + "&c. New total: &6$" + format(total) + "&c.", player.getName(), amount, total);
         Bukkit.broadcastMessage(Text.PREFIX + Text.color("&6" + player.getName() + " placed a &c$" + format(amount) + " &6bounty on &f" + safeName(target) + "&6."));
         return true;
+    }
+
+    private void notifyTarget(OfflinePlayer target, String message, String source, double increase, double total) {
+        Player online = Bukkit.getPlayer(target.getUniqueId());
+        if (online != null) {
+            Text.msg(online, message);
+            return;
+        }
+        data.set("notice." + target.getUniqueId(), "Your bounty increased by $" + format(increase) + " from " + source + ". New total: $" + format(total) + ".");
+    }
+
+    private void notifyOnlineBounties() {
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            if (MitchSMP.permissions().isAdminRestricted(player)) {
+                continue;
+            }
+            double current = bounty(player.getUniqueId());
+            double previous = data.getDouble("lastNotified." + player.getUniqueId(), -1.0D);
+            double threshold = Math.max(25.0D, setting("twentyBonusPerHour", 250.0D) / 4.0D);
+            if (current > 0.0D && previous >= 0.0D && current - previous >= threshold) {
+                data.set("source." + player.getUniqueId(), "server");
+                Text.msg(player, "&cYour server bounty increased to &6$" + format(current) + "&c. Stay alert.");
+            }
+            data.set("lastNotified." + player.getUniqueId(), current);
+        }
+        data.save();
     }
 
     private OfflinePlayer offlinePlayer(String name) {

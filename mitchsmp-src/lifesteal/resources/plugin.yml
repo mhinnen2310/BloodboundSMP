@@ -11,5 +11,6 @@ commands:
     description: View player hearts.
     usage: /hearts [player]
   sethearts:
+    aliases: [setheart]
     description: Set player hearts.
     usage: /sethearts <player> <1-20>

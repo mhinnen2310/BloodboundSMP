@@ -1,0 +1,13 @@
+name: MitchSMP-Recovery
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.recovery.RecoveryPlugin
+author: Mitchel
+description: Bounded region rollback and inventory snapshot recovery for BloodboundSMP.
+depend:
+  - MitchSMP-Core
+commands:
+  rollback:
+    aliases: [rb, snapshots]
+    description: Select, preview and apply region rollbacks or restore inventory snapshots.
+    usage: /rb <wand|duration [confirm]|inventory <player> <list|restore <id>>>

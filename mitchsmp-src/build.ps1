@@ -314,6 +314,7 @@ $coreJar = Join-Path $BuildRoot "jars\MitchSMP-Core-$Version.jar"
 Build-Module "core" "core" "MitchSMP-Core-0.1.0.jar" @()
 
 $coreClassPath = @($coreJar)
+Build-Module "recovery" "recovery" "MitchSMP-Recovery-0.1.0.jar" $coreClassPath
 Build-Module "lifesteal" "lifesteal" "MitchSMP-Lifesteal-0.1.0.jar" $coreClassPath
 Build-Module "corrupted-hearts" "corrupted-hearts" "MitchSMP-CorruptedHearts-0.1.0.jar" $coreClassPath
 Build-Module "permissions" "permissions" "MitchSMP-Permissions-0.1.0.jar" $coreClassPath

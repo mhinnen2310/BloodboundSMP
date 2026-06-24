@@ -9,8 +9,12 @@ import java.util.AbstractMap;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 
 import nl.mitchsmp.core.api.EconomyService;
 import nl.mitchsmp.core.api.EconomyWatchService;
@@ -53,11 +57,17 @@ public final class EconomyPlugin extends JavaPlugin implements EconomyService, L
     private static final String QUICKSELL_LORE_MARKER = "[QS]";
     private PropertiesFile balances;
     private Path transactions;
+    private ExecutorService transactionWriter;
 
     @Override
     public void onEnable() {
         balances = new PropertiesFile(getDataFolder().toPath().resolve("balances.properties"));
         transactions = getDataFolder().toPath().resolve("transactions.log");
+        transactionWriter = Executors.newSingleThreadExecutor(task -> {
+            Thread thread = new Thread(task, "Bloodbound-Economy-Writer");
+            thread.setDaemon(true);
+            return thread;
+        });
         MitchSMP.registerService(EconomyService.class, this);
         Bukkit.getPluginManager().registerEvents(this, this);
         command("balance");
@@ -65,6 +75,18 @@ public final class EconomyPlugin extends JavaPlugin implements EconomyService, L
         command("moneytop");
         command("eco");
         command("quicksell");
+    }
+
+    @Override
+    public void onDisable() {
+        if (transactionWriter != null) {
+            transactionWriter.shutdown();
+            try {
+                transactionWriter.awaitTermination(5L, TimeUnit.SECONDS);
+            } catch (InterruptedException exception) {
+                Thread.currentThread().interrupt();
+            }
+        }
     }
 
     @EventHandler
@@ -623,7 +645,15 @@ public final class EconomyPlugin extends JavaPlugin implements EconomyService, L
     }
 
     private boolean isSellable(ItemStack item) {
-        return item != null && item.getType() != Material.AIR && item.getAmount() > 0 && !isMechanicsGuide(item);
+        return item != null && item.getType() != Material.AIR && item.getAmount() > 0 && !isMechanicsGuide(item) && !isBossShard(item);
+    }
+
+    private boolean isBossShard(ItemStack item) {
+        try {
+            return MitchSMP.bossShards() != null && MitchSMP.bossShards().isShard(item);
+        } catch (IllegalStateException ignored) {
+            return false;
+        }
     }
 
     private void annotateInventoryValueLore(Inventory inventory) {
@@ -750,6 +780,12 @@ public final class EconomyPlugin extends JavaPlugin implements EconomyService, L
     private double quickSellPrice(ItemStack item) {
         if (!isSellable(item)) {
             return 0.0D;
+        }
+        try {
+            if (MitchSMP.corruptedHearts() != null && MitchSMP.corruptedHearts().isCorruptedHeart(item)) {
+                return 750.0D * quickSellMultiplier();
+            }
+        } catch (IllegalStateException ignored) {
         }
         EconomyWatchService watch = MitchSMP.economyWatch();
         if (watch != null) {
@@ -964,7 +1000,7 @@ public final class EconomyPlugin extends JavaPlugin implements EconomyService, L
 
     private boolean canUseQuickSell(Player player) {
         return player != null
-            && !MitchSMP.permissions().isAdminRestricted(player)
+            && !MitchSMP.permissions().isAdminMode(player)
             && player.getGameMode() != GameMode.CREATIVE
             && player.getGameMode() != GameMode.SPECTATOR
             && !isBedWarsWorld(player);
@@ -1130,12 +1166,25 @@ public final class EconomyPlugin extends JavaPlugin implements EconomyService, L
     }
 
     private void log(String type, UUID from, UUID to, double amount, String reason) {
-        try {
-            Files.createDirectories(transactions.getParent());
-            String line = Instant.now() + " " + type + " from=" + from + " to=" + to + " amount=" + format(amount) + " reason=" + reason + System.lineSeparator();
-            Files.writeString(transactions, line, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
-        } catch (IOException exception) {
-            getLogger().warning("Could not write transaction log: " + exception.getMessage());
+        String line = Instant.now() + " " + type + " from=" + from + " to=" + to + " amount=" + format(amount) + " reason=" + reason + System.lineSeparator();
+        if (transactionWriter != null) {
+            transactionWriter.execute(() -> {
+                try {
+                    Files.createDirectories(transactions.getParent());
+                    Files.writeString(transactions, line, StandardOpenOption.CREATE, StandardOpenOption.APPEND);
+                } catch (IOException exception) {
+                    getLogger().warning("Could not write transaction log: " + exception.getMessage());
+                }
+            });
+        }
+        if (amount >= 25_000.0D && (type.equals("TRANSFER") || type.equals("ADMIN_SET_NORMAL") || type.equals("DEPOSIT") && reason != null && reason.toLowerCase(Locale.ROOT).contains("quicksell"))) {
+            String alert = "&c[Economy Alert] &f" + type + " &7$" + format(amount) + " &8from=" + from + " to=" + to + " reason=" + reason;
+            for (Player staff : Bukkit.getOnlinePlayers()) {
+                if (MitchSMP.permissions().has(staff, "mitchsmp.economy.alerts")) {
+                    Text.msg(staff, alert);
+                }
+            }
+            getLogger().warning(Text.stripColorCodes(alert));
         }
     }
 }

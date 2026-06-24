@@ -27,6 +27,14 @@ public final class MitchSMP {
         return core().permissions();
     }
 
+    public static FeatureFlagService features() {
+        return service(FeatureFlagService.class);
+    }
+
+    public static InventorySnapshotService snapshots() {
+        return service(InventorySnapshotService.class);
+    }
+
     public static <T> void registerService(Class<T> type, T service) {
         core().registerService(type, service);
     }
@@ -45,6 +53,10 @@ public final class MitchSMP {
 
     public static EconomyService economy() {
         return service(EconomyService.class);
+    }
+
+    public static BountyService bounties() {
+        return service(BountyService.class);
     }
 
     public static EconomyWatchService economyWatch() {

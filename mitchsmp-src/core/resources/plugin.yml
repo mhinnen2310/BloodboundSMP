@@ -8,3 +8,9 @@ commands:
   mitchcore:
     description: MitchSMP core status and reload command.
     usage: /mitchcore
+  features:
+    description: View or change central Bloodbound feature flags.
+    usage: /features [list|enable <feature>|disable <feature>]
+  errors:
+    description: Review captured command execution errors.
+    usage: /errors [recent [count]|clear]

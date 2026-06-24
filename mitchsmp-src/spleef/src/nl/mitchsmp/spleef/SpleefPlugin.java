@@ -256,6 +256,10 @@ public final class SpleefPlugin extends JavaPlugin implements Listener, TabCompl
             Text.msg(player, "&cGeen permissie.");
             return;
         }
+        if (MitchSMP.permissions().isAdminMode(player)) {
+            Text.msg(player, "&cLeave admin mode before joining Spleef. Staff inventory and test data cannot enter minigames.");
+            return;
+        }
         if (activeArena.containsKey(player.getUniqueId())) {
             Text.msg(player, "&cJe zit al in Spleef.");
             return;

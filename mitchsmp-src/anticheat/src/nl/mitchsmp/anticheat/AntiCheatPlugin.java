@@ -68,12 +68,13 @@ public final class AntiCheatPlugin extends JavaPlugin implements Listener, TabCo
     private final Map<UUID, CommandWindow> commands = new HashMap<>();
     private final Map<UUID, InventorySnapshot> inventorySnapshots = new HashMap<>();
     private final Map<String, Long> alertCooldowns = new HashMap<>();
-    private final Map<UUID, Long> interventionCooldowns = new HashMap<>();
     private PropertiesFile data;
+    private long detectionSequence;
 
     @Override
     public void onEnable() {
         data = new PropertiesFile(getDataFolder().toPath().resolve("anticheat.properties"));
+        detectionSequence = data.getLong("detections.sequence", 0L);
         Bukkit.getPluginManager().registerEvents(this, this);
         if (getCommand("anticheat") != null) {
             getCommand("anticheat").setExecutor(this);
@@ -139,9 +140,6 @@ public final class AntiCheatPlugin extends JavaPlugin implements Listener, TabCo
         double horizontal = Math.sqrt(dx * dx + dz * dz);
         if (horizontal > 1.15D) {
             alert(player, "Speed", String.format(Locale.US, "%.2f/tick", horizontal), horizontal > 1.8D ? 3 : 1);
-            if (horizontal > 2.25D) {
-                autoFreeze(player, "Speed " + String.format(Locale.US, "%.2f/tick", horizontal));
-            }
         }
 
         if (player.isOnGround() || player.getFallDistance() > 0.0F) {
@@ -152,9 +150,6 @@ public final class AntiCheatPlugin extends JavaPlugin implements Listener, TabCo
             int ticks = airTicks.merge(player.getUniqueId(), 1, Integer::sum);
             if (ticks > 80) {
                 alert(player, "Fly", ticks + " air ticks", ticks > 140 ? 4 : 2);
-                if (ticks > 140) {
-                    autoFreeze(player, "Fly " + ticks + " air ticks");
-                }
             }
         }
     }
@@ -248,9 +243,22 @@ public final class AntiCheatPlugin extends JavaPlugin implements Listener, TabCo
             Text.msg(sender, "&cGeen permissie.");
             return true;
         }
-        if (args.length == 0 || args[0].equalsIgnoreCase("alerts")) {
-            Text.msg(sender, "&aAntiCheat alerts staan aan for Moderator+ en audit owner.");
-            Text.msg(sender, "&7Use &f/ac sus &7for suspicious players, &f/ac check <player>&7, &f/ac clear <player>&7.");
+        if (args.length == 0 || args[0].equalsIgnoreCase("alerts") || args[0].equalsIgnoreCase("interface")) {
+            Text.msg(sender, "&aAnti-cheat is running in warnings-only mode.");
+            Text.msg(sender, "&7Use &f/ac recent [count]&7, &f/ac review <id> [note]&7, &f/ac sus&7, or &f/ac check <player>&7.");
+            return true;
+        }
+        if (args[0].equalsIgnoreCase("recent")) {
+            int count = args.length >= 2 ? parseCount(args[1], 10) : 10;
+            listRecent(sender, count);
+            return true;
+        }
+        if (args[0].equalsIgnoreCase("review")) {
+            if (args.length < 2) {
+                Text.msg(sender, "&cUsage: /ac review <id> [staff note]");
+                return true;
+            }
+            review(sender, args[1], args.length >= 3 ? String.join(" ", java.util.Arrays.copyOfRange(args, 2, args.length)) : "reviewed");
             return true;
         }
         if (args[0].equalsIgnoreCase("sus")) {
@@ -259,7 +267,7 @@ public final class AntiCheatPlugin extends JavaPlugin implements Listener, TabCo
         }
         if (args[0].equalsIgnoreCase("check")) {
             if (args.length < 2) {
-                Text.msg(sender, "&cGebruik: /ac check <player>");
+                Text.msg(sender, "&cUsage: /ac check <player>");
                 return true;
             }
             showSus(sender, args[1]);
@@ -267,20 +275,20 @@ public final class AntiCheatPlugin extends JavaPlugin implements Listener, TabCo
         }
         if (args[0].equalsIgnoreCase("clear")) {
             if (args.length < 2) {
-                Text.msg(sender, "&cGebruik: /ac clear <player>");
+                Text.msg(sender, "&cUsage: /ac clear <player>");
                 return true;
             }
             clearSus(sender, args[1]);
             return true;
         }
-        Text.msg(sender, "&cGebruik: /ac alerts, /ac sus, /ac check <player>, /ac clear <player>");
+        Text.msg(sender, "&cUsage: /ac <alerts|recent|review|sus|check|clear>");
         return true;
     }
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
-            return Tab.complete(args[0], "alerts", "sus", "check", "clear");
+            return Tab.complete(args[0], "alerts", "interface", "recent", "review", "sus", "check", "clear");
         }
         if (args.length == 2 && args[0].matches("(?i)check|clear")) {
             return Tab.onlinePlayers(args[1]);
@@ -378,17 +386,6 @@ public final class AntiCheatPlugin extends JavaPlugin implements Listener, TabCo
             || MitchSMP.permissions().isAdminRestricted(player);
     }
 
-    private void autoFreeze(Player player, String reason) {
-        long now = System.currentTimeMillis();
-        Long last = interventionCooldowns.get(player.getUniqueId());
-        if (last != null && now - last < 60_000L) {
-            return;
-        }
-        interventionCooldowns.put(player.getUniqueId(), now);
-        Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "freeze " + player.getName());
-        alert(player, "AutoFreeze", reason, 5);
-    }
-
     private void alert(Player suspect, String check, String detail, int severity) {
         if (suspect == null) {
             return;
@@ -407,9 +404,22 @@ public final class AntiCheatPlugin extends JavaPlugin implements Listener, TabCo
         data.set("sus." + suspect.getUniqueId() + ".lastCheck", check);
         data.set("sus." + suspect.getUniqueId() + ".lastDetail", detail);
         data.set("sus." + suspect.getUniqueId() + ".checks." + key(check), data.getInt("sus." + suspect.getUniqueId() + ".checks." + key(check), 0) + 1);
+        long detectionId = ++detectionSequence;
+        String detection = "detections." + detectionId + ".";
+        data.set("detections.sequence", detectionSequence);
+        data.set(detection + "time", now);
+        data.set(detection + "player", suspect.getUniqueId());
+        data.set(detection + "name", suspect.getName());
+        data.set(detection + "check", check);
+        data.set(detection + "detail", detail);
+        data.set(detection + "severity", severity);
+        data.set(detection + "status", "OPEN");
+        trimDetections(now);
         data.save();
 
-        String message = Text.color("&8[&cAC&8] &f" + suspect.getName() + " &7failed &c" + check + " &8(&7" + detail + "&8) &7sus=&f" + score);
+        Text.msg(suspect, "&cAnti-cheat warning: &f" + check + " &7was flagged. No automatic punishment was applied.");
+
+        String message = Text.color("&8[&cAC #" + detectionId + "&8] &f" + suspect.getName() + " &7failed &c" + check + " &8(&7" + detail + "&8) &7sus=&f" + score);
         boolean sent = false;
         for (Player staff : Bukkit.getOnlinePlayers()) {
             if (canSeeAlerts(staff)) {
@@ -420,6 +430,87 @@ public final class AntiCheatPlugin extends JavaPlugin implements Listener, TabCo
         Bukkit.getConsoleSender().sendMessage(message);
         if (!sent && score >= SUS_NOTIFY_SCORE) {
             getLogger().warning(Text.stripColorCodes(message));
+        }
+    }
+
+    private void listRecent(CommandSender sender, int requestedCount) {
+        long cutoff = System.currentTimeMillis() - 24L * 60L * 60L * 1000L;
+        List<Long> ids = detectionIds().stream()
+            .filter(id -> data.getLong("detections." + id + ".time", 0L) >= cutoff)
+            .sorted(Comparator.reverseOrder())
+            .limit(Math.max(1, Math.min(50, requestedCount)))
+            .toList();
+        if (ids.isEmpty()) {
+            Text.msg(sender, "&aNo anti-cheat detections in the last 24 hours.");
+            return;
+        }
+        Text.msg(sender, "&cRecent anti-cheat detections (24h):");
+        for (long id : ids) {
+            String base = "detections." + id + ".";
+            Text.msg(sender, "&8#" + id + " &f" + data.getString(base + "name", "unknown") + " &c" + data.getString(base + "check", "?")
+                + " &7sev=" + data.getInt(base + "severity", 0) + " status=" + data.getString(base + "status", "OPEN") + " &8" + data.getString(base + "detail", ""));
+        }
+    }
+
+    private void review(CommandSender sender, String rawId, String note) {
+        long id;
+        try {
+            id = Long.parseLong(rawId);
+        } catch (NumberFormatException exception) {
+            Text.msg(sender, "&cDetection ID must be a number.");
+            return;
+        }
+        String base = "detections." + id + ".";
+        if (!data.contains(base + "time")) {
+            Text.msg(sender, "&cUnknown detection #" + id + ".");
+            return;
+        }
+        data.set(base + "status", "REVIEWED");
+        data.set(base + "reviewer", sender.getName());
+        data.set(base + "reviewedAt", System.currentTimeMillis());
+        data.set(base + "note", note.replaceAll("[\\r\\n]", " "));
+        data.save();
+        getLogger().info("AC detection #" + id + " reviewed by " + sender.getName() + ": " + note);
+        Text.msg(sender, "&aDetection #" + id + " marked as reviewed.");
+    }
+
+    private List<Long> detectionIds() {
+        Set<Long> ids = new HashSet<>();
+        for (String dataKey : data.keys()) {
+            if (!dataKey.startsWith("detections.") || !dataKey.endsWith(".time")) {
+                continue;
+            }
+            String raw = dataKey.substring("detections.".length(), dataKey.length() - ".time".length());
+            try {
+                ids.add(Long.parseLong(raw));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        return ids.stream().sorted().toList();
+    }
+
+    private void trimDetections(long now) {
+        long cutoff = now - 7L * 24L * 60L * 60L * 1000L;
+        List<Long> ids = detectionIds();
+        int excess = Math.max(0, ids.size() - 2000);
+        for (int index = 0; index < ids.size(); index++) {
+            long id = ids.get(index);
+            if (index < excess || data.getLong("detections." + id + ".time", 0L) < cutoff) {
+                String prefix = "detections." + id + ".";
+                for (String dataKey : new ArrayList<>(data.keys())) {
+                    if (dataKey.startsWith(prefix)) {
+                        data.set(dataKey, null);
+                    }
+                }
+            }
+        }
+    }
+
+    private int parseCount(String raw, int fallback) {
+        try {
+            return Math.max(1, Math.min(50, Integer.parseInt(raw)));
+        } catch (NumberFormatException ignored) {
+            return fallback;
         }
     }
 

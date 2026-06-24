@@ -7,6 +7,8 @@ description: Customizable MitchSMP actionbar HUD.
 depend:
   - MitchSMP-Core
 softdepend:
+  - MitchSMP-Bounties
+softdepend:
   - MitchSMP-Economy
   - MitchSMP-Lifesteal
   - MitchSMP-Seasons

@@ -71,4 +71,8 @@ public final class Bukkit {
     public static BlockData createBlockData(Material material) {
         return null;
     }
+
+    public static BlockData createBlockData(String data) {
+        return null;
+    }
 }

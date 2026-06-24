@@ -86,6 +86,10 @@ public final class HubPlugin extends JavaPlugin implements Listener, TabComplete
             Text.msg(player, "&aHub rebuilt.");
             return true;
         }
+        if (MitchSMP.permissions().isAdminMode(player)) {
+            Text.msg(player, "&cLeave admin mode before entering the player Hub. Use staff teleports for moderation.");
+            return true;
+        }
         World world = hubWorld();
         if (world == null) {
             Text.msg(player, "&cHub world is not available.");

@@ -1,5 +1,6 @@
 package nl.mitchsmp.auctionhouse;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Comparator;
@@ -8,8 +9,11 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.UUID;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 import nl.mitchsmp.core.api.EconomyService;
+import nl.mitchsmp.core.api.EconomyWatchService;
 import nl.mitchsmp.core.api.MitchRank;
 import nl.mitchsmp.core.api.MitchSMP;
 import nl.mitchsmp.core.storage.PropertiesFile;
@@ -28,6 +32,7 @@ import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.block.SignChangeEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemStack;
@@ -44,6 +49,9 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
     private static final int MY_LISTINGS_SLOT = 50;
     private static final int CLEAR_SLOT = 51;
     private static final int NEXT_SLOT = 53;
+    private static final long LISTING_LIFETIME_MILLIS = 7L * 24L * 60L * 60L * 1000L;
+    private static final double ABSOLUTE_MAX_PRICE = 1_000_000_000.0D;
+    private static final int MAX_SERIALIZED_ITEM_BYTES = 262_144;
 
     private final Map<UUID, ViewState> states = new HashMap<>();
     private final Map<UUID, Boolean> awaitingSearch = new HashMap<>();
@@ -52,6 +60,8 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
     private final Map<UUID, org.bukkit.Location> fakeSearchSigns = new HashMap<>();
     private final Map<UUID, Material> fakeSearchMaterials = new HashMap<>();
     private PropertiesFile data;
+    private final Object listingLock = new Object();
+    private long auditSequence;
 
     @Override
     public void onEnable() {
@@ -61,10 +71,18 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
             getCommand("auctionhouse").setExecutor(this);
             getCommand("auctionhouse").setTabCompleter(this);
         }
+        if (getCommand("ahadmin") != null) {
+            getCommand("ahadmin").setExecutor(this);
+            getCommand("ahadmin").setTabCompleter(this);
+        }
+        Bukkit.getScheduler().runTaskTimer(this, this::expireListings, 100L, 20L * 60L * 5L);
     }
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (command.getName().equalsIgnoreCase("ahadmin")) {
+            return adminCommand(sender, args);
+        }
         if (args.length == 0 || args[0].equalsIgnoreCase("list")) {
             if (sender instanceof Player player) {
                 if (blockAdminMode(player)) {
@@ -129,6 +147,18 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        if (command.getName().equalsIgnoreCase("ahadmin")) {
+            if (!MitchSMP.permissions().has(sender, "mitchsmp.auctionhouse.admin")) {
+                return List.of();
+            }
+            if (args.length == 1) {
+                return Tab.complete(args[0], "inspect", "listings", "remove", "logs");
+            }
+            if (args.length == 2 && (args[0].equalsIgnoreCase("inspect") || args[0].equalsIgnoreCase("remove"))) {
+                return listingIds(args[1], sender, false);
+            }
+            return List.of();
+        }
         if (args.length == 1) {
             return Tab.complete(args[0], "sell", "list", "search", "sort", "clear", "buy", "cancel", "help");
         }
@@ -151,7 +181,7 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
     }
 
     private boolean blockAdminMode(Player player) {
-        if (!MitchSMP.permissions().isAdminRestricted(player) && !isTestWorld(player)) {
+        if (!MitchSMP.permissions().isAdminMode(player) && !isTestWorld(player)) {
             return false;
         }
         Text.msg(player, "&cAuctionHouse is geblokkeerd in adminmode/testworld zodat staff- of test-items niet naar de SMP lekken.");
@@ -163,6 +193,11 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
         return player != null
             && player.getWorld() != null
             && player.getWorld().getName().toLowerCase(Locale.ROOT).startsWith("mitchtest_");
+    }
+
+    @EventHandler
+    public void onJoin(PlayerJoinEvent event) {
+        deliverRefunds(event.getPlayer());
     }
 
     @EventHandler
@@ -461,6 +496,22 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
             player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.7F, 0.6F);
             return false;
         }
+        String validation = validateItem(item);
+        if (validation != null) {
+            Text.msg(player, "&cThis item cannot be listed: &f" + validation + "&c.");
+            audit("REJECT", player.getUniqueId(), -1, price, validation + " item=" + itemName(item));
+            if (pending) {
+                give(player, item);
+            }
+            return false;
+        }
+        if (!Double.isFinite(price) || price > ABSOLUTE_MAX_PRICE) {
+            Text.msg(player, "&cPrice is invalid or exceeds the AuctionHouse safety limit.");
+            if (pending) {
+                give(player, item);
+            }
+            return false;
+        }
         if (isMechanicsGuide(item)) {
             Text.msg(player, "&cDit guide boek heeft geen economische waarde en kan niet op de Auction House.");
             player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.7F, 0.6F);
@@ -479,15 +530,21 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
             }
             return false;
         }
-        int id = nextId();
-        Listing listing = new Listing(id, player.getUniqueId(), price, item.clone());
-        data.set("listing." + id, listing.encode());
-        data.set("next-id", id + 1);
-        data.save();
+        long now = System.currentTimeMillis();
+        Listing listing;
+        synchronized (listingLock) {
+            int id = nextAvailableId();
+            listing = new Listing(id, player.getUniqueId(), price, now, now + LISTING_LIFETIME_MILLIS, item.clone());
+            data.set("listing." + id, listing.encode());
+            data.set("next-id", id + 1);
+            data.save();
+        }
         if (!pending) {
             player.getInventory().setItemInMainHand(new ItemStack(Material.AIR));
         }
-        Text.msg(player, "&aListing #" + id + " geplaatst for &f$" + format(price) + "&a.");
+        audit("CREATE", player.getUniqueId(), listing.id(), price, fingerprint(item));
+        evaluateListingRisk(player, listing);
+        Text.msg(player, "&aListing #" + listing.id() + " created for &f$" + format(price) + "&a. Expires in 7 days.");
         player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 0.8F, 1.3F);
         return true;
     }
@@ -535,15 +592,35 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
             Text.msg(player, "&cEconomy is niet geladen.");
             return false;
         }
-        if (!economy.withdraw(player.getUniqueId(), listing.price(), "auction buy")) {
-            Text.msg(player, "&cJe hebt niet genoeg geld.");
-            return false;
+        Listing claimed;
+        synchronized (listingLock) {
+            claimed = listing(String.valueOf(listing.id()));
+            if (claimed == null) {
+                Text.msg(player, "&cThis listing was already bought, cancelled or expired.");
+                return false;
+            }
+            String validation = validateItem(claimed.item());
+            if (validation != null) {
+                data.set("listing." + claimed.id(), null);
+                queueRefund(claimed.seller(), claimed.id(), claimed.item(), "invalid-on-buy:" + validation);
+                data.save();
+                Text.msg(player, "&cThis listing failed validation and was removed. No money was charged.");
+                return false;
+            }
+            data.set("listing." + claimed.id(), null);
+            data.save();
+            if (!economy.withdraw(player.getUniqueId(), claimed.price(), "auction buy #" + claimed.id())) {
+                data.set("listing." + claimed.id(), claimed.encode());
+                data.save();
+                Text.msg(player, "&cYou do not have enough money.");
+                return false;
+            }
         }
 
-        economy.deposit(listing.seller(), listing.price(), "auction sale");
-        give(player, listing.item());
-        data.set("listing." + listing.id(), null);
-        data.save();
+        economy.deposit(claimed.seller(), claimed.price(), "auction sale #" + claimed.id());
+        give(player, claimed.item());
+        recordPairTransaction(claimed.seller(), player.getUniqueId(), claimed.price(), claimed.item());
+        audit("BUY", player.getUniqueId(), claimed.id(), claimed.price(), "seller=" + claimed.seller() + " item=" + fingerprint(claimed.item()));
         Text.msg(player, "&aListing purchased for &f$" + format(listing.price()) + "&a.");
         player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 0.8F, 1.4F);
         return true;
@@ -570,9 +647,20 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
             Text.msg(player, "&cDit is niet jouw listing.");
             return false;
         }
-        give(player, listing.item());
-        data.set("listing." + listing.id(), null);
-        data.save();
+        synchronized (listingLock) {
+            Listing current = listing(String.valueOf(listing.id()));
+            if (current == null) {
+                Text.msg(player, "&cThis listing is no longer available.");
+                return false;
+            }
+            data.set("listing." + current.id(), null);
+            queueRefund(current.seller(), current.id(), current.item(), "cancelled");
+            data.save();
+            if (current.seller().equals(player.getUniqueId())) {
+                deliverRefunds(player);
+            }
+            audit("CANCEL", player.getUniqueId(), current.id(), current.price(), "seller=" + current.seller());
+        }
         Text.msg(player, "&aListing cancelled.");
         player.playSound(player.getLocation(), Sound.BLOCK_CHEST_CLOSE, 0.8F, 1.0F);
         return true;
@@ -615,8 +703,267 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
         Text.msg(sender, "&7Plaatsen: &f/ah sell <price>&7. Snel: &f/ah buy <id>&7, &f/ah cancel <id>&7.");
     }
 
+    private boolean adminCommand(CommandSender sender, String[] args) {
+        if (!MitchSMP.permissions().has(sender, "mitchsmp.auctionhouse.admin")) {
+            Text.msg(sender, "&cYou do not have permission to inspect the AuctionHouse.");
+            return true;
+        }
+        String action = args.length == 0 ? "listings" : args[0].toLowerCase(Locale.ROOT);
+        if (action.equals("listings")) {
+            List<Listing> current = listings("", SortMode.RECENT);
+            Text.msg(sender, "&6AuctionHouse listings &7(" + current.size() + "):");
+            for (Listing listing : current.stream().limit(25).toList()) {
+                Text.msg(sender, "&7#" + listing.id() + " &f" + itemName(listing.item()) + " x" + listing.item().getAmount()
+                    + " &8| &a$" + format(listing.price()) + " &8| &7seller=" + safeName(Bukkit.getOfflinePlayer(listing.seller())));
+            }
+            return true;
+        }
+        if (action.equals("logs")) {
+            List<String> logs = data.keys().stream().filter(key -> key.startsWith("audit.")).sorted(Comparator.reverseOrder()).limit(25).map(key -> data.getString(key, "")).toList();
+            Text.msg(sender, "&6Recent AuctionHouse audit records &7(" + logs.size() + "):");
+            logs.forEach(line -> Text.msg(sender, "&7- &f" + line));
+            return true;
+        }
+        if ((action.equals("inspect") || action.equals("remove")) && args.length >= 2) {
+            Listing listing = listing(args[1]);
+            if (listing == null) {
+                Text.msg(sender, "&cListing not found.");
+                return true;
+            }
+            if (action.equals("inspect")) {
+                double reference = appraisedValue(listing.item());
+                Text.msg(sender, "&6Listing #" + listing.id() + " inspection:");
+                Text.msg(sender, "&7Seller: &f" + safeName(Bukkit.getOfflinePlayer(listing.seller())) + " &8(" + listing.seller() + ")");
+                Text.msg(sender, "&7Item: &f" + itemName(listing.item()) + " x" + listing.item().getAmount() + " &8| hash=" + fingerprint(listing.item()));
+                Text.msg(sender, "&7Price: &a$" + format(listing.price()) + " &8| &7reference: &a$" + format(reference));
+                Text.msg(sender, "&7Created: &f" + (listing.createdAt() <= 0L ? "legacy" : Instant.ofEpochMilli(listing.createdAt())) + " &8| &7expires: &f" + (listing.expiresAt() == Long.MAX_VALUE ? "legacy/no-expiry" : Instant.ofEpochMilli(listing.expiresAt())));
+                String validation = validateItem(listing.item());
+                Text.msg(sender, validation == null ? "&aValidation PASS" : "&cValidation FAILED: &f" + validation);
+                return true;
+            }
+            synchronized (listingLock) {
+                Listing current = listing(args[1]);
+                if (current == null) {
+                    Text.msg(sender, "&cListing was already removed.");
+                    return true;
+                }
+                data.set("listing." + current.id(), null);
+                queueRefund(current.seller(), current.id(), current.item(), "admin-remove");
+                data.save();
+                audit("ADMIN_REMOVE", sender instanceof Player player ? player.getUniqueId() : null, current.id(), current.price(), "seller=" + current.seller());
+                Player seller = Bukkit.getPlayer(current.seller());
+                if (seller != null) {
+                    deliverRefunds(seller);
+                }
+            }
+            Text.msg(sender, "&aListing removed and queued for seller refund.");
+            return true;
+        }
+        Text.msg(sender, "&cUsage: /ahadmin <inspect|listings|remove|logs> [id]");
+        return true;
+    }
+
+    private String validateItem(ItemStack item) {
+        if (item == null || item.getType() == Material.AIR || item.getAmount() <= 0 || item.getAmount() > 64) {
+            return "invalid item amount";
+        }
+        String type = item.getType().name();
+        if (type.equals("BEDROCK") || type.equals("BARRIER") || type.contains("COMMAND_BLOCK") || type.contains("STRUCTURE_BLOCK")
+            || type.equals("JIGSAW") || type.equals("DEBUG_STICK") || type.equals("KNOWLEDGE_BOOK") || type.contains("SHULKER_BOX") || type.equals("BUNDLE")) {
+            return "blacklisted material";
+        }
+        byte[] serialized;
+        try {
+            serialized = item.serializeAsBytes();
+            if (serialized.length == 0 || serialized.length > MAX_SERIALIZED_ITEM_BYTES) {
+                return "unsafe metadata size";
+            }
+            ItemStack decoded = ItemStack.deserializeBytes(serialized);
+            if (decoded == null || decoded.getType() != item.getType() || decoded.getAmount() != item.getAmount()) {
+                return "corrupt item serialization";
+            }
+        } catch (RuntimeException exception) {
+            return "unreadable item metadata";
+        }
+        int customModel = customModelData(item);
+        if (customModel >= 910000) {
+            boolean validShard = customModel == 910001 && MitchSMP.bossShards() != null && MitchSMP.bossShards().isShard(item);
+            boolean validHeart = customModel == 910002 && MitchSMP.corruptedHearts() != null && MitchSMP.corruptedHearts().isCorruptedHeart(item);
+            if (!validShard && !validHeart) {
+                return "invalid Bloodbound custom item identity";
+            }
+        }
+        return null;
+    }
+
+    private int customModelData(ItemStack item) {
+        if (item == null || !item.hasItemMeta()) {
+            return -1;
+        }
+        try {
+            ItemMeta meta = item.getItemMeta();
+            Object has = meta.getClass().getMethod("hasCustomModelData").invoke(meta);
+            if (has instanceof Boolean present && present) {
+                Object value = meta.getClass().getMethod("getCustomModelData").invoke(meta);
+                return value instanceof Number number ? number.intValue() : -1;
+            }
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+        }
+        return -1;
+    }
+
+    private double appraisedValue(ItemStack item) {
+        if (item == null) {
+            return 0.0D;
+        }
+        try {
+            if (MitchSMP.bossShards() != null && MitchSMP.bossShards().isShard(item)) {
+                return 2_500.0D * item.getAmount();
+            }
+            if (MitchSMP.corruptedHearts() != null && MitchSMP.corruptedHearts().isCorruptedHeart(item)) {
+                return 750.0D * item.getAmount();
+            }
+            EconomyWatchService watch = MitchSMP.economyWatch();
+            return watch == null ? 0.0D : watch.quickSellPrice(item) * item.getAmount();
+        } catch (IllegalStateException exception) {
+            return 0.0D;
+        }
+    }
+
+    private void evaluateListingRisk(Player seller, Listing listing) {
+        double reference = Math.max(0.01D, appraisedValue(listing.item()));
+        double ratio = listing.price() / reference;
+        if (listing.price() >= 100_000.0D || ratio >= 50.0D) {
+            String detail = "listing #" + listing.id() + " seller=" + seller.getName() + " price=$" + format(listing.price()) + " reference=$" + format(reference) + " ratio=" + format(ratio) + "x";
+            audit("OVERPRICE", seller.getUniqueId(), listing.id(), listing.price(), detail);
+            alertStaff("&c[AH Alert] &fSuspicious overprice: &7" + detail);
+        }
+    }
+
+    private void recordPairTransaction(UUID seller, UUID buyer, double amount, ItemStack item) {
+        String first = seller.toString().compareTo(buyer.toString()) <= 0 ? seller.toString() : buyer.toString();
+        String second = first.equals(seller.toString()) ? buyer.toString() : seller.toString();
+        String base = "pair." + first + "." + second + ".";
+        long now = System.currentTimeMillis();
+        long window = data.getLong(base + "window", 0L);
+        if (now - window > 24L * 60L * 60L * 1000L) {
+            data.set(base + "window", now);
+            data.set(base + "count", 0);
+            data.set(base + "total", 0.0D);
+        }
+        int count = data.getInt(base + "count", 0) + 1;
+        double total = data.getDouble(base + "total", 0.0D) + amount;
+        data.set(base + "count", count);
+        data.set(base + "total", total);
+        data.save();
+        double reference = Math.max(0.01D, appraisedValue(item));
+        if (count >= 3 && (total >= 50_000.0D || amount / reference >= 25.0D)) {
+            String detail = "pair=" + first + "/" + second + " count24h=" + count + " total=$" + format(total);
+            audit("PAIR_RISK", buyer, -1, amount, detail);
+            alertStaff("&c[AH Alert] &fRepeated high-risk pair trading: &7" + detail);
+        }
+    }
+
+    private void expireListings() {
+        long now = System.currentTimeMillis();
+        List<Listing> expired = listings("", SortMode.RECENT).stream().filter(listing -> listing.expiresAt() < now).toList();
+        if (expired.isEmpty()) {
+            return;
+        }
+        synchronized (listingLock) {
+            for (Listing listing : expired) {
+                Listing current = listing(String.valueOf(listing.id()));
+                if (current == null || current.expiresAt() >= now) {
+                    continue;
+                }
+                data.set("listing." + current.id(), null);
+                queueRefund(current.seller(), current.id(), current.item(), "expired");
+                audit("EXPIRE", current.seller(), current.id(), current.price(), fingerprint(current.item()));
+            }
+            data.save();
+        }
+        expired.stream().map(Listing::seller).distinct().map(Bukkit::getPlayer).filter(player -> player != null).forEach(this::deliverRefunds);
+    }
+
+    private void queueRefund(UUID seller, int listingId, ItemStack item, String reason) {
+        String base = "refund." + seller + "." + listingId;
+        if (!data.contains(base)) {
+            data.set(base, Base64.getEncoder().encodeToString(item.serializeAsBytes()));
+            data.set(base + ".reason", reason);
+        }
+    }
+
+    private void deliverRefunds(Player player) {
+        String prefix = "refund." + player.getUniqueId() + ".";
+        List<String> keys = data.keys().stream().filter(key -> key.startsWith(prefix) && !key.endsWith(".reason")).sorted().toList();
+        for (String key : keys) {
+            try {
+                ItemStack item = ItemStack.deserializeBytes(Base64.getDecoder().decode(data.getString(key, "")));
+                data.set(key, null);
+                data.set(key + ".reason", null);
+                data.save();
+                give(player, item);
+                audit("REFUND", player.getUniqueId(), parseRefundId(key), 0.0D, fingerprint(item));
+                Text.msg(player, "&eAuctionHouse returned &f" + itemName(item) + " x" + item.getAmount() + "&e.");
+            } catch (RuntimeException exception) {
+                getLogger().severe("Corrupt AH refund for " + player.getUniqueId() + " at " + key + ": " + exception.getMessage());
+            }
+        }
+    }
+
+    private int parseRefundId(String key) {
+        try {
+            return Integer.parseInt(key.substring(key.lastIndexOf('.') + 1));
+        } catch (NumberFormatException exception) {
+            return -1;
+        }
+    }
+
+    private void audit(String type, UUID actor, int listingId, double amount, String detail) {
+        String value = System.currentTimeMillis() + " | " + type + " | actor=" + actor + " | listing=" + listingId + " | amount=" + format(amount) + " | " + detail;
+        data.set("audit." + System.currentTimeMillis() + "." + (++auditSequence), value);
+        List<String> keys = data.keys().stream().filter(key -> key.startsWith("audit.")).sorted().toList();
+        for (int index = 0; index < Math.max(0, keys.size() - 1_000); index++) {
+            data.set(keys.get(index), null);
+        }
+        data.save();
+    }
+
+    private void alertStaff(String message) {
+        for (Player staff : Bukkit.getOnlinePlayers()) {
+            if (MitchSMP.permissions().has(staff, "mitchsmp.auctionhouse.alerts")) {
+                Text.msg(staff, message);
+            }
+        }
+        getLogger().warning(Text.stripColorCodes(message));
+    }
+
+    private String fingerprint(ItemStack item) {
+        if (item == null) {
+            return "null";
+        }
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(item.serializeAsBytes());
+            StringBuilder result = new StringBuilder();
+            for (int index = 0; index < Math.min(8, digest.length); index++) {
+                result.append(String.format(Locale.ROOT, "%02x", digest[index]));
+            }
+            return result.toString();
+        } catch (NoSuchAlgorithmException | RuntimeException exception) {
+            return "unavailable";
+        }
+    }
+
     private int nextId() {
         return data.getInt("next-id", 1);
+    }
+
+    private int nextAvailableId() {
+        int id = Math.max(1, nextId());
+        while (data.contains("listing." + id)) {
+            id++;
+        }
+        return id;
     }
 
     private Listing listingAt(AuctionMenu menu, int slot) {
@@ -1123,20 +1470,32 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
         }
     }
 
-    private record Listing(int id, UUID seller, double price, ItemStack item) {
+    private record Listing(int id, UUID seller, double price, long createdAt, long expiresAt, ItemStack item) {
         String encode() {
-            return seller + ";" + price + ";" + Base64.getEncoder().encodeToString(item.serializeAsBytes());
+            return seller + ";" + price + ";" + createdAt + ";" + expiresAt + ";" + Base64.getEncoder().encodeToString(item.serializeAsBytes());
         }
 
         static Listing decode(int id, String raw) {
-            String[] parts = raw.split(";", 3);
-            if (parts.length != 3) {
+            try {
+                String[] parts = raw.split(";", 5);
+                if (parts.length == 3) {
+                    UUID seller = UUID.fromString(parts[0]);
+                    double price = Double.parseDouble(parts[1]);
+                    ItemStack item = ItemStack.deserializeBytes(Base64.getDecoder().decode(parts[2]));
+                    return new Listing(id, seller, price, 0L, Long.MAX_VALUE, item);
+                }
+                if (parts.length != 5) {
+                    return null;
+                }
+                UUID seller = UUID.fromString(parts[0]);
+                double price = Double.parseDouble(parts[1]);
+                long createdAt = Long.parseLong(parts[2]);
+                long expiresAt = Long.parseLong(parts[3]);
+                ItemStack item = ItemStack.deserializeBytes(Base64.getDecoder().decode(parts[4]));
+                return new Listing(id, seller, price, createdAt, expiresAt, item);
+            } catch (RuntimeException exception) {
                 return null;
             }
-            UUID seller = UUID.fromString(parts[0]);
-            double price = Double.parseDouble(parts[1]);
-            ItemStack item = ItemStack.deserializeBytes(Base64.getDecoder().decode(parts[2]));
-            return new Listing(id, seller, price, item);
         }
     }
 }

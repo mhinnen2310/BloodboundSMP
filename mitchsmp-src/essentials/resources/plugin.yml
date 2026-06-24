@@ -6,6 +6,8 @@ author: Mitchel
 description: Essential player and admin commands for MitchSMP.
 depend:
   - MitchSMP-Core
+softdepend:
+  - MitchSMP-Recovery
 commands:
   spawn:
     description: Teleport to spawn.

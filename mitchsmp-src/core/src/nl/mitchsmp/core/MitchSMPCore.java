@@ -2,16 +2,23 @@ package nl.mitchsmp.core;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.Locale;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.logging.Handler;
+import java.util.logging.Level;
+import java.util.logging.LogRecord;
+import java.util.logging.Logger;
 
+import nl.mitchsmp.core.api.FeatureFlagService;
 import nl.mitchsmp.core.api.MitchRank;
 import nl.mitchsmp.core.api.MitchSMP;
 import nl.mitchsmp.core.api.PermissionService;
@@ -28,15 +35,26 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.player.PlayerJoinEvent;
+import org.bukkit.event.player.PlayerCommandPreprocessEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.server.ServerListPingEvent;
 import org.bukkit.permissions.PermissionAttachment;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompleter {
+    private static final List<String> EXPECTED_PLUGINS = List.of(
+        "MitchSMP-Lifesteal", "MitchSMP-CorruptedHearts", "MitchSMP-Permissions", "MitchSMP-CombatTag",
+        "MitchSMP-Recovery", "MitchSMP-TPA", "MitchSMP-Homes", "MitchSMP-Economy", "MitchSMP-EconomyWatch", "MitchSMP-Bounties",
+        "MitchSMP-AuctionHouse", "MitchSMP-HUD", "MitchSMP-RTP", "MitchSMP-Essentials", "MitchSMP-Hub",
+        "MitchSMP-Skyblock", "MitchSMP-Performance", "MitchSMP-Artifacts", "MitchSMP-Bosses", "MitchSMP-BedWars",
+        "MitchSMP-TNTRun", "MitchSMP-Spleef", "MitchSMP-Cosmetics", "MitchSMP-Events", "MitchSMP-Progression",
+        "MitchSMP-Skills", "MitchSMP-EndBoss", "MitchSMP-Chat", "MitchSMP-AntiCheat", "MitchSMP-Seasons"
+    );
     private final Map<Class<?>, Object> services = new HashMap<>();
     private CoreRankService rankService;
     private CorePermissionService permissionService;
+    private CoreFeatureFlagService featureFlagService;
+    private CommandErrorTracker commandErrorTracker;
 
     @Override
     public void onEnable() {
@@ -45,24 +63,36 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
         Path dataRoot = getDataFolder().toPath();
         rankService = new CoreRankService(new PropertiesFile(dataRoot.resolve("players.properties")));
         permissionService = new CorePermissionService(rankService, new PropertiesFile(dataRoot.resolve("permissions.properties")));
+        featureFlagService = new CoreFeatureFlagService(new PropertiesFile(dataRoot.resolve("features.properties")));
+        commandErrorTracker = new CommandErrorTracker(new PropertiesFile(dataRoot.resolve("command-errors.properties")));
 
         registerService(RankService.class, rankService);
         registerService(PermissionService.class, permissionService);
+        registerService(FeatureFlagService.class, featureFlagService);
 
         Bukkit.getPluginManager().registerEvents(this, this);
         command("mitchcore");
+        command("features");
+        command("errors");
+
+        Logger.getLogger("").addHandler(commandErrorTracker);
 
         for (Player player : Bukkit.getOnlinePlayers()) {
             permissionService.sync(player);
         }
 
-        getLogger().info("MitchSMP-Core enabled with " + services.size() + " services.");
+        getLogger().info("Bloodbound Core " + getDescription().getVersion() + " enabled on Java " + Runtime.version().feature() + " with " + services.size() + " services.");
+        getLogger().info("Feature flags: " + featureFlagService.summary());
+        Bukkit.getScheduler().runTaskLater(this, this::runStartupDiagnostics, 40L);
     }
 
     @Override
     public void onDisable() {
         if (permissionService != null) {
             permissionService.removeAllAttachments();
+        }
+        if (commandErrorTracker != null) {
+            Logger.getLogger("").removeHandler(commandErrorTracker);
         }
         services.clear();
         MitchSMP.setCore(null);
@@ -74,6 +104,10 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
 
     public PermissionService permissions() {
         return permissionService;
+    }
+
+    public FeatureFlagService features() {
+        return featureFlagService;
     }
 
     public <T> void registerService(Class<T> type, T service) {
@@ -98,6 +132,25 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
     }
 
     @EventHandler
+    public void onPlayerCommand(PlayerCommandPreprocessEvent event) {
+        String message = event.getMessage();
+        if (message == null || message.length() < 2) {
+            return;
+        }
+        String root = message.substring(1).split("\\s+", 2)[0].toLowerCase(Locale.ROOT);
+        String feature = featureFlagService.featureForCommand(root);
+        if (feature == null || featureFlagService.isEnabled(feature)) {
+            return;
+        }
+        Player player = event.getPlayer();
+        if (permissionService.has(player, "mitchsmp.features.override") && permissionService.isAdminMode(player)) {
+            return;
+        }
+        event.setCancelled(true);
+        Text.msg(player, "&cThis feature is temporarily disabled: &f" + feature + "&c. Your data was not changed.");
+    }
+
+    @EventHandler
     public void onPing(ServerListPingEvent event) {
         String[] frames = {"<", "<<", "<<<", "<<"};
         String frame = frames[(int) ((System.currentTimeMillis() / 700L) % frames.length)];
@@ -106,8 +159,14 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
+        if (command.getName().equalsIgnoreCase("features")) {
+            return featureCommand(sender, args);
+        }
+        if (command.getName().equalsIgnoreCase("errors")) {
+            return errorsCommand(sender, args);
+        }
         if (!command.getName().equalsIgnoreCase("mitchcore")) {
-            return false;
+            return true;
         }
         if (args.length > 0 && args[0].equalsIgnoreCase("reload")) {
             if (!permissionService.has(sender, "mitchsmp.core.reload")) {
@@ -128,6 +187,24 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
 
     @Override
     public java.util.List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        if (command.getName().equalsIgnoreCase("features")) {
+            if (!permissionService.has(sender, "mitchsmp.features.admin")) {
+                return List.of();
+            }
+            if (args.length == 1) {
+                return nl.mitchsmp.core.util.Tab.complete(args[0], "list", "enable", "disable");
+            }
+            if (args.length == 2 && (args[0].equalsIgnoreCase("enable") || args[0].equalsIgnoreCase("disable"))) {
+                return nl.mitchsmp.core.util.Tab.complete(args[1], featureFlagService.all().keySet());
+            }
+            return List.of();
+        }
+        if (command.getName().equalsIgnoreCase("errors")) {
+            if (!permissionService.has(sender, "mitchsmp.errors.view")) {
+                return List.of();
+            }
+            return args.length == 1 ? nl.mitchsmp.core.util.Tab.complete(args[0], "recent", "clear") : List.of();
+        }
         if (args.length == 1) {
             return nl.mitchsmp.core.util.Tab.complete(args[0], "reload");
         }
@@ -149,6 +226,211 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
         }
         names.sort(String::compareToIgnoreCase);
         return String.join("&7, &f", names);
+    }
+
+    private boolean featureCommand(CommandSender sender, String[] args) {
+        if (!permissionService.has(sender, "mitchsmp.features.admin")) {
+            Text.msg(sender, "&cYou do not have permission to manage feature flags.");
+            return true;
+        }
+        if (args.length == 0 || args[0].equalsIgnoreCase("list")) {
+            Text.msg(sender, "&6Bloodbound feature flags:");
+            featureFlagService.all().forEach((name, enabled) ->
+                Text.msg(sender, (enabled ? "&aON  " : "&cOFF ") + "&f" + name));
+            Text.msg(sender, "&7Disabled commands fail safely before plugin execution. Adminmode users with override permission can test them.");
+            return true;
+        }
+        if (args.length == 2 && (args[0].equalsIgnoreCase("enable") || args[0].equalsIgnoreCase("disable"))) {
+            String feature = args[1].toLowerCase(Locale.ROOT);
+            if (!featureFlagService.all().containsKey(feature)) {
+                Text.msg(sender, "&cUnknown feature. Use &f/features list&c.");
+                return true;
+            }
+            boolean enabled = args[0].equalsIgnoreCase("enable");
+            featureFlagService.setEnabled(feature, enabled);
+            Text.msg(sender, enabled ? "&aEnabled &f" + feature + "&a." : "&cDisabled &f" + feature + "&c.");
+            getLogger().warning("Feature flag " + feature + " set to " + enabled + " by " + sender.getName());
+            return true;
+        }
+        Text.msg(sender, "&cUsage: /features [list|enable <feature>|disable <feature>]");
+        return true;
+    }
+
+    private boolean errorsCommand(CommandSender sender, String[] args) {
+        if (!permissionService.has(sender, "mitchsmp.errors.view")) {
+            Text.msg(sender, "&cYou do not have permission to view command errors.");
+            return true;
+        }
+        if (args.length > 0 && args[0].equalsIgnoreCase("clear")) {
+            commandErrorTracker.clear();
+            Text.msg(sender, "&aCommand error history cleared.");
+            return true;
+        }
+        int limit = 10;
+        if (args.length > 1) {
+            try {
+                limit = Math.max(1, Math.min(50, Integer.parseInt(args[1])));
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        List<String> recent = commandErrorTracker.recent(limit);
+        Text.msg(sender, "&6Recent command errors &7(" + recent.size() + "):");
+        if (recent.isEmpty()) {
+            Text.msg(sender, "&aNo captured command errors.");
+        } else {
+            recent.forEach(line -> Text.msg(sender, "&7- &f" + line));
+        }
+        return true;
+    }
+
+    private void runStartupDiagnostics() {
+        List<String> missing = new ArrayList<>();
+        for (String pluginName : EXPECTED_PLUGINS) {
+            org.bukkit.plugin.Plugin plugin = Bukkit.getPluginManager().getPlugin(pluginName);
+            if (plugin == null || !plugin.isEnabled()) {
+                missing.add(pluginName);
+            }
+        }
+        if (missing.isEmpty()) {
+            getLogger().info("STARTUP CHECK PASS: all " + (EXPECTED_PLUGINS.size() + 1) + " Bloodbound plugins are enabled.");
+        } else {
+            getLogger().severe("STARTUP CHECK FAILED: missing/disabled plugins: " + String.join(", ", missing));
+        }
+    }
+
+    private static final class CoreFeatureFlagService implements FeatureFlagService {
+        private static final List<String> DEFAULT_FEATURES = List.of(
+            "auctionhouse", "quicksell", "pay", "bounties", "abilities", "endboss", "events", "bosses",
+            "bedwars", "tntrun", "spleef", "skyblock", "homes", "tpa", "rtp", "shop", "contracts",
+            "orders", "collections"
+        );
+        private static final Map<String, String> COMMAND_FEATURES = Map.ofEntries(
+            Map.entry("ah", "auctionhouse"), Map.entry("auctionhouse", "auctionhouse"),
+            Map.entry("sell", "quicksell"), Map.entry("quicksell", "quicksell"), Map.entry("qs", "quicksell"), Map.entry("sellquick", "quicksell"),
+            Map.entry("pay", "pay"), Map.entry("bounty", "bounties"), Map.entry("bounties", "bounties"),
+            Map.entry("abilities", "abilities"), Map.entry("ability", "abilities"), Map.entry("enchants", "abilities"),
+            Map.entry("endboss", "endboss"), Map.entry("hellboss", "endboss"), Map.entry("ritualboss", "endboss"),
+            Map.entry("event", "events"), Map.entry("boss", "bosses"), Map.entry("bosses", "bosses"),
+            Map.entry("bw", "bedwars"), Map.entry("bedwars", "bedwars"), Map.entry("tntrun", "tntrun"), Map.entry("tr", "tntrun"),
+            Map.entry("spleef", "spleef"), Map.entry("sf", "spleef"), Map.entry("skyblock", "skyblock"), Map.entry("sb", "skyblock"), Map.entry("island", "skyblock"),
+            Map.entry("home", "homes"), Map.entry("homes", "homes"), Map.entry("sethome", "homes"), Map.entry("delhome", "homes"), Map.entry("deletehome", "homes"),
+            Map.entry("tpa", "tpa"), Map.entry("tpaccept", "tpa"), Map.entry("tpdeny", "tpa"), Map.entry("rtp", "rtp"), Map.entry("wild", "rtp"),
+            Map.entry("shop", "shop"), Map.entry("contracts", "contracts"), Map.entry("orders", "orders"), Map.entry("resourceorders", "orders"),
+            Map.entry("collection", "collections"), Map.entry("clog", "collections")
+        );
+        private final PropertiesFile file;
+
+        CoreFeatureFlagService(PropertiesFile file) {
+            this.file = file;
+            boolean changed = false;
+            for (String feature : DEFAULT_FEATURES) {
+                if (!file.contains("feature." + feature)) {
+                    file.set("feature." + feature, true);
+                    changed = true;
+                }
+            }
+            if (changed) {
+                file.save();
+            }
+        }
+
+        @Override
+        public boolean isEnabled(String feature) {
+            return Boolean.parseBoolean(file.getString("feature." + feature.toLowerCase(Locale.ROOT), "false"));
+        }
+
+        @Override
+        public void setEnabled(String feature, boolean enabled) {
+            String normalized = feature.toLowerCase(Locale.ROOT);
+            if (!DEFAULT_FEATURES.contains(normalized)) {
+                throw new IllegalArgumentException("Unknown feature: " + feature);
+            }
+            file.set("feature." + normalized, enabled);
+            file.save();
+        }
+
+        @Override
+        public Map<String, Boolean> all() {
+            Map<String, Boolean> result = new LinkedHashMap<>();
+            DEFAULT_FEATURES.forEach(feature -> result.put(feature, isEnabled(feature)));
+            return Map.copyOf(result);
+        }
+
+        @Override
+        public String featureForCommand(String commandRoot) {
+            return COMMAND_FEATURES.get(commandRoot.toLowerCase(Locale.ROOT));
+        }
+
+        String summary() {
+            List<String> disabled = all().entrySet().stream().filter(entry -> !entry.getValue()).map(Map.Entry::getKey).sorted().toList();
+            return disabled.isEmpty() ? "all enabled" : "disabled=" + String.join(",", disabled);
+        }
+    }
+
+    private static final class CommandErrorTracker extends Handler {
+        private static final int MAX_ERRORS = 250;
+        private final PropertiesFile file;
+        private long sequence;
+
+        CommandErrorTracker(PropertiesFile file) {
+            this.file = file;
+            this.sequence = System.currentTimeMillis();
+        }
+
+        @Override
+        public synchronized void publish(LogRecord record) {
+            if (record == null || record.getLevel().intValue() < Level.SEVERE.intValue()) {
+                return;
+            }
+            String message = String.valueOf(record.getMessage());
+            Throwable thrown = record.getThrown();
+            String throwableName = thrown == null ? "" : thrown.getClass().getName();
+            String haystack = (message + " " + throwableName).toLowerCase(Locale.ROOT);
+            if (!haystack.contains("command") && !haystack.contains("brigadier")) {
+                return;
+            }
+            String cause = thrown == null ? "" : deepest(thrown).getClass().getSimpleName() + ": " + safe(deepest(thrown).getMessage());
+            String value = System.currentTimeMillis() + " | " + safe(message) + (cause.isBlank() ? "" : " | " + cause);
+            file.set("error." + (++sequence), value);
+            trim();
+            file.save();
+        }
+
+        List<String> recent(int limit) {
+            return file.keys().stream()
+                .filter(key -> key.startsWith("error."))
+                .sorted(Comparator.reverseOrder())
+                .limit(limit)
+                .map(key -> file.getString(key, ""))
+                .toList();
+        }
+
+        void clear() {
+            file.keys().stream().filter(key -> key.startsWith("error.")).toList().forEach(key -> file.set(key, null));
+            file.save();
+        }
+
+        private void trim() {
+            List<String> keys = file.keys().stream().filter(key -> key.startsWith("error.")).sorted().toList();
+            for (int index = 0; index < Math.max(0, keys.size() - MAX_ERRORS); index++) {
+                file.set(keys.get(index), null);
+            }
+        }
+
+        private static Throwable deepest(Throwable throwable) {
+            Throwable result = throwable;
+            while (result.getCause() != null && result.getCause() != result) {
+                result = result.getCause();
+            }
+            return result;
+        }
+
+        private static String safe(String input) {
+            return input == null ? "" : input.replace('\n', ' ').replace('\r', ' ').replace('|', '/').trim();
+        }
+
+        @Override public void flush() { }
+        @Override public void close() { }
     }
 
     private static final class CoreRankService implements RankService {
@@ -421,7 +703,10 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
                 "mitchsmp.combat.admin",
                 "mitchsmp.anticheat.alerts",
                 "mitchsmp.anticheat.admin",
-                "mitchsmp.performance.alerts"
+                "mitchsmp.performance.alerts",
+                "mitchsmp.errors.view",
+                "mitchsmp.economy.alerts",
+                "mitchsmp.auctionhouse.alerts"
             );
             addDefault(MitchRank.ADMIN,
                 "mitchsmp.core.reload",
@@ -444,7 +729,10 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
                 "mitchsmp.hub.admin",
                 "mitchsmp.skyblock.admin",
                 "mitchsmp.performance.admin",
-                "mitchsmp.season.admin"
+                "mitchsmp.season.admin",
+                "mitchsmp.features.admin",
+                "mitchsmp.features.override",
+                "mitchsmp.recovery.admin"
             );
             addDefault(MitchRank.OWNER, "mitchsmp.*");
         }
@@ -488,7 +776,11 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
         }
 
         private boolean isPassiveStaffPermission(String requested) {
-            return requested.equals("mitchsmp.staffchat");
+            return requested.equals("mitchsmp.staffchat")
+                || requested.equals("mitchsmp.anticheat.alerts")
+                || requested.equals("mitchsmp.performance.alerts")
+                || requested.equals("mitchsmp.economy.alerts")
+                || requested.equals("mitchsmp.auctionhouse.alerts");
         }
     }
 }

@@ -20,6 +20,7 @@ import nl.mitchsmp.core.api.EconomyService;
 import nl.mitchsmp.core.api.EconomyWatchService;
 import nl.mitchsmp.core.api.MitchRank;
 import nl.mitchsmp.core.api.MitchSMP;
+import nl.mitchsmp.core.api.InventorySnapshotService;
 import nl.mitchsmp.core.storage.PropertiesFile;
 import nl.mitchsmp.core.util.Tab;
 import nl.mitchsmp.core.util.Text;
@@ -50,6 +51,7 @@ import org.bukkit.event.entity.CreatureSpawnEvent;
 import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryDragEvent;
 import org.bukkit.event.player.PlayerMoveEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
@@ -149,6 +151,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         Map.entry("eco", "mitchsmp.economy.admin"),
         Map.entry("auctionhouse", "mitchsmp.auctionhouse.use"),
         Map.entry("ah", "mitchsmp.auctionhouse.use"),
+        Map.entry("ahadmin", "mitchsmp.auctionhouse.admin"),
         Map.entry("bedwars", "mitchsmp.bedwars.play"),
         Map.entry("bw", "mitchsmp.bedwars.play"),
         Map.entry("tntrun", "mitchsmp.tntrun.play"),
@@ -219,9 +222,15 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         Map.entry("rankperms", "mitchsmp.permissions.manage"),
         Map.entry("cmdperms", "mitchsmp.permissions.manage"),
         Map.entry("sethearts", "mitchsmp.lifesteal.admin"),
+        Map.entry("setheart", "mitchsmp.lifesteal.admin"),
         Map.entry("corruptedheart", "mitchsmp.lifesteal.admin"),
         Map.entry("cheart", "mitchsmp.lifesteal.admin"),
         Map.entry("mitchcore", "mitchsmp.core.reload"),
+        Map.entry("features", "mitchsmp.features.admin"),
+        Map.entry("errors", "mitchsmp.errors.view"),
+        Map.entry("rollback", "mitchsmp.recovery.admin"),
+        Map.entry("rb", "mitchsmp.recovery.admin"),
+        Map.entry("snapshots", "mitchsmp.recovery.admin"),
         Map.entry("event", "mitchsmp.events.admin"),
         Map.entry("season", "mitchsmp.season.view"),
         Map.entry("cosmetics", "mitchsmp.cosmetics.basic"),
@@ -685,6 +694,14 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
     @EventHandler
     public void onDeath(PlayerDeathEvent event) {
         backLocations.put(event.getEntity().getUniqueId(), event.getEntity().getLocation());
+        if (MitchSMP.permissions().isAdminMode(event.getEntity())) {
+            event.setKeepInventory(true);
+            event.setKeepLevel(true);
+            event.setDroppedExp(0);
+            event.getDrops().clear();
+            saveAdminInventory(event.getEntity());
+            audit(event.getEntity(), "adminmode-death-kept", shortLocation(event.getEntity().getLocation()));
+        }
     }
 
     @EventHandler
@@ -805,7 +822,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         Player player = event.getPlayer();
         ItemStack item = event.getItemDrop() == null ? null : event.getItemDrop().getItemStack();
         audit(player, "drop", itemName(item));
-        if (MitchSMP.permissions().isAdminRestricted(player)) {
+        if (MitchSMP.permissions().isAdminMode(player)) {
             event.setCancelled(true);
             if (event.getItemDrop() != null) {
                 event.getItemDrop().remove();
@@ -940,6 +957,22 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             }
         }
         Text.msg(player, "&aAdmin actie uitgevoerd.");
+    }
+
+    @EventHandler
+    public void onAdminDrag(InventoryDragEvent event) {
+        if (!(event.getWhoClicked() instanceof Player player) || !MitchSMP.permissions().isAdminMode(player) || isTestWorld(player.getWorld())) {
+            return;
+        }
+        Inventory top = event.getView().getTopInventory();
+        if (!isPlacedContainer(top)) {
+            return;
+        }
+        if (event.getRawSlots().stream().anyMatch(slot -> slot < top.getSize())) {
+            event.setCancelled(true);
+            Text.msg(player, "&cAdmin mode cannot drag items into SMP containers.");
+            audit(player, "admin-container-drag-blocked", event.getView().getTitle());
+        }
     }
 
     private boolean spawn(CommandSender sender) {
@@ -1814,6 +1847,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         }
         int minutes = args.length >= 2 ? parseInt(args[1], 30, 0, 10080) : 30;
         UUID id = target.getUniqueId();
+        captureSnapshot(target, "jail-enter");
         int cell = data.getInt("jail." + id + ".cellIndex", -1);
         if (cell < 0) {
             cell = data.getInt("jail.nextCell", 0);
@@ -2098,6 +2132,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             return;
         }
         UUID id = player.getUniqueId();
+        captureSnapshot(player, "adminmode-enter");
         data.set("adminmode." + id + ".playInventory", encodeInventory(player.getInventory().getContents()));
         data.set("adminmode." + id + ".playMode", player.getGameMode().name());
         data.set("adminmode." + id + ".playAllowFlight", player.getAllowFlight());
@@ -2116,6 +2151,8 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             return;
         }
         UUID id = player.getUniqueId();
+        clearModelDisguise(player, false);
+        captureSnapshot(player, "adminmode-exit-staff-inventory");
         saveAdminInventory(player);
         boolean override = MitchSMP.permissions().isAdminModeOverride(player);
         if (override) {
@@ -2153,6 +2190,14 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             ? "&6Owner override disabled. Your normal SMP inventory has been restored; rollback was skipped."
             : "&aAdmin mode disabled. Your normal SMP inventory has been restored.");
         alertStaff("&a[AdminMode] &f" + player.getName() + " &7returned to play mode.");
+        captureSnapshot(player, "adminmode-exit-survival-restored");
+    }
+
+    private void captureSnapshot(Player player, String trigger) {
+        InventorySnapshotService service = MitchSMP.snapshots();
+        if (service != null) {
+            service.capture(player, trigger);
+        }
     }
 
     private void applyAdminMode(Player player, boolean fresh) {
@@ -2321,8 +2366,8 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         } catch (ReflectiveOperationException ignored) {
         }
         if (entity instanceof LivingEntity living) {
-            living.setCustomName(Text.color("&4[Staff] &f" + owner.getName()));
-            living.setCustomNameVisible(true);
+            living.setCustomName(null);
+            living.setCustomNameVisible(false);
             try {
                 living.getClass().getMethod("setAI", boolean.class).invoke(living, false);
                 living.getClass().getMethod("setCollidable", boolean.class).invoke(living, false);
@@ -3525,6 +3570,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
 
     private void releaseJail(Player player, boolean teleportBack) {
         UUID id = player.getUniqueId();
+        captureSnapshot(player, "jail-exit-before");
         Location back = decode(data.getString("jail." + id + ".return", ""));
         GameMode mode = GameMode.SURVIVAL;
         try {
@@ -3538,6 +3584,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         if (teleportBack && back != null) {
             player.teleport(back);
         }
+        captureSnapshot(player, "jail-exit-restored");
         Text.msg(player, "&aJe bent uit jail.");
     }
 
@@ -3860,7 +3907,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
     }
 
     private boolean shouldBlockAdminWorldDamage(Player player, Material material) {
-        if (player == null || material == null || !MitchSMP.permissions().isAdminRestricted(player) || isTestWorld(player.getWorld())) {
+        if (player == null || material == null || !MitchSMP.permissions().isAdminMode(player) || isTestWorld(player.getWorld())) {
             return false;
         }
         String name = material.name();
@@ -3878,7 +3925,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
     }
 
     private boolean shouldBlockAdminContainerEdit(Player player, Inventory top, InventoryClickEvent event) {
-        if (player == null || top == null || event == null || !MitchSMP.permissions().isAdminRestricted(player) || isTestWorld(player.getWorld())) {
+        if (player == null || top == null || event == null || !MitchSMP.permissions().isAdminMode(player) || isTestWorld(player.getWorld())) {
             return false;
         }
         if (!isPlacedContainer(top)) {

@@ -196,12 +196,18 @@ public final class EconomyWatchPlugin extends JavaPlugin implements EconomyWatch
         if (material == null || material == Material.AIR) {
             return 0.0D;
         }
-        double recipeFloor = recipeValue(material) * setting("craftedValueMultiplier", 0.85D);
+        if (material == Material.COPPER_INGOT) {
+            return quickSellPrice(Material.RAW_COPPER) * 1.05D;
+        }
+        double recipeCap = recipeMarketValue(material) * setting("craftedValueMultiplier", 0.80D);
         double base = Math.max(basePrice(material), recipeStaticBase(material) * 0.80D);
-        double price = base * moneyMultiplier() * scarcityMultiplier(material) * supplyPressureMultiplier(material);
-        price = Math.max(price, recipeFloor);
-        double cap = Math.max(maximumPrice(material), recipeFloor * 1.35D);
-        return Math.max(minimumPrice(material), Math.min(cap, price));
+        double price = base * moneyMultiplier() * scarcityMultiplier(material) * supplyPressureMultiplier(material) * lootAvailabilityMultiplier(material);
+        double cap = maximumPrice(material);
+        if (recipeCap > 0.0D) {
+            cap = Math.min(cap, recipeCap);
+        }
+        double minimum = recipeCap > 0.0D ? Math.min(minimumPrice(material), recipeCap) : minimumPrice(material);
+        return Math.max(minimum, Math.min(cap, price));
     }
 
     @Override
@@ -209,12 +215,19 @@ public final class EconomyWatchPlugin extends JavaPlugin implements EconomyWatch
         if (item == null || item.getType() == Material.AIR || item.getAmount() <= 0) {
             return 0.0D;
         }
-        double price = Math.max(quickSellPrice(item.getType()), gearFloor(item.getType()));
+        if (MitchSMP.bossShards() != null && MitchSMP.bossShards().isShard(item)) {
+            return 0.0D;
+        }
+        if (MitchSMP.corruptedHearts() != null && MitchSMP.corruptedHearts().isCorruptedHeart(item)) {
+            return setting("corruptedHeartValue", 750.0D) * moneyMultiplier();
+        }
+        double safeFloor = safeGearFloor(item.getType());
+        double price = Math.max(quickSellPrice(item.getType()), safeFloor);
         double enchantBonus = enchantmentValue(item);
         double durability = durabilityMultiplier(item);
         double rarityBonus = rarityBonus(item);
         double value = (price + enchantBonus + rarityBonus) * durability;
-        double floor = gearFloor(item.getType());
+        double floor = safeFloor;
         if (floor > 0.0D && enchantBonus > 0.0D) {
             floor *= 1.35D;
         }
@@ -225,6 +238,12 @@ public final class EconomyWatchPlugin extends JavaPlugin implements EconomyWatch
     @Override
     public double basePrice(Material material) {
         String name = material.name();
+        if (material == Material.NETHERITE_INGOT) {
+            return 480.0D;
+        }
+        if (material == Material.NETHERITE_UPGRADE_SMITHING_TEMPLATE) {
+            return 50.0D;
+        }
         double crafted = recipeStaticBase(material);
         if (crafted > 0.0D) {
             return crafted * 0.90D;
@@ -256,8 +275,11 @@ public final class EconomyWatchPlugin extends JavaPlugin implements EconomyWatch
         if (name.contains("ORE")) {
             return name.contains("GOLD") ? 7.0D : name.contains("IRON") ? 4.0D : 2.0D;
         }
-        if (name.contains("LOG") || name.contains("PLANKS") || name.endsWith("_WOOD") || name.contains("STEM")) {
-            return 0.08D;
+        if (name.contains("LOG") || name.endsWith("_WOOD") || name.contains("STEM")) {
+            return 0.20D;
+        }
+        if (name.contains("PLANKS")) {
+            return 0.04D;
         }
         if (name.contains("LEAVES") || name.contains("DIRT") || name.contains("SAND") || name.contains("GRAVEL")) {
             return 0.03D;
@@ -272,6 +294,16 @@ public final class EconomyWatchPlugin extends JavaPlugin implements EconomyWatch
             return 180.0D;
         }
         return switch (material) {
+            case STICK -> 0.01D;
+            case BONE -> 0.24D;
+            case BONE_MEAL -> 0.06D;
+            case ROTTEN_FLESH -> 0.04D;
+            case GLASS -> 0.12D;
+            case GLASS_PANE -> 0.035D;
+            case RAW_COPPER -> 0.65D;
+            case COPPER_INGOT -> 0.70D;
+            case NETHERITE_INGOT -> 480.0D;
+            case NETHERITE_UPGRADE_SMITHING_TEMPLATE -> 50.0D;
             case IRON_INGOT -> 3.0D;
             case GOLD_INGOT -> 5.0D;
             case GOLD_BLOCK -> 42.0D;
@@ -285,7 +317,7 @@ public final class EconomyWatchPlugin extends JavaPlugin implements EconomyWatch
             case DRAGON_EGG -> 2_500.0D;
             case ELYTRA -> 1_500.0D;
             case SPAWNER -> 250.0D;
-            default -> 0.75D;
+            default -> 0.10D;
         };
     }
 
@@ -331,6 +363,10 @@ public final class EconomyWatchPlugin extends JavaPlugin implements EconomyWatch
         String prefix = prefix(material);
         market.set(prefix + "." + source + ".total", market.getLong(prefix + "." + source + ".total", 0L) + amount);
         addDecayed(prefix + ".supply", amount * sourceWeight(source));
+        String normalizedSource = source.toLowerCase(Locale.ROOT);
+        if (normalizedSource.contains("loot") || normalizedSource.equals("mobdrop")) {
+            addDecayed(prefix + ".loot", amount * sourceWeight(source));
+        }
         market.save();
     }
 
@@ -352,10 +388,11 @@ public final class EconomyWatchPlugin extends JavaPlugin implements EconomyWatch
         return Text.color("&a" + pretty(material)
             + " &7price=&a$" + format(quickSellPrice(material))
             + " &8(base " + format(basePrice(material))
-            + ", recipe floor " + format(recipeValue(material) * setting("craftedValueMultiplier", 0.85D))
+            + ", craft cap " + format(recipeMarketValue(material) * setting("craftedValueMultiplier", 0.80D))
             + ", money " + format(moneyMultiplier()) + "x"
             + ", scarcity " + format(scarcityMultiplier(material)) + "x"
             + ", stock " + onlineStock(material)
+            + ", loot " + format(lootAvailabilityMultiplier(material)) + "x"
             + ", supply " + format(supplyScore(material)) + ")");
     }
 
@@ -424,7 +461,7 @@ public final class EconomyWatchPlugin extends JavaPlugin implements EconomyWatch
 
     private boolean ignoredPlayer(Player player) {
         return player == null
-            || MitchSMP.permissions().isAdminRestricted(player)
+            || MitchSMP.permissions().isAdminMode(player)
             || player.getGameMode() == GameMode.CREATIVE
             || player.getGameMode() == GameMode.SPECTATOR
             || isBedWarsWorld(player);
@@ -496,8 +533,18 @@ public final class EconomyWatchPlugin extends JavaPlugin implements EconomyWatch
             case TOTEM_OF_UNDYING -> 40.0D;
             case ENCHANTED_GOLDEN_APPLE -> 12.0D;
             case NETHER_STAR, DRAGON_EGG, ELYTRA, SPAWNER -> 4.0D;
+            case STICK, BONE_MEAL, ROTTEN_FLESH -> 20_000.0D;
+            case BONE, GLASS, GLASS_PANE, RAW_COPPER, COPPER_INGOT -> 5_000.0D;
+            case NETHERITE_UPGRADE_SMITHING_TEMPLATE -> 40.0D;
             default -> 500.0D;
         };
+    }
+
+    private double lootAvailabilityMultiplier(Material material) {
+        decay(prefix(material) + ".loot");
+        double loot = market.getDouble(prefix(material) + ".loot.decayed", 0.0D);
+        double expected = Math.max(8.0D, expectedStock(material) * Math.max(1, market.getInt("snapshot.players", 1)) * 0.10D);
+        return clamp(0.35D, 1.0D, 1.0D / Math.sqrt(1.0D + loot / expected));
     }
 
     private double supplyPressureMultiplier(Material material) {
@@ -532,7 +579,19 @@ public final class EconomyWatchPlugin extends JavaPlugin implements EconomyWatch
         for (RecipePart part : recipe.parts()) {
             total += basePriceRaw(part.material()) * part.amount();
         }
-        return total;
+        return total / Math.max(1, recipe.output());
+    }
+
+    private double recipeMarketValue(Material material) {
+        Recipe recipe = recipe(material);
+        if (recipe == null) {
+            return 0.0D;
+        }
+        double total = 0.0D;
+        for (RecipePart part : recipe.parts()) {
+            total += quickSellPrice(part.material()) * part.amount();
+        }
+        return total / Math.max(1, recipe.output());
     }
 
     private double recipeStaticBase(Material material) {
@@ -544,7 +603,7 @@ public final class EconomyWatchPlugin extends JavaPlugin implements EconomyWatch
         for (RecipePart part : recipe.parts()) {
             total += basePriceRaw(part.material()) * part.amount();
         }
-        return total;
+        return total / Math.max(1, recipe.output());
     }
 
     private boolean isGear(Material material) {
@@ -602,7 +661,23 @@ public final class EconomyWatchPlugin extends JavaPlugin implements EconomyWatch
         return 0.0D;
     }
 
+    private double safeGearFloor(Material material) {
+        double configured = gearFloor(material);
+        double recipe = recipeMarketValue(material);
+        return recipe > 0.0D ? Math.min(configured, recipe * setting("craftedValueMultiplier", 0.80D)) : configured;
+    }
+
     private double basePriceRaw(Material material) {
+        if (material == Material.STICK) return 0.01D;
+        if (material == Material.BONE) return 0.24D;
+        if (material == Material.BONE_MEAL) return 0.06D;
+        if (material == Material.ROTTEN_FLESH) return 0.04D;
+        if (material == Material.GLASS) return 0.12D;
+        if (material == Material.GLASS_PANE) return 0.035D;
+        if (material == Material.RAW_COPPER) return 0.65D;
+        if (material == Material.COPPER_INGOT) return 0.70D;
+        if (material == Material.NETHERITE_INGOT) return 480.0D;
+        if (material == Material.NETHERITE_UPGRADE_SMITHING_TEMPLATE) return 50.0D;
         String name = material.name();
         if (name.contains("NETHERITE")) {
             return 620.0D;
@@ -622,47 +697,68 @@ public final class EconomyWatchPlugin extends JavaPlugin implements EconomyWatch
         if (name.contains("STONE") || name.contains("COBBLE")) {
             return 0.05D;
         }
-        if (name.contains("PLANKS") || name.contains("LOG") || name.endsWith("_WOOD")) {
-            return 0.08D;
+        if (name.contains("LOG") || name.endsWith("_WOOD")) {
+            return 0.20D;
         }
-        return 0.75D;
+        if (name.contains("PLANKS")) {
+            return 0.04D;
+        }
+        return 0.10D;
     }
 
     private Recipe recipe(Material material) {
+        if (material == Material.OAK_PLANKS) {
+            return new Recipe(4, new RecipePart(Material.OAK_LOG, 1));
+        }
+        if (material == Material.STICK) {
+            return new Recipe(4, new RecipePart(Material.OAK_PLANKS, 2));
+        }
+        if (material == Material.GLASS_PANE) {
+            return new Recipe(16, new RecipePart(Material.GLASS, 6));
+        }
+        if (material == Material.BONE_MEAL) {
+            return new Recipe(3, new RecipePart(Material.BONE, 1));
+        }
         String name = material.name();
+        if (name.startsWith("NETHERITE_")) {
+            Material diamondItem = diamondVariant(material);
+            if (diamondItem != null) {
+                return new Recipe(1,
+                    new RecipePart(diamondItem, 1),
+                    new RecipePart(Material.NETHERITE_INGOT, 1),
+                    new RecipePart(Material.NETHERITE_UPGRADE_SMITHING_TEMPLATE, 1));
+            }
+        }
         Material core = toolCore(material);
         if (core == null) {
             return null;
         }
         if (name.endsWith("_SWORD")) {
-            return new Recipe(new RecipePart(core, 2), new RecipePart(Material.OAK_PLANKS, 1));
+            return new Recipe(1, new RecipePart(core, 2), new RecipePart(Material.OAK_PLANKS, 1));
         }
         if (name.endsWith("_PICKAXE") || name.endsWith("_AXE")) {
-            return new Recipe(new RecipePart(core, 3), new RecipePart(Material.OAK_PLANKS, 2));
+            return new Recipe(1, new RecipePart(core, 3), new RecipePart(Material.OAK_PLANKS, 2));
         }
         if (name.endsWith("_SHOVEL") || name.endsWith("_HOE")) {
-            return new Recipe(new RecipePart(core, name.endsWith("_HOE") ? 2 : 1), new RecipePart(Material.OAK_PLANKS, 2));
+            return new Recipe(1, new RecipePart(core, name.endsWith("_HOE") ? 2 : 1), new RecipePart(Material.OAK_PLANKS, 2));
         }
         if (name.endsWith("_HELMET")) {
-            return new Recipe(new RecipePart(core, 5));
+            return new Recipe(1, new RecipePart(core, 5));
         }
         if (name.endsWith("_CHESTPLATE")) {
-            return new Recipe(new RecipePart(core, 8));
+            return new Recipe(1, new RecipePart(core, 8));
         }
         if (name.endsWith("_LEGGINGS")) {
-            return new Recipe(new RecipePart(core, 7));
+            return new Recipe(1, new RecipePart(core, 7));
         }
         if (name.endsWith("_BOOTS")) {
-            return new Recipe(new RecipePart(core, 4));
+            return new Recipe(1, new RecipePart(core, 4));
         }
         return null;
     }
 
     private Material toolCore(Material material) {
         String name = material.name();
-        if (name.startsWith("NETHERITE_")) {
-            return Material.ANCIENT_DEBRIS;
-        }
         if (name.startsWith("DIAMOND_")) {
             return Material.DIAMOND;
         }
@@ -679,6 +775,21 @@ public final class EconomyWatchPlugin extends JavaPlugin implements EconomyWatch
             return Material.OAK_PLANKS;
         }
         return null;
+    }
+
+    private Material diamondVariant(Material material) {
+        return switch (material) {
+            case NETHERITE_SWORD -> Material.DIAMOND_SWORD;
+            case NETHERITE_AXE -> Material.DIAMOND_AXE;
+            case NETHERITE_PICKAXE -> Material.DIAMOND_PICKAXE;
+            case NETHERITE_SHOVEL -> Material.DIAMOND_SHOVEL;
+            case NETHERITE_HOE -> Material.DIAMOND_HOE;
+            case NETHERITE_HELMET -> Material.DIAMOND_HELMET;
+            case NETHERITE_CHESTPLATE -> Material.DIAMOND_CHESTPLATE;
+            case NETHERITE_LEGGINGS -> Material.DIAMOND_LEGGINGS;
+            case NETHERITE_BOOTS -> Material.DIAMOND_BOOTS;
+            default -> null;
+        };
     }
 
     private double enchantmentValue(ItemStack item) {
@@ -783,7 +894,7 @@ public final class EconomyWatchPlugin extends JavaPlugin implements EconomyWatch
         return switch (source.toLowerCase(Locale.ROOT)) {
             case "worldloot" -> 1.2D;
             case "shopbuy" -> 1.0D;
-            case "pluginloot" -> 0.8D;
+            case "pluginloot" -> 1.5D;
             case "mobdrop" -> 0.8D;
             case "break" -> 0.35D;
             case "drop" -> 0.20D;
@@ -838,7 +949,7 @@ public final class EconomyWatchPlugin extends JavaPlugin implements EconomyWatch
         return String.format(Locale.US, "%.2f", value);
     }
 
-    private record Recipe(RecipePart... parts) {
+    private record Recipe(int output, RecipePart... parts) {
     }
 
     private record RecipePart(Material material, int amount) {

@@ -75,6 +75,10 @@ public final class SkyblockPlugin extends JavaPlugin implements Listener, TabCom
             return true;
         }
         String sub = args.length == 0 ? "home" : args[0].toLowerCase(Locale.ROOT);
+        if (MitchSMP.permissions().isAdminMode(player) && !sub.equals("leave") && !sub.equals("hub")) {
+            Text.msg(player, "&cLeave admin mode before entering Skyblock. Staff inventory and test data cannot enter player islands.");
+            return true;
+        }
         switch (sub) {
             case "create" -> create(player);
             case "home", "join" -> home(player);

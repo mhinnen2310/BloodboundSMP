@@ -471,6 +471,10 @@ public final class BedWarsPlugin extends JavaPlugin implements Listener, TabComp
             Text.msg(player, "&cGeen permissie.");
             return;
         }
+        if (MitchSMP.permissions().isAdminMode(player)) {
+            Text.msg(player, "&cLeave admin mode before joining BedWars. Staff inventory and test data cannot enter minigames.");
+            return;
+        }
         if (activeArena.containsKey(player.getUniqueId())) {
             Text.msg(player, "&cJe zit al in BedWars.");
             return;

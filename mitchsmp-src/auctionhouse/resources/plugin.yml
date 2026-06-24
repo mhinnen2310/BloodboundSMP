@@ -13,3 +13,6 @@ commands:
     aliases: [ah]
     description: Auction house UI with search, sorting and my listings.
     usage: /ah [sell|buy|cancel|search|sort|clear|help]
+  ahadmin:
+    description: Inspect, remove and audit AuctionHouse listings.
+    usage: /ahadmin <inspect|listings|remove|logs> [id]

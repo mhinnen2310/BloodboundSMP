@@ -3,6 +3,8 @@ package nl.mitchsmp.performance;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.HashMap;
+import java.util.Map;
 
 import nl.mitchsmp.core.api.MitchSMP;
 import nl.mitchsmp.core.storage.PropertiesFile;
@@ -17,9 +19,12 @@ import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.Item;
 import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.entity.EntitySpawnEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
-public final class PerformancePlugin extends JavaPlugin implements TabCompleter {
+public final class PerformancePlugin extends JavaPlugin implements TabCompleter, Listener {
     private PropertiesFile config;
     private long lastSampleNanos;
     private long lastAlertMillis;
@@ -32,10 +37,15 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter 
     private int lastEntityCount;
     private int lastDroppedItemCount;
     private int lastMobCount;
+    private final Map<String, Integer> chunkEntityCounts = new HashMap<>();
+    private long profileCalls;
+    private long profileTotalNanos;
+    private long profileMaxNanos;
 
     @Override
     public void onEnable() {
         config = new PropertiesFile(getDataFolder().toPath().resolve("performance.properties"));
+        Bukkit.getPluginManager().registerEvents(this, this);
         command("perf");
         Bukkit.getScheduler().runTaskTimer(this, this::sample, 40L, 20L);
         getLogger().info("MitchSMP-Performance enabled.");
@@ -49,6 +59,10 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter 
         }
         if (args.length == 0 || args[0].equalsIgnoreCase("status") || args[0].equalsIgnoreCase("detail") || args[0].equalsIgnoreCase("summary")) {
             showStatus(sender);
+            return true;
+        }
+        if (args[0].equalsIgnoreCase("profiler")) {
+            showProfiler(sender);
             return true;
         }
         if (args[0].equalsIgnoreCase("config")) {
@@ -66,10 +80,10 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         if (args.length == 1) {
-            return Tab.complete(args[0], "status", "detail", "summary", "config");
+            return Tab.complete(args[0], "status", "detail", "summary", "profiler", "config");
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("config")) {
-            return Tab.complete(args[1], "lag_ms", "memory_percent", "entity_count", "alert_cooldown_seconds");
+            return Tab.complete(args[1], "lag_ms", "memory_percent", "entity_count", "entity_per_chunk", "enforce_entity_per_chunk", "alert_cooldown_seconds");
         }
         if (args.length == 3 && args[0].equalsIgnoreCase("config")) {
             return Tab.complete(args[2], "250", "500", "750", "85", "90", "5000", "10000", "60", "120");
@@ -78,6 +92,7 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter 
     }
 
     private void sample() {
+        long profileStart = System.nanoTime();
         long now = System.nanoTime();
         if (lastSampleNanos == 0L) {
             lastSampleNanos = now;
@@ -97,9 +112,11 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter 
         int entities = 0;
         int droppedItems = 0;
         int mobs = 0;
+        Map<String, Integer> currentChunkCounts = new HashMap<>();
         for (World world : Bukkit.getWorlds()) {
             for (Entity entity : world.getEntities()) {
                 entities++;
+                currentChunkCounts.merge(chunkKey(entity), 1, Integer::sum);
                 if (isDroppedItem(entity)) {
                     droppedItems++;
                 } else if (!(entity instanceof Player)) {
@@ -110,6 +127,13 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter 
         lastEntityCount = entities;
         lastDroppedItemCount = droppedItems;
         lastMobCount = mobs;
+        chunkEntityCounts.clear();
+        chunkEntityCounts.putAll(currentChunkCounts);
+
+        long duration = System.nanoTime() - profileStart;
+        profileCalls++;
+        profileTotalNanos += duration;
+        profileMaxNanos = Math.max(profileMaxNanos, duration);
 
         if (warmupSamples++ < 5) {
             return;
@@ -121,6 +145,22 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter 
         if (lag || memory || entity) {
             alert(lag, memory, entity);
         }
+    }
+
+    @EventHandler
+    public void onEntitySpawn(EntitySpawnEvent event) {
+        Entity entity = event.getEntity();
+        if (entity instanceof Player || isNamedEntity(entity) || setting("enforce_entity_per_chunk", 1.0D) < 0.5D) {
+            return;
+        }
+        int limit = Math.max(20, (int) setting("entity_per_chunk", 120.0D));
+        String key = chunkKey(entity);
+        int count = chunkEntityCounts.getOrDefault(key, 0);
+        if (count >= limit) {
+            event.setCancelled(true);
+            return;
+        }
+        chunkEntityCounts.put(key, count + 1);
     }
 
     private void alert(boolean lag, boolean memory, boolean entity) {
@@ -171,6 +211,8 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter 
         Text.msg(sender, verdict(entityBad, entityWarn) + " &7Entities: &f" + lastEntityCount + " &8| &7mobs/non-player &f" + lastMobCount + " &8| &7drops &f" + lastDroppedItemCount);
         Text.msg(sender, verdict(false, chunkWarn) + " &7Loaded chunks: &f" + (loadedChunks <= 0 ? "onbekend" : String.valueOf(loadedChunks)));
         Text.msg(sender, "&7Limits: lag &f+" + format(lagLimit) + "ms&7, mem &f" + format(memoryLimit) + "%&7, entities &f" + entityLimit + "&7, alerts elke &f" + (int) setting("alert_cooldown_seconds", 60.0D) + "s&7.");
+        int hottestChunk = chunkEntityCounts.values().stream().mapToInt(Integer::intValue).max().orElse(0);
+        Text.msg(sender, "&7Chunk cap: &f" + (int) setting("entity_per_chunk", 120.0D) + " &8| &7enforced: &f" + (setting("enforce_entity_per_chunk", 1.0D) >= 0.5D) + " &8| &7hottest chunk: &f" + hottestChunk);
         Text.msg(sender, "&7Werelden:");
         for (WorldReport report : worlds) {
             Text.msg(sender, "&8- &f" + report.name + " &7P:&f" + report.players + " &7Chunks:&f" + (report.loadedChunks < 0 ? "?" : report.loadedChunks) + " &7Ent:&f" + report.entities + " &7Drops:&f" + report.droppedItems + " &7Mobs:&f" + report.mobs);
@@ -180,11 +222,11 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter 
 
     private void config(CommandSender sender, String[] args) {
         if (args.length < 3) {
-            Text.msg(sender, "&7Keys: &flag_ms, memory_percent, entity_count, alert_cooldown_seconds");
+            Text.msg(sender, "&7Keys: &flag_ms, memory_percent, entity_count, entity_per_chunk, enforce_entity_per_chunk, alert_cooldown_seconds");
             return;
         }
         String key = args[1].toLowerCase(Locale.ROOT);
-        if (!List.of("lag_ms", "memory_percent", "entity_count", "alert_cooldown_seconds").contains(key)) {
+        if (!List.of("lag_ms", "memory_percent", "entity_count", "entity_per_chunk", "enforce_entity_per_chunk", "alert_cooldown_seconds").contains(key)) {
             Text.msg(sender, "&cUnknowne key.");
             return;
         }
@@ -195,6 +237,32 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter 
             Text.msg(sender, "&aPerformance setting &f" + key + " &agezet op &f" + format(value) + "&a.");
         } catch (NumberFormatException exception) {
             Text.msg(sender, "&cValue moet een nummer zijn.");
+        }
+    }
+
+    private void showProfiler(CommandSender sender) {
+        double averageMs = profileCalls == 0L ? 0.0D : (profileTotalNanos / 1_000_000.0D) / profileCalls;
+        double maxMs = profileMaxNanos / 1_000_000.0D;
+        Text.msg(sender, "&aBloodbound performance profiler:");
+        Text.msg(sender, "&7Plugin/task: &fMitchSMP-Performance / entity-memory sample");
+        Text.msg(sender, "&7Calls: &f" + profileCalls + " &8| &7avg: &f" + format(averageMs) + "ms &8| &7max: &f" + format(maxMs) + "ms");
+        Text.msg(sender, "&7Estimated tick impact: " + (maxMs >= 50.0D ? "&cHIGH" : averageMs >= 10.0D ? "&eMEDIUM" : "&aLOW"));
+        Text.msg(sender, "&8Note: this profiler measures this plugin's own sample task; use Paper timings/spark-equivalent host tooling for cross-plugin listener timings.");
+    }
+
+    private String chunkKey(Entity entity) {
+        if (entity == null || entity.getWorld() == null || entity.getLocation() == null) {
+            return "unknown";
+        }
+        return entity.getWorld().getName() + ":" + (entity.getLocation().getBlockX() >> 4) + ":" + (entity.getLocation().getBlockZ() >> 4);
+    }
+
+    private boolean isNamedEntity(Entity entity) {
+        try {
+            Object value = entity.getClass().getMethod("getCustomName").invoke(entity);
+            return value != null && !String.valueOf(value).isBlank();
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return false;
         }
     }
 

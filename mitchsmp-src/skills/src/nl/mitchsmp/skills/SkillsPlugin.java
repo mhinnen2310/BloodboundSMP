@@ -47,6 +47,7 @@ import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.ProjectileHitEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
+import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.world.LootGenerateEvent;
@@ -145,9 +146,13 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
                     return Tab.complete(args[2], "enchant_min_level", "enchant_chance_percent", "loot_chance_percent");
                 }
                 Ability ability = Ability.from(args[1]);
-                return ability != null && ability.pvpRelated()
-                    ? Tab.complete(args[2], "required", "enabled", "cooldown")
-                    : Tab.complete(args[2], "required", "enabled");
+                if (ability == Ability.AEGIS_GUARD) {
+                    return Tab.complete(args[2], "required", "enabled", "cooldown", "duration", "hits", "mitigation");
+                }
+                if (ability == Ability.BLOOD_FORGED_EDGE) {
+                    return Tab.complete(args[2], "required", "enabled", "cooldown", "duration");
+                }
+                return ability != null && ability.pvpRelated() ? Tab.complete(args[2], "required", "enabled", "cooldown") : Tab.complete(args[2], "required", "enabled");
             }
             if (admin && args.length == 4 && args[0].equalsIgnoreCase("config") && args[1].equalsIgnoreCase("settings")) {
                 return Tab.complete(args[3], "20", "25", "30", "1", "2", "5", "10");
@@ -416,9 +421,10 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         if (!state.unlocked() || !state.enabled() || !abilityGloballyEnabled(ability)) {
             return;
         }
-        if (ability == Ability.BLOOD_FORGED_EDGE && lowHealth(attacker) && activateAbility(attacker, ability)) {
+        if (ability == Ability.BLOOD_FORGED_EDGE && lowHealth(attacker) && bloodforgedActive(attacker, ability)) {
             multiplyDamage(event, 2.0D);
             attacker.getWorld().spawnParticle(org.bukkit.Particle.CRIT, attacker.getLocation(), 6, 0.25D, 0.35D, 0.25D, 0.02D);
+            attacker.sendActionBar(Text.color("&4Blood-Forged Edge &6ACTIVE &8| &cx2 damage"));
         }
     }
 
@@ -498,18 +504,23 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
 
     @EventHandler
     public void onDrop(PlayerDropItemEvent event) {
+        // Dropping is intentionally never used as an ability shortcut.
+    }
+
+    @EventHandler
+    public void onSwapHand(PlayerSwapHandItemsEvent event) {
         Player player = event.getPlayer();
         if (player == null || restricted(player) || !isSneaking(player)) {
             return;
         }
-        ItemStack item = event.getItemDrop() == null ? player.getInventory().getItemInMainHand() : event.getItemDrop().getItemStack();
+        ItemStack item = player.getInventory().getItemInMainHand();
         Ability ability = abilityFor(item);
         if (ability == null) {
             return;
         }
         event.setCancelled(true);
         toggleAbility(player, item, ability);
-        Text.msg(player, "&7Shortcut: sneak + drop toggled &f" + ability.display() + "&7.");
+        player.sendActionBar(Text.color("&d" + ability.display() + " &8| " + (state(item, ability).enabled() ? "&aENABLED" : "&cDISABLED")));
     }
 
     @EventHandler
@@ -752,7 +763,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
                 Text.msg(sender, "&cUsage: /skills admin points <player> <amount>");
                 return true;
             }
-            data.set("points." + target.getUniqueId(), Math.max(0, parseInt(args[3], 0, 0, 10_000)));
+            data.set("points." + profileKey(target.getUniqueId()), Math.max(0, parseInt(args[3], 0, 0, 10_000)));
             data.save();
             Text.msg(sender, "&aSkillpoints updated.");
             return true;
@@ -859,7 +870,12 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             Text.msg(sender, "&5Ability configuration:");
             for (Ability ability : Ability.values()) {
                 String cooldown = ability.pvpRelated() ? " &7cooldown=&f" + formatSeconds(cooldownSeconds(ability)) + "s" : "";
-                Text.msg(sender, "&d" + ability.id() + " &7required=&f" + required(ability) + " &7enabled=&f" + abilityGloballyEnabled(ability) + cooldown);
+                String details = ability == Ability.BLOOD_FORGED_EDGE
+                    ? " &7duration=&f" + formatSeconds(data.getDouble("ability.blood_forged_edge.active_duration_seconds", 8.0D)) + "s"
+                    : ability == Ability.AEGIS_GUARD
+                        ? " &7duration=&f" + formatSeconds(data.getDouble("ability.aegis_guard.active_duration_seconds", 12.0D)) + "s &7hits=&f" + data.getInt("ability.aegis_guard.hits_before_cooldown", 5) + " &7mitigation=&f" + formatSeconds(data.getDouble("ability.aegis_guard.mitigation_percent", 35.0D)) + "%"
+                        : "";
+                Text.msg(sender, "&d" + ability.id() + " &7required=&f" + required(ability) + " &7enabled=&f" + abilityGloballyEnabled(ability) + cooldown + details);
             }
             Text.msg(sender, "&7Global: enchant_min_level=&f" + data.getInt("ability.settings.enchant_min_level", 25)
                 + " &7enchant_chance_percent=&f" + data.getDouble("ability.settings.enchant_chance_percent", 4.0D)
@@ -867,7 +883,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             return true;
         }
         if (args.length < 4) {
-            Text.msg(sender, "&cUsage: /abilities config <ability> <required|enabled|cooldown> <value> or /abilities config settings <key> <value>");
+            Text.msg(sender, "&cUsage: /abilities config <ability> <required|enabled|cooldown|duration|hits|mitigation> <value>");
             return true;
         }
         if (args[1].equalsIgnoreCase("settings")) {
@@ -887,6 +903,22 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
                 data.set("ability." + ability.id() + ".cooldown_seconds", Math.max(0.0D, Math.min(86_400.0D, Double.parseDouble(args[3]))));
             } catch (NumberFormatException exception) {
                 Text.msg(sender, "&cCooldown must be a number of seconds.");
+                return true;
+            }
+        } else if (args[2].equalsIgnoreCase("duration") && (ability == Ability.BLOOD_FORGED_EDGE || ability == Ability.AEGIS_GUARD)) {
+            try {
+                data.set("ability." + ability.id() + ".active_duration_seconds", Math.max(0.5D, Math.min(3600.0D, Double.parseDouble(args[3]))));
+            } catch (NumberFormatException exception) {
+                Text.msg(sender, "&cDuration must be a number of seconds.");
+                return true;
+            }
+        } else if (args[2].equalsIgnoreCase("hits") && ability == Ability.AEGIS_GUARD) {
+            data.set("ability.aegis_guard.hits_before_cooldown", parseInt(args[3], 5, 1, 100));
+        } else if (args[2].equalsIgnoreCase("mitigation") && ability == Ability.AEGIS_GUARD) {
+            try {
+                data.set("ability.aegis_guard.mitigation_percent", Math.max(0.0D, Math.min(95.0D, Double.parseDouble(args[3]))));
+            } catch (NumberFormatException exception) {
+                Text.msg(sender, "&cMitigation must be a percentage.");
                 return true;
             }
         } else {
@@ -936,7 +968,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         data.set(skillKey(id, category, "level"), newLevel);
         if (newLevel > oldLevel) {
             int gained = newLevel - oldLevel;
-            data.set("points." + id, points(id) + gained);
+            data.set("points." + profileKey(id), points(id) + gained);
             if (player != null) {
                 Text.msg(player, "&a" + category.display() + " level up: &f" + oldLevel + " -> " + newLevel + " &7(+" + gained + " skillpoint)");
                 player.playSound(player.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, 1.0F, 1.0F);
@@ -980,7 +1012,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         int level = Math.max(1, Math.min(MAX_LEVEL, computed));
         if (stored != level) {
             if (level > stored) {
-                data.set("points." + id, points(id) + (level - stored));
+                data.set("points." + profileKey(id), points(id) + (level - stored));
             }
             data.set(skillKey(id, category, "level"), level);
             data.save();
@@ -999,7 +1031,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
     }
 
     private String skillKey(UUID id, Category category, String field) {
-        return "skill." + id + "." + category.key() + "." + field;
+        return "skill." + profileKey(id) + "." + category.key() + "." + field;
     }
 
     private int points(Player player) {
@@ -1007,11 +1039,11 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
     }
 
     private int points(UUID id) {
-        return data.getInt("points." + id, 0);
+        return data.getInt("points." + profileKey(id), 0);
     }
 
     private int perk(Player player, Perk perk) {
-        return data.getInt("perk." + player.getUniqueId() + "." + perk.key(), 0);
+        return data.getInt("perk." + profileKey(player.getUniqueId()) + "." + perk.key(), 0);
     }
 
     private void buyPerk(Player player, Perk perk) {
@@ -1028,8 +1060,8 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             Text.msg(player, "&cYou need level &f" + perk.requiredLevel() + " &cin " + perk.category().display() + "&c.");
             return;
         }
-        data.set("perk." + player.getUniqueId() + "." + perk.key(), current + 1);
-        data.set("points." + player.getUniqueId(), points(player) - 1);
+        data.set("perk." + profileKey(player.getUniqueId()) + "." + perk.key(), current + 1);
+        data.set("points." + profileKey(player.getUniqueId()), points(player) - 1);
         data.save();
         Text.msg(player, "&aPerk purchased: &f" + perk.display() + " " + (current + 1) + "/" + perk.max());
         player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.8F, 1.5F);
@@ -1344,8 +1376,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         if (material == null) {
             return false;
         }
-        String name = material.name();
-        return name.equals("FARMLAND") || name.endsWith("_DIRT") || material == Material.DIRT || material == Material.GRASS_BLOCK;
+        return material.name().equals("FARMLAND");
     }
 
     private Material materialNamed(String name) {
@@ -1602,6 +1633,9 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         writeLore(item, ability, toggled);
         Text.msg(player, toggled.enabled() ? "&aAbility enabled." : "&cAbility disabled.");
         player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.7F, toggled.enabled() ? 1.6F : 0.6F);
+        if (toggled.enabled()) {
+            abilityActivationEffects(player, ability);
+        }
     }
 
     private boolean isRightClick(Action action) {
@@ -1670,11 +1704,38 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             data.set(cooldownKey(player.getUniqueId(), ability), System.currentTimeMillis() + duration);
             data.save();
         }
+        abilityActivationEffects(player, ability);
         return true;
     }
 
+    private boolean bloodforgedActive(Player player, Ability ability) {
+        long now = System.currentTimeMillis();
+        String activeKey = "ability." + ability.id() + ".active_until." + profileKey(player.getUniqueId());
+        if (data.getLong(activeKey, 0L) > now) {
+            return true;
+        }
+        if (!activateAbility(player, ability)) {
+            return false;
+        }
+        double seconds = Math.max(0.5D, data.getDouble("ability.blood_forged_edge.active_duration_seconds", 8.0D));
+        data.set(activeKey, now + Math.round(seconds * 1000.0D));
+        data.save();
+        return true;
+    }
+
+    private void abilityActivationEffects(Player player, Ability ability) {
+        if (player == null) {
+            return;
+        }
+        Location location = player.getLocation().add(0.0D, 1.0D, 0.0D);
+        player.getWorld().spawnParticle(org.bukkit.Particle.CRIT, location, 18, 0.45D, 0.65D, 0.45D, 0.04D);
+        player.getWorld().spawnParticle(org.bukkit.Particle.TOTEM_OF_UNDYING, location, 10, 0.35D, 0.55D, 0.35D, 0.02D);
+        player.playSound(player.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, 0.55F, 1.45F);
+        player.sendActionBar(Text.color("&4" + ability.display() + " &6activated"));
+    }
+
     private String cooldownKey(UUID playerId, Ability ability) {
-        return "ability." + ability.id() + ".cooldown_until." + playerId;
+        return "ability." + ability.id() + ".cooldown_until." + profileKey(playerId);
     }
 
     private String formatSeconds(double seconds) {
@@ -1722,10 +1783,14 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
     }
 
     private boolean restricted(Player player) {
-        return player == null
-            || MitchSMP.permissions().isAdminRestricted(player)
-            || player.getWorld() != null && (player.getWorld().getName().toLowerCase(Locale.ROOT).contains("bedwars")
-                || player.getWorld().getName().toLowerCase(Locale.ROOT).startsWith("mitchtest_"));
+        if (player == null) {
+            return true;
+        }
+        String world = player.getWorld() == null ? "" : player.getWorld().getName().toLowerCase(Locale.ROOT);
+        if (MitchSMP.permissions().isAdminMode(player)) {
+            return !MitchSMP.permissions().isAdminModeOverride(player) && !world.startsWith("mitchtest_");
+        }
+        return world.contains("bedwars") || world.contains("tntrun") || world.contains("spleef") || world.startsWith("mitchtest_");
     }
 
     private boolean blockedAbilityWorld(Player player) {
@@ -1733,7 +1798,8 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             return true;
         }
         String world = player.getWorld().getName().toLowerCase(Locale.ROOT);
-        return world.contains("bedwars") || world.contains("tntrun") || world.startsWith("mitchtest_");
+        return world.contains("bedwars") || world.contains("tntrun") || world.contains("spleef")
+            || world.startsWith("mitchtest_") && !MitchSMP.permissions().isAdminMode(player);
     }
 
     private int effectiveEnchantLevel(int rawCost) {
@@ -1853,31 +1919,45 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         }
         AbilityState state = progress(defender, shield, ability, state(shield, ability), 1 + perk(defender, Perk.ENCHANTING_MASTERY) / 8);
         if (state.unlocked() && state.enabled() && abilityGloballyEnabled(ability)) {
-            double maxCharge = Math.max(1.0D, data.getDouble("ability.aegis_guard.shield_health", 20.0D));
-            String chargeKey = "ability.aegis_guard.charge." + defender.getUniqueId();
+            double activeSeconds = Math.max(0.5D, data.getDouble("ability.aegis_guard.active_duration_seconds", 12.0D));
+            int maxHits = Math.max(1, data.getInt("ability.aegis_guard.hits_before_cooldown", 5));
+            String activeKey = "ability.aegis_guard.active_until." + profileKey(defender.getUniqueId());
+            String hitsKey = "ability.aegis_guard.hits_remaining." + profileKey(defender.getUniqueId());
             String cooldownKey = cooldownKey(defender.getUniqueId(), ability);
             long now = System.currentTimeMillis();
             long cooldownUntil = data.getLong(cooldownKey, 0L);
-            double charge = Math.min(maxCharge, data.getDouble(chargeKey, maxCharge));
-            if (charge <= 0.0D && now < cooldownUntil) {
+            long activeUntil = data.getLong(activeKey, 0L);
+            int hits = data.getInt(hitsKey, 0);
+            if ((activeUntil > 0L && now >= activeUntil) || hits <= 0 && activeUntil > 0L) {
+                data.set(activeKey, 0L);
+                data.set(hitsKey, 0);
+                data.set(cooldownKey, now + Math.round(cooldownSeconds(ability) * 1000.0D));
+                activeUntil = 0L;
+                cooldownUntil = data.getLong(cooldownKey, 0L);
+            }
+            if (activeUntil <= now && now < cooldownUntil) {
                 long seconds = Math.max(1L, (cooldownUntil - now) / 1000L);
-                defender.sendActionBar(Text.color("&8Aegis Guard &ccharging &7(" + seconds + "s)"));
+                defender.sendActionBar(Text.color("&8Aegis Guard &cCOOLDOWN &7" + seconds + "s"));
                 return;
             }
-            if (charge <= 0.0D) {
-                charge = maxCharge;
+            if (activeUntil <= now) {
+                activeUntil = now + Math.round(activeSeconds * 1000.0D);
+                hits = maxHits;
+                data.set(activeKey, activeUntil);
+                abilityActivationEffects(defender, ability);
             }
             double mitigationPercent = Math.max(0.0D, Math.min(95.0D, data.getDouble("ability.aegis_guard.mitigation_percent", 35.0D)));
-            double damage = damageAmount(event);
             multiplyDamage(event, 1.0D - mitigationPercent / 100.0D);
-            charge = Math.max(0.0D, charge - Math.max(1.0D, damage * mitigationPercent / 100.0D));
-            data.set(chargeKey, String.format(Locale.ROOT, "%.2f", charge));
-            if (charge <= 0.0D) {
+            hits = Math.max(0, hits - 1);
+            data.set(hitsKey, hits);
+            if (hits <= 0) {
+                data.set(activeKey, 0L);
                 long cooldown = Math.max(0L, Math.round(cooldownSeconds(ability) * 1000.0D));
                 data.set(cooldownKey, now + cooldown);
-                defender.sendActionBar(Text.color("&8Aegis Guard &cdepleted"));
+                defender.sendActionBar(Text.color("&8Aegis Guard &cDEPLETED"));
             } else {
-                defender.sendActionBar(Text.color("&8Aegis Guard &b" + Math.round(charge) + "&7/&b" + Math.round(maxCharge)));
+                long seconds = Math.max(1L, (activeUntil - now) / 1000L);
+                defender.sendActionBar(Text.color("&8Aegis Guard &bACTIVE &7" + hits + "/" + maxHits + " hits | " + seconds + "s"));
             }
             data.save();
             defender.setNoDamageTicks(10);
@@ -2044,7 +2124,12 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         if (playerId == null || perkKey == null) {
             return 0;
         }
-        return Math.max(0, data.getInt("perk." + playerId + "." + perkKey.toLowerCase(Locale.ROOT), 0));
+        return Math.max(0, data.getInt("perk." + profileKey(playerId) + "." + perkKey.toLowerCase(Locale.ROOT), 0));
+    }
+
+    private String profileKey(UUID playerId) {
+        Player online = playerId == null ? null : Bukkit.getPlayer(playerId);
+        return online != null && MitchSMP.permissions().isAdminMode(online) ? "admin." + playerId : String.valueOf(playerId);
     }
 
     @Override
@@ -2075,8 +2160,14 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         } else if (!state.enabled()) {
             status = "&7OFF";
         } else {
-            long remaining = cooldownRemainingMillis(playerId, ability);
-            status = remaining > 0L ? "&cCOOLDOWN " + Math.max(1L, (remaining + 999L) / 1000L) + "s" : "&aREADY";
+            long now = System.currentTimeMillis();
+            long activeUntil = data.getLong("ability." + ability.id() + ".active_until." + profileKey(playerId), 0L);
+            if (activeUntil > now) {
+                status = "&6ACTIVE " + Math.max(1L, (activeUntil - now + 999L) / 1000L) + "s";
+            } else {
+                long remaining = cooldownRemainingMillis(playerId, ability);
+                status = remaining > 0L ? "&cCOOLDOWN " + Math.max(1L, (remaining + 999L) / 1000L) + "s" : "&aREADY";
+            }
         }
         return "&5" + ability.display() + ":" + status;
     }

@@ -11,6 +11,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import nl.mitchsmp.core.api.EconomyService;
+import nl.mitchsmp.core.api.BountyService;
 import nl.mitchsmp.core.api.HeartService;
 import nl.mitchsmp.core.api.MitchSMP;
 import nl.mitchsmp.core.api.SkillService;
@@ -169,6 +170,13 @@ public final class HudPlugin extends JavaPlugin implements Listener, TabComplete
             String ability = skills.getAbilityHud(player.getUniqueId());
             if (ability != null && !ability.isBlank()) {
                 parts.add(ability);
+            }
+        }
+        BountyService bounties = MitchSMP.bounties();
+        if (bounties != null) {
+            double bounty = bounties.getBounty(player.getUniqueId());
+            if (bounty > 0.0D) {
+                parts.add("&cBOUNTY:&6$" + String.format(Locale.US, "%.2f", bounty));
             }
         }
         return parts;
