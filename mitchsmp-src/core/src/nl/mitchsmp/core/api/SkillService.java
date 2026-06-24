@@ -19,4 +19,8 @@ public interface SkillService {
     default List<ItemStack> createRecoveryAbilitySamples(UUID playerId) {
         return List.of();
     }
+
+    default ItemStack applyUnlockedAbility(String abilityKey, ItemStack item, String displayName) {
+        return item;
+    }
 }

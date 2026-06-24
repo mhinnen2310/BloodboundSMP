@@ -1689,6 +1689,22 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         );
     }
 
+    @Override
+    public ItemStack applyUnlockedAbility(String abilityKey, ItemStack item, String displayName) {
+        Ability ability = Ability.from(abilityKey);
+        if (item == null || ability == null || baseAbilityFor(item) != ability) {
+            return item;
+        }
+        ItemStack result = item.clone();
+        ItemMeta meta = result.getItemMeta();
+        if (meta != null && displayName != null && !displayName.isBlank()) {
+            meta.setDisplayName(Text.color(displayName));
+            result.setItemMeta(meta);
+        }
+        writeLore(result, ability, new AbilityState(required(ability), true, true));
+        return result;
+    }
+
     private ItemStack recoveryAbilityItem(Material material, Ability ability, String name, long expiry) {
         ItemStack item = new ItemStack(material);
         ItemMeta meta = item.getItemMeta();

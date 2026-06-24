@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.0-rc.3 Rookie HUD And Skirmish Ability Cache
+
+- Added an automatic `ROOKIE: ACTIVE` HUD line while Rookie protection is active.
+- Added an unlocked Aegis Guard shield to every Skirmish kit alongside the Sharpness I iron sword.
+- Added one rotating Skirmish ability cache per minute with direct inventory claiming and automatic chest cleanup.
+- Added Bloodcourt variants of Blood-Forged Edge, Echo Quiver and Storm Bind as cache rewards.
+- Documented the safe all-jars-together upgrade procedure for hosted servers.
+- Recorded Blood Oaths, tickets, timelines, migration tooling and other P2/P3 systems as post-launch scope.
+
 ## 1.0.0-rc.2 Final Gameplay Hardening
 
 - Made Aegis Guard manually activated with configurable timed 100% absorption and visible HUD state.

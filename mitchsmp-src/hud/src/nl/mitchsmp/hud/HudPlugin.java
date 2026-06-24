@@ -166,6 +166,9 @@ public final class HudPlugin extends JavaPlugin implements Listener, TabComplete
                 parts.add(rendered);
             }
         }
+        if (MitchSMP.gameplay() != null && MitchSMP.gameplay().isRookie(player.getUniqueId())) {
+            parts.add("&6ROOKIE:&aACTIVE");
+        }
         SkillService skills = MitchSMP.skills();
         if (skills != null) {
             for (String ability : skills.getAbilityHudLines(player.getUniqueId())) {

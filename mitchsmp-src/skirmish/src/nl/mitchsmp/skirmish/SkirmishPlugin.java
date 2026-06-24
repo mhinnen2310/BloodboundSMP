@@ -10,6 +10,7 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ThreadLocalRandom;
 
 import nl.mitchsmp.core.api.EconomyService;
 import nl.mitchsmp.core.api.InventorySnapshotService;
@@ -38,6 +39,7 @@ import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.entity.FoodLevelChangeEvent;
 import org.bukkit.event.entity.PlayerDeathEvent;
 import org.bukkit.event.player.PlayerCommandPreprocessEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.player.PlayerQuitEvent;
 import org.bukkit.event.player.PlayerRespawnEvent;
@@ -55,6 +57,8 @@ public final class SkirmishPlugin extends JavaPlugin implements Listener, TabCom
     private PropertiesFile data;
     private boolean running;
     private boolean finishing;
+    private Location abilityChest;
+    private long nextAbilityChestAt;
 
     @Override
     public void onEnable() {
@@ -66,10 +70,12 @@ public final class SkirmishPlugin extends JavaPlugin implements Listener, TabCom
         }
         ensureArena();
         Bukkit.getScheduler().runTaskTimer(this, this::autoStart, 100L, 100L);
+        Bukkit.getScheduler().runTaskTimer(this, this::abilityChestTick, 20L, 20L);
     }
 
     @Override
     public void onDisable() {
+        removeAbilityChest();
         for (Player player : Bukkit.getOnlinePlayers()) {
             if (queued.contains(player.getUniqueId())) {
                 leave(player, true);
@@ -173,6 +179,32 @@ public final class SkirmishPlugin extends JavaPlugin implements Listener, TabCom
         if (isSkirmishWorld(event.getPlayer())) {
             event.setCancelled(true);
         }
+    }
+
+    @EventHandler
+    public void onAbilityChestOpen(PlayerInteractEvent event) {
+        if (!running || abilityChest == null || event.getClickedBlock() == null
+            || !sameBlock(event.getClickedBlock().getLocation(), abilityChest)) {
+            return;
+        }
+        event.setCancelled(true);
+        Player player = event.getPlayer();
+        if (!alive.contains(player.getUniqueId())) {
+            return;
+        }
+        ItemStack reward = randomAbilityWeapon();
+        if (reward == null) {
+            Text.msg(player, "&cThe ability cache failed to stabilize. Please notify staff.");
+            return;
+        }
+        if (!player.getInventory().addItem(reward).isEmpty()) {
+            Text.msg(player, "&cFree one inventory slot before claiming this ability weapon.");
+            return;
+        }
+        removeAbilityChest();
+        player.sendTitle(Text.color("&4ABILITY CLAIMED"), Text.color("&f" + itemName(reward)), 5, 35, 10);
+        player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.35F, 1.65F);
+        broadcast("&6" + player.getName() + " claimed the arena ability weapon.");
     }
 
     private boolean isSkirmishWorld(Player player) {
@@ -284,6 +316,8 @@ public final class SkirmishPlugin extends JavaPlugin implements Listener, TabCom
         finishing = false;
         alive.clear();
         alive.addAll(queued);
+        removeAbilityChest();
+        nextAbilityChestAt = System.currentTimeMillis() + 60_000L;
         List<Player> players = players();
         for (int i = 0; i < players.size(); i++) {
             Player player = players.get(i);
@@ -318,6 +352,7 @@ public final class SkirmishPlugin extends JavaPlugin implements Listener, TabCom
     }
 
     private void finishMatch(Player winner) {
+        removeAbilityChest();
         if (winner != null && queued.size() >= 2) {
             data.set("stats." + winner.getUniqueId() + ".wins", data.getInt("stats." + winner.getUniqueId() + ".wins", 0) + 1);
             EconomyService economy = MitchSMP.economy();
@@ -375,10 +410,72 @@ public final class SkirmishPlugin extends JavaPlugin implements Listener, TabCom
     private void giveKit(Player player) {
         ItemStack sword = enchanted(Material.IRON_SWORD, Enchantment.SHARPNESS, 1);
         player.getInventory().addItem(sword, new ItemStack(Material.BOW), new ItemStack(Material.ARROW, 24), new ItemStack(Material.COOKED_BEEF, 8));
+        SkillService skills = MitchSMP.skills();
+        ItemStack shield = new ItemStack(Material.SHIELD);
+        if (skills != null) {
+            shield = skills.applyUnlockedAbility("aegis_guard", shield, "&5Skirmish Aegis");
+        }
+        player.getInventory().setItemInOffHand(shield);
         player.getInventory().setHelmet(new ItemStack(Material.IRON_HELMET));
         player.getInventory().setChestplate(new ItemStack(Material.IRON_CHESTPLATE));
         player.getInventory().setLeggings(new ItemStack(Material.IRON_LEGGINGS));
         player.getInventory().setBoots(new ItemStack(Material.IRON_BOOTS));
+    }
+
+    private void abilityChestTick() {
+        if (!running || finishing || alive.isEmpty()) {
+            return;
+        }
+        long now = System.currentTimeMillis();
+        if (nextAbilityChestAt <= 0L) {
+            nextAbilityChestAt = now + 60_000L;
+            return;
+        }
+        if (now < nextAbilityChestAt) {
+            return;
+        }
+        removeAbilityChest();
+        int[][] spots = {{0, 0}, {10, 0}, {-10, 0}, {0, 10}, {0, -10}, {7, 7}, {-7, -7}};
+        int[] spot = spots[ThreadLocalRandom.current().nextInt(spots.length)];
+        abilityChest = new Location(world(), spot[0], 81.0D, spot[1]);
+        abilityChest.getWorld().getBlockAt(abilityChest.getBlockX(), abilityChest.getBlockY(), abilityChest.getBlockZ()).setType(Material.CHEST);
+        nextAbilityChestAt = now + 60_000L;
+        for (Player player : players()) {
+            player.sendTitle(Text.color("&4ABILITY CACHE"), Text.color("&7A weapon has appeared in the arena"), 5, 35, 10);
+            player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.3F, 0.9F);
+        }
+    }
+
+    private ItemStack randomAbilityWeapon() {
+        SkillService skills = MitchSMP.skills();
+        if (skills == null) {
+            return null;
+        }
+        return switch (ThreadLocalRandom.current().nextInt(3)) {
+            case 0 -> skills.applyUnlockedAbility("blood_forged_edge", enchanted(Material.IRON_SWORD, Enchantment.SHARPNESS, 1), "&4Bloodcourt Edge");
+            case 1 -> skills.applyUnlockedAbility("echo_quiver", enchanted(Material.BOW, Enchantment.POWER, 1), "&5Bloodcourt Quiver");
+            default -> skills.applyUnlockedAbility("storm_bind", enchanted(Material.TRIDENT, Enchantment.UNBREAKING, 1), "&3Bloodcourt Storm Bind");
+        };
+    }
+
+    private void removeAbilityChest() {
+        if (abilityChest != null && abilityChest.getWorld() != null) {
+            abilityChest.getWorld().getBlockAt(abilityChest.getBlockX(), abilityChest.getBlockY(), abilityChest.getBlockZ()).setType(Material.AIR);
+        }
+        abilityChest = null;
+    }
+
+    private boolean sameBlock(Location first, Location second) {
+        return first != null && second != null && first.getWorld() != null && first.getWorld().equals(second.getWorld())
+            && first.getBlockX() == second.getBlockX() && first.getBlockY() == second.getBlockY() && first.getBlockZ() == second.getBlockZ();
+    }
+
+    private String itemName(ItemStack item) {
+        ItemMeta meta = item == null ? null : item.getItemMeta();
+        if (meta != null && meta.hasDisplayName()) {
+            return org.bukkit.ChatColor.stripColor(meta.getDisplayName());
+        }
+        return item == null ? "Ability Weapon" : item.getType().name().toLowerCase(Locale.ROOT).replace('_', ' ');
     }
 
     private ItemStack enchanted(Material material, Enchantment enchantment, int level) {

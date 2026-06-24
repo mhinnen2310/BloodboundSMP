@@ -89,7 +89,17 @@ Test as Default:
 - `/bw join [arena]`, `/bw leave`, `/bw start` - BedWars.
 - `/tntrun join [arena]`, `/tntrun leave`, `/tntrun start` - TNT Run.
 - `/spleef join [arena]`, `/spleef leave`, `/spleef start` - Spleef.
+- `/skirmish join`, `/skirmish start`, `/skirmish leave`, `/skirmish stats` - isolated arena PvP.
 - `/skyblock create`, `/skyblock home`, `/skyblock leave`, `/skyblock reset confirm`, `/skyblock info` - Skyblock.
+
+Skirmish test:
+1. Join with two players, or use a staff account to solo-start.
+2. Confirm every player receives a Sharpness I iron sword and an unlocked Aegis Guard shield.
+3. Wait 60 seconds and confirm exactly one ability cache appears inside the arena.
+4. Open it and confirm the item moves directly into the first opener's inventory and the chest disappears.
+5. Confirm a full inventory prevents claiming without deleting or duplicating the cache reward.
+6. Wait another 60 seconds without opening the next cache and confirm it is replaced, not accumulated.
+7. Leave or finish the match and confirm the SMP inventory is restored without Skirmish items.
 
 Skyblock test:
 - Confirm the `bloodbound_skyblock` world border is 1500x1500 around 0,0.

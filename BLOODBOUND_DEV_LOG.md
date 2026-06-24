@@ -385,3 +385,33 @@ Unclear / Needs care:
 ## Unclear
 
 - Item stacking issue remains unreproduced; no speculative inventory rewrite was made.
+
+# 2026-06-24 - RC3 Rookie HUD And Skirmish Cache
+
+## Done
+
+- Added an automatic Rookie status line to the HUD while Rookie protection is active.
+- Added an unlocked Aegis Guard shield to the isolated Skirmish kit.
+- Added a rotating ability chest every 60 seconds during a Skirmish match.
+- Made the first valid opener receive the ability weapon directly; the chest then despawns.
+- Added inventory-full protection and cleanup on match end, plugin shutdown and cache rotation.
+- Added safe hosted-server upgrade documentation and recorded the supplied P2/P3 ideas as post-launch scope.
+
+## Not Done
+
+- Did not modify, stop or restart the externally hosted server.
+- Did not implement the P2/P3 Blood Oaths, tickets, timelines or large staff GUI systems in this release candidate.
+- Did not reproduce or rebalance the new Skirmish cache in a real multiplayer client session.
+
+## Unclear / Needs Testing
+
+- The final balance of one ability weapon per minute needs live matches with several players.
+- The host's exact previous plugin version is unknown; use the complete RC3 jar set and retain all plugin data folders.
+
+## Verification
+
+- Compiled all 33 RC3 plugins successfully for the Java 25 target.
+- Verified all 182 command roots and aliases are covered by the permission filter.
+- Verified all 33 jars are readable archives containing `plugin.yml` and compiled classes.
+- Started a clean isolated Paper 26.1.2 server, reached `Done`, stopped cleanly and found no launch exceptions.
+- Created `BloodboundSMP-Jars/1.0.0-rc.3` on the Desktop with all jars, resource pack, upgrade guide, tests and SHA-256 checksums.
