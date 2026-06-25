@@ -804,8 +804,8 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
     @EventHandler
     public void onFakeOreBreak(BlockBreakEvent event) {
         Player actor = event.getPlayer();
-        audit(actor, "block-break", event.getBlock().getType().name() + " at " + shortLocation(event.getBlock().getLocation()));
         if (MitchSMP.permissions().isAdminMode(actor)) {
+            audit(actor, "block-break", event.getBlock().getType().name() + " at " + shortLocation(event.getBlock().getLocation()));
             recordAdminTrace(actor, "break", event.getBlock().getLocation(), event.getBlock().getType());
         }
         if (isJailArea(event.getBlock().getLocation())) {
@@ -833,8 +833,8 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
     @EventHandler
     public void onJailPlace(BlockPlaceEvent event) {
         Player actor = event.getPlayer();
-        audit(actor, "block-place", event.getBlock().getType().name() + " at " + shortLocation(event.getBlock().getLocation()));
         if (MitchSMP.permissions().isAdminMode(actor)) {
+            audit(actor, "block-place", event.getBlock().getType().name() + " at " + shortLocation(event.getBlock().getLocation()));
             recordAdminTrace(actor, "place", event.getBlock().getLocation(), event.getBlock().getType());
         }
         if (shouldBlockAdminWorldDamage(actor, event.getBlock().getType())) {
@@ -3427,9 +3427,9 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         data.set(base + "action", action);
         data.set(base + "detail", detail == null ? "" : detail);
         data.set("audit.next", next + 1);
-        String statKey = "auditstat." + actor.getUniqueId() + "." + action + "." + safeAudit(detail);
+        String statKey = "auditstat." + actor.getUniqueId() + "." + action;
         data.set(statKey, data.getInt(statKey, 0) + 1);
-        data.save();
+        data.saveSoon(this, 100L);
     }
 
     private void openAudit(Player player, int page, String filter) {
@@ -3596,7 +3596,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         int count = data.getInt("admintrace." + player.getUniqueId() + ".count", 0);
         data.set("admintrace." + player.getUniqueId() + "." + count, action + ";" + encode(location) + ";" + material.name());
         data.set("admintrace." + player.getUniqueId() + ".count", count + 1);
-        data.save();
+        data.saveSoon(this, 100L);
     }
 
     private void rollbackAdminTrace(Player player) {

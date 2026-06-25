@@ -1134,7 +1134,7 @@ public final class ProgressionPlugin extends JavaPlugin implements Listener, Tab
     }
 
     private void progressContracts(Player player, ContractType type, double amount) {
-        progressContracts(player, type, amount, true);
+        progressContracts(player, type, amount, false);
     }
 
     private void progressContracts(Player player, ContractType type, double amount, boolean saveImmediately) {
@@ -1153,7 +1153,7 @@ public final class ProgressionPlugin extends JavaPlugin implements Listener, Tab
         }
         if (changed) {
             if (saveImmediately) {
-                data.save();
+                data.saveSoon(this, 80L);
             } else {
                 progressionDirty = true;
             }
@@ -1245,7 +1245,7 @@ public final class ProgressionPlugin extends JavaPlugin implements Listener, Tab
         }
         pool.sort(Comparator.comparingDouble((ContractDef contract) -> contractEconomyScore(contract) + jitter.getOrDefault(contract.id(), 0.0D)).reversed());
         data.set(rotationKey, pool.stream().map(ContractDef::id).collect(java.util.stream.Collectors.joining(",")));
-        data.save();
+        data.saveSoon(this, 100L);
         return List.copyOf(pool.subList(0, Math.min(limit, pool.size())));
     }
 
@@ -1431,14 +1431,14 @@ public final class ProgressionPlugin extends JavaPlugin implements Listener, Tab
     private int add(String key, int amount) {
         int value = data.getInt(key, 0) + amount;
         data.set(key, value);
-        data.save();
+        progressionDirty = true;
         return value;
     }
 
     private double addDouble(String key, double amount) {
         double value = data.getDouble(key, 0.0D) + amount;
         data.set(key, value);
-        data.save();
+        progressionDirty = true;
         return value;
     }
 

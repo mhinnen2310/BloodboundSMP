@@ -374,7 +374,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         UUID id = event.getPlayer().getUniqueId();
         if (!data.contains("seen." + id)) {
             data.set("seen." + id, Instant.now().toString());
-            data.save();
+            saveSkillDataSoon();
             Bukkit.getScheduler().runTaskLater(this, () -> Text.msg(event.getPlayer(), "&aTip: use &f/mechanics &afor an overview of every Bloodbound system."), 80L);
         }
         Bukkit.getScheduler().runTaskLater(this, () -> cleanAbilityLore(event.getPlayer()), 40L);
@@ -1087,11 +1087,15 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             }
         }
         if (newLevel > oldLevel) {
-            data.save();
+            saveSkillDataSoon();
             skillDataDirty = false;
         } else {
             skillDataDirty = true;
         }
+    }
+
+    private void saveSkillDataSoon() {
+        data.saveSoon(this, 80L);
     }
 
     private void flushSkillData() {
@@ -1137,7 +1141,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
                 data.set("points." + profileKey(id), points(id) + (level - stored));
             }
             data.set(skillKey(id, category, "level"), level);
-            data.save();
+            saveSkillDataSoon();
         }
         return level;
     }
@@ -1184,7 +1188,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         }
         data.set("perk." + profileKey(player.getUniqueId()) + "." + perk.key(), current + 1);
         data.set("points." + profileKey(player.getUniqueId()), points(player) - 1);
-        data.save();
+        saveSkillDataSoon();
         Text.msg(player, "&aPerk purchased: &f" + perk.display() + " " + (current + 1) + "/" + perk.max());
         player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.8F, 1.5F);
     }
@@ -1344,7 +1348,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         defender.setFallDistance(0.0F);
         defender.setNoDamageTicks(60);
         data.set(key, now + 60L * 60L * 1000L);
-        data.save();
+        saveSkillDataSoon();
         if (origin.getWorld() != null) {
             origin.getWorld().createExplosion(origin, 0.0F, false, false);
             origin.getWorld().spawnParticle(org.bukkit.Particle.EXPLOSION, origin, 1, 0.0D, 0.0D, 0.0D, 0.0D);
@@ -2015,7 +2019,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         long until = now + duration;
         data.set(aegisActiveKey(player.getUniqueId()), until);
         data.set(cooldownKey(player.getUniqueId(), Ability.AEGIS_GUARD), until + Math.round(cooldownSeconds(Ability.AEGIS_GUARD) * 1000.0D));
-        data.save();
+        saveSkillDataSoon();
         abilityActivationEffects(player, Ability.AEGIS_GUARD);
     }
 
@@ -2087,7 +2091,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         long duration = Math.round(cooldownSeconds(ability) * 1000.0D);
         if (duration > 0L) {
             data.set(cooldownKey(player.getUniqueId(), ability), System.currentTimeMillis() + duration);
-            data.save();
+            saveSkillDataSoon();
         }
         abilityActivationEffects(player, ability);
         return true;
@@ -2104,7 +2108,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         }
         double seconds = Math.max(0.5D, data.getDouble("ability.blood_forged_edge.active_duration_seconds", 8.0D));
         data.set(activeKey, now + Math.round(seconds * 1000.0D));
-        data.save();
+        saveSkillDataSoon();
         return true;
     }
 

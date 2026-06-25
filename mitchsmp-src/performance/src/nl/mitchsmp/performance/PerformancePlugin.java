@@ -27,6 +27,8 @@ import org.bukkit.event.entity.EntitySpawnEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class PerformancePlugin extends JavaPlugin implements TabCompleter, Listener {
+    private static final long SAMPLE_INTERVAL_TICKS = 100L;
+    private static final double SAMPLE_EXPECTED_MILLIS = SAMPLE_INTERVAL_TICKS * 50.0D;
     private PropertiesFile config;
     private long lastSampleNanos;
     private long lastAlertMillis;
@@ -51,7 +53,7 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter,
         normalizeLaunchDefaults();
         Bukkit.getPluginManager().registerEvents(this, this);
         command("perf");
-        Bukkit.getScheduler().runTaskTimer(this, this::sample, 40L, 20L);
+        Bukkit.getScheduler().runTaskTimer(this, this::sample, 40L, SAMPLE_INTERVAL_TICKS);
         getLogger().info("MitchSMP-Performance enabled.");
     }
 
@@ -120,7 +122,7 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter,
         }
         lastElapsedMillis = (now - lastSampleNanos) / 1_000_000.0D;
         lastSampleNanos = now;
-        lastTps = clamp(0.0D, 20.0D, 20_000.0D / Math.max(1.0D, lastElapsedMillis));
+        lastTps = clamp(0.0D, 20.0D, 20.0D * SAMPLE_EXPECTED_MILLIS / Math.max(1.0D, lastElapsedMillis));
 
         Runtime runtime = Runtime.getRuntime();
         long max = Math.max(1L, runtime.maxMemory());
@@ -159,7 +161,7 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter,
             return;
         }
 
-        boolean rawLag = lastElapsedMillis - 1000.0D >= setting("lag_ms", 1500.0D) || lastTps < 16.5D;
+        boolean rawLag = lastElapsedMillis - SAMPLE_EXPECTED_MILLIS >= setting("lag_ms", 1500.0D) || lastTps < 16.5D;
         consecutiveLagSamples = rawLag ? consecutiveLagSamples + 1 : 0;
         boolean lag = consecutiveLagSamples >= 3;
         boolean memory = lastMemoryPercent >= setting("memory_percent", 88.0D);
@@ -219,8 +221,8 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter,
         double lagLimit = setting("lag_ms", 1500.0D);
         double memoryLimit = setting("memory_percent", 88.0D);
         int entityLimit = (int) setting("entity_count", 7000.0D);
-        boolean tickBad = lastElapsedMillis - 1000.0D >= lagLimit || lastTps < 16.5D;
-        boolean tickWarn = !tickBad && (lastElapsedMillis - 1000.0D >= Math.max(250.0D, lagLimit * 0.35D) || lastTps < 18.5D);
+        boolean tickBad = lastElapsedMillis - SAMPLE_EXPECTED_MILLIS >= lagLimit || lastTps < 16.5D;
+        boolean tickWarn = !tickBad && (lastElapsedMillis - SAMPLE_EXPECTED_MILLIS >= Math.max(250.0D, lagLimit * 0.35D) || lastTps < 18.5D);
         boolean memoryBad = lastMemoryPercent >= memoryLimit;
         boolean memoryWarn = !memoryBad && lastMemoryPercent >= Math.max(60.0D, memoryLimit - 10.0D);
         boolean entityBad = lastEntityCount >= entityLimit;
@@ -232,7 +234,7 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter,
 
         Text.msg(sender, "&aPerformance overview:");
         Text.msg(sender, "&7Summary: " + summary(tickBad, tickWarn, memoryBad, memoryWarn, entityBad, entityWarn, chunkWarn, itemWarn));
-        Text.msg(sender, verdict(tickBad, tickWarn) + " &7TPS/tick: &f" + format(lastTps) + " TPS &8| &f" + format(lastElapsedMillis) + "ms &7per seconde-sample");
+        Text.msg(sender, verdict(tickBad, tickWarn) + " &7TPS/tick: &f" + format(lastTps) + " TPS &8| &f" + format(lastElapsedMillis) + "ms &7per " + (SAMPLE_INTERVAL_TICKS / 20L) + "s sample");
         Text.msg(sender, verdict(memoryBad, memoryWarn) + " &7Memory: &f" + mb(lastMemoryUsedBytes) + "/" + mb(lastMemoryMaxBytes) + "MB &8(&f" + format(lastMemoryPercent) + "%&8)");
         Text.msg(sender, verdict(entityBad, entityWarn) + " &7Entities: &f" + lastEntityCount + " &8| &7mobs/non-player &f" + lastMobCount + " &8| &7drops &f" + lastDroppedItemCount);
         Text.msg(sender, verdict(false, chunkWarn) + " &7Loaded chunks: &f" + (loadedChunks <= 0 ? "onbekend" : String.valueOf(loadedChunks)));

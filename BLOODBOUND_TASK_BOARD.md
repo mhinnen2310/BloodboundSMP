@@ -18,6 +18,7 @@ This file records active work in a simple visible format. New requests should be
 
 ## Bezig
 
+- Validate launch hotpath performance patch in-game: fast block break, inventory clicks, QuickSell, AH buy/list/cancel, contracts, adminmode block break/place.
 - Validate adminmode/HUD performance fixes and EndBoss party spectator flow in-game.
 
 ## Afgerond
@@ -59,9 +60,14 @@ This file records active work in a simple visible format. New requests should be
 - Added `MitchSMP-CustomMobs` for Bloodbound Archfiend custom boss visuals.
 - Converted the Archfiend Blockbench model into the Bloodbound resourcepack as `bloodbound:archfiend`.
 - Added crisp-upscaled 512x512 Archfiend body/glow/wings/weapon textures and source model documentation.
+- Added debounced storage writes for high-frequency PropertiesFile users.
+- Batched economy balances, AuctionHouse saves, skill cooldown/progression saves and progression contract/stat saves.
+- Removed normal player block break/place audit writes from the gameplay hot path while keeping adminmode tracing.
+- Reduced performance sampling overhead from every second to every 5 seconds with corrected TPS math.
 
 ## Niet Gedaan / Onzeker
 
 - RC1 tag was not recreated because the exact RC1 commit is not known with certainty.
 - Runtime folders are kept on disk because this workspace is also the local server. They remain ignored by git.
 - Local clean boot is blocked before plugin load by Paperclip `AccessDeniedException` on `_clean-server-test/cache/mojang_26.1.2.jar`; no plugin startup stacktrace was reached in that test.
+- This patch reduces main hotpath write pressure, but real 1000+ player readiness still requires a hosted load test/profiler run.

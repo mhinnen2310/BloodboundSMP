@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.5 Launch Performance Hotpath Patch
+
+- Added debounced `PropertiesFile.saveSoon(...)` storage writes to reduce repeated full-store saves during high-frequency gameplay events.
+- Batched economy balance writes for QuickSell, AuctionHouse and normal transactions.
+- Batched AuctionHouse listing/refund/audit store saves while preserving hard flush on plugin shutdown.
+- Removed normal player block break/place staff-audit writes from the hot path; adminmode block tracing remains active but debounced.
+- Coarsened staff audit stats so unique block locations/items no longer create unbounded auditstat keys.
+- Buffered contract progression/stat updates from block break, block place, movement and combat into the existing progression flush loop.
+- Reduced PerformancePlugin world/entity sampling from every second to every 5 seconds and fixed TPS math for the longer sample window.
+
 ## 1.0.4 Bloodbound Archfiend Custom Boss Model
 
 - Added `MitchSMP-CustomMobs`, a vanilla-resourcepack custom mob visual controller.

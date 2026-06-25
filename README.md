@@ -9,9 +9,9 @@ Internal jar/plugin names still use `MitchSMP-*` for Paper compatibility. Player
 
 ## Release Status
 
-- Current release: `1.0.1`
+- Current release: `1.0.5`
 - Release branch: `release/1.0`
-- Stable tag: `v1.0.0`
+- Stable tag: `v1.0.5`
 - Runtime: **Java 25**
 - Server: **Paper 26.1.2**
 - Build target: **Java 25**
@@ -20,7 +20,7 @@ Do not deploy these jars on Java 21. They are built for Java 25 and will not loa
 
 ## What Is Included
 
-BloodboundSMP ships as 34 custom plugins that are designed to run together.
+BloodboundSMP ships as 35 custom plugins that are designed to run together.
 
 | Area | Systems |
 | --- | --- |
@@ -38,7 +38,7 @@ BloodboundSMP ships as 34 custom plugins that are designed to run together.
 1. Install Paper `26.1.2`.
 2. Run the server on Java `25`.
 3. Stop the server fully before installing or upgrading plugins.
-4. Copy **all 34** `MitchSMP-*-<version>.jar` files into `plugins/`.
+4. Copy **all 35** `MitchSMP-*-<version>.jar` files into `plugins/`.
 5. Keep existing plugin data folders during upgrades.
 6. Start the server.
 7. Confirm console shows all Bloodbound plugins enabled and storage backend status.
@@ -80,7 +80,7 @@ The deploy command refuses to run while the configured Minecraft port is listeni
 
 For a production release, package:
 
-- all 34 `MitchSMP-*-<version>.jar` plugin jars
+- all 35 `MitchSMP-*-<version>.jar` plugin jars
 - `BloodboundSMP-resourcepack.zip`
 - `VERSION`
 - `mitchsmp-src/build/build-info.json`

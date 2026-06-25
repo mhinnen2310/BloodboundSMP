@@ -1049,7 +1049,7 @@ public final class EconomyPlugin extends JavaPlugin implements EconomyService, L
     private void ensure(String key, double startBalance) {
         if (!balances.contains(key)) {
             balances.set(key, format(startBalance));
-            balances.save();
+            saveBalancesSoon();
         }
     }
 
@@ -1151,7 +1151,11 @@ public final class EconomyPlugin extends JavaPlugin implements EconomyService, L
 
     private void setBalance(String key, double amount) {
         balances.set(key, format(clampBalance(amount)));
-        balances.save();
+        saveBalancesSoon();
+    }
+
+    private void saveBalancesSoon() {
+        balances.saveSoon(this, 60L);
     }
 
     private void command(String name) {

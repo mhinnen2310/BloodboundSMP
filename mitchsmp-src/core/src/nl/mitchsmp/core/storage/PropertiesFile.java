@@ -15,6 +15,8 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.util.Properties;
 import java.util.Set;
+import org.bukkit.Bukkit;
+import org.bukkit.plugin.java.JavaPlugin;
 
 public final class PropertiesFile {
     private static final boolean SQLITE_AVAILABLE = sqliteAvailable();
@@ -22,6 +24,7 @@ public final class PropertiesFile {
     private final Path sqlitePath;
     private final Properties properties = new Properties();
     private final boolean sqliteAvailable;
+    private boolean saveQueued;
 
     public PropertiesFile(Path path) {
         this.path = path;
@@ -55,6 +58,7 @@ public final class PropertiesFile {
     }
 
     public synchronized void save() {
+        saveQueued = false;
         if (sqliteAvailable) {
             saveSqlite();
             return;
@@ -80,6 +84,33 @@ public final class PropertiesFile {
         } catch (IOException exception) {
             throw new IllegalStateException("Could not save " + path, exception);
         }
+    }
+
+    public void saveSoon(JavaPlugin plugin) {
+        saveSoon(plugin, 100L);
+    }
+
+    public void saveSoon(JavaPlugin plugin, long delayTicks) {
+        if (plugin == null || !plugin.isEnabled()) {
+            save();
+            return;
+        }
+        synchronized (this) {
+            if (saveQueued) {
+                return;
+            }
+            saveQueued = true;
+        }
+        long delay = Math.max(1L, delayTicks);
+        Bukkit.getScheduler().runTaskLater(plugin, () -> {
+            try {
+                save();
+            } finally {
+                synchronized (this) {
+                    saveQueued = false;
+                }
+            }
+        }, delay);
     }
 
     public synchronized String getString(String key, String fallback) {

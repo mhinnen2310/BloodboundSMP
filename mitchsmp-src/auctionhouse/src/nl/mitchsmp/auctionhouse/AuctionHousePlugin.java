@@ -82,6 +82,16 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
     }
 
     @Override
+    public void onDisable() {
+        if (data != null) {
+            data.save();
+        }
+        if (sandboxData != null) {
+            sandboxData.save();
+        }
+    }
+
+    @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         PropertiesFile previousStore = pushStore(sender instanceof Player player ? player : null);
         try {
@@ -213,6 +223,10 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
     private PropertiesFile store() {
         PropertiesFile scoped = scopedStore.get();
         return scoped == null ? data : scoped;
+    }
+
+    private void saveStoreSoon() {
+        store().saveSoon(this, 40L);
     }
 
     private PropertiesFile storeFor(Player player) {
@@ -592,7 +606,7 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
             listing = new Listing(id, player.getUniqueId(), price, now, now + LISTING_LIFETIME_MILLIS, item.clone());
             store().set("listing." + id, listing.encode());
             store().set("next-id", id + 1);
-            store().save();
+            saveStoreSoon();
         }
         if (!pending) {
             player.getInventory().setItemInMainHand(new ItemStack(Material.AIR));
@@ -658,7 +672,7 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
             if (validation != null) {
                 store().set("listing." + claimed.id(), null);
                 queueRefund(claimed.seller(), claimed.id(), claimed.item(), "invalid-on-buy:" + validation);
-                store().save();
+                saveStoreSoon();
                 Text.msg(player, "&cThis listing failed validation and was removed. No money was charged.");
                 return false;
             }
@@ -667,10 +681,10 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
                 return false;
             }
             store().set("listing." + claimed.id(), null);
-            store().save();
+            saveStoreSoon();
             if (!economy.withdraw(player.getUniqueId(), claimed.price(), "auction buy #" + claimed.id())) {
                 store().set("listing." + claimed.id(), claimed.encode());
-                store().save();
+                saveStoreSoon();
                 Text.msg(player, "&cYou do not have enough money.");
                 return false;
             }
@@ -714,7 +728,7 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
             }
             store().set("listing." + current.id(), null);
             queueRefund(current.seller(), current.id(), current.item(), "cancelled");
-            store().save();
+            saveStoreSoon();
             if (current.seller().equals(player.getUniqueId())) {
                 deliverRefunds(player);
             }
@@ -808,7 +822,7 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
                 }
                 store().set("listing." + current.id(), null);
                 queueRefund(current.seller(), current.id(), current.item(), "admin-remove");
-                store().save();
+                saveStoreSoon();
                 audit("ADMIN_REMOVE", sender instanceof Player player ? player.getUniqueId() : null, current.id(), current.price(), "seller=" + current.seller());
                 Player seller = Bukkit.getPlayer(current.seller());
                 if (seller != null) {
@@ -917,7 +931,7 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
         double total = store().getDouble(base + "total", 0.0D) + amount;
         store().set(base + "count", count);
         store().set(base + "total", total);
-        store().save();
+        saveStoreSoon();
         double reference = Math.max(0.01D, appraisedValue(item));
         if (count >= 3 && (total >= 50_000.0D || amount / reference >= 25.0D)) {
             String detail = "pair=" + first + "/" + second + " count24h=" + count + " total=$" + format(total);
@@ -950,7 +964,7 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
                 queueRefund(current.seller(), current.id(), current.item(), "expired");
                 audit("EXPIRE", current.seller(), current.id(), current.price(), fingerprint(current.item()));
             }
-            store().save();
+            saveStoreSoon();
         }
         expired.stream().map(Listing::seller).distinct().map(Bukkit::getPlayer).filter(player -> player != null).forEach(this::deliverRefunds);
         } finally {
@@ -978,7 +992,7 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
                 }
                 store().set(key, null);
                 store().set(key + ".reason", null);
-                store().save();
+                saveStoreSoon();
                 give(player, item);
                 audit("REFUND", player.getUniqueId(), parseRefundId(key), 0.0D, fingerprint(item));
                 Text.msg(player, "&eAuctionHouse returned &f" + itemName(item) + " x" + item.getAmount() + "&e.");
@@ -1003,7 +1017,7 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
         for (int index = 0; index < Math.max(0, keys.size() - 1_000); index++) {
             store().set(keys.get(index), null);
         }
-        store().save();
+        saveStoreSoon();
     }
 
     private void alertStaff(String message) {
