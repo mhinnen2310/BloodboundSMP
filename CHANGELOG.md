@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.1 Update Orchestrator
+
+- Added `MitchSMP-UpdateOrchestrator` for restart-safe GitHub release checks, staging, verification, approval, backups and rollback scheduling.
+- Added `/updates` commands for release status, check, stage, verify, approve, cancel, history and rollback.
+- Added release manifest and SHA-256 verification support.
+- Added updater permissions and command tab filtering integration.
+- Kept update application restart-only; no hot-reload behavior is performed.
+
 ## 1.0.0 First Public Release
 
 - Promoted the launch-hardened RC6 build to the first public BloodboundSMP release.

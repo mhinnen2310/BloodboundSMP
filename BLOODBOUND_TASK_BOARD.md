@@ -14,7 +14,7 @@ This file records active work in a simple visible format. New requests should be
 
 ## Bezig
 
-- Promote `1.0.0-rc.6` to the first stable `1.0.0` release and push GitHub release tags/docs.
+- Add restart-safe GitHub UpdateOrchestrator and prepare GitHub release assets.
 
 ## Afgerond
 
@@ -41,6 +41,9 @@ This file records active work in a simple visible format. New requests should be
 - Rebuilt and staged all 33 Bloodbound plugin jars as `1.0.0-rc.5`.
 - Promoted BloodboundSMP to `1.0.0` first public release.
 - Reworked the GitHub README with server-owner quick start, system overview, command tables, storage, feature flags and production safety notes.
+- Added local `release-assets/1.0.0` with plugin jars, release manifest, checksums and release notes for GitHub upload.
+- Added `MitchSMP-UpdateOrchestrator` for GitHub release check/stage/verify/approve/history/rollback scheduling.
+- Added offline `scripts/apply-pending-update.ps1` helper for applying staged updates only while Paper is stopped.
 - Verified command permission filtering covers all 184 declared commands and aliases.
 
 ## Niet Gedaan / Onzeker

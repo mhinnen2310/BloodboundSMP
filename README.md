@@ -9,7 +9,7 @@ Internal jar/plugin names still use `MitchSMP-*` for Paper compatibility. Player
 
 ## Release Status
 
-- Current release: `1.0.0`
+- Current release: `1.0.1`
 - Release branch: `release/1.0`
 - Stable tag: `v1.0.0`
 - Runtime: **Java 25**
@@ -20,7 +20,7 @@ Do not deploy these jars on Java 21. They are built for Java 25 and will not loa
 
 ## What Is Included
 
-BloodboundSMP ships as 33 custom plugins that are designed to run together.
+BloodboundSMP ships as 34 custom plugins that are designed to run together.
 
 | Area | Systems |
 | --- | --- |
@@ -31,14 +31,14 @@ BloodboundSMP ships as 33 custom plugins that are designed to run together.
 | Endgame | Endboss ritual, Boss Shards, rare loot, custom item models |
 | Minigames | BedWars, TNT Run, Spleef, Skirmish, Skyblock, Hub |
 | Staff | Admin mode, vanish, jail, model tools, fake ores, recovery, rollback, audit |
-| Launch Ops | Maintenance mode, guided QA smoke tests, error tracker, feature flags |
+| Launch Ops | Maintenance mode, guided QA smoke tests, error tracker, feature flags, GitHub update staging |
 
 ## Server Owner Quick Start
 
 1. Install Paper `26.1.2`.
 2. Run the server on Java `25`.
 3. Stop the server fully before installing or upgrading plugins.
-4. Copy **all 33** `MitchSMP-*-1.0.0.jar` files into `plugins/`.
+4. Copy **all 34** `MitchSMP-*-<version>.jar` files into `plugins/`.
 5. Keep existing plugin data folders during upgrades.
 6. Start the server.
 7. Confirm console shows all Bloodbound plugins enabled and storage backend status.
@@ -80,7 +80,7 @@ The deploy command refuses to run while the configured Minecraft port is listeni
 
 For a production release, package:
 
-- all 33 `MitchSMP-*-1.0.0.jar` plugin jars
+- all 34 `MitchSMP-*-<version>.jar` plugin jars
 - `BloodboundSMP-resourcepack.zip`
 - `VERSION`
 - `mitchsmp-src/build/build-info.json`
@@ -141,6 +141,12 @@ Commands are permission-filtered in tab completion, so normal players should onl
 | `/freeze`, `/jail`, `/invsee` | Moderation tools |
 | `/rollback` / recovery commands | Restore snapshots when required |
 | `/perf` | Performance summary and diagnostics |
+| `/updates status` | GitHub release/update status |
+| `/updates check` | Check GitHub releases |
+| `/updates stage <version/latest>` | Download release assets into staging |
+| `/updates verify` | Verify manifest and SHA-256 checksums |
+| `/updates approve` | Mark verified update for next restart |
+| `/updates rollback` | Schedule rollback to a previous backed-up jar set |
 
 Staff should use maintenance mode before launch checks:
 
@@ -186,6 +192,38 @@ Feature flags are the launch safety brake. Examples:
 ```
 
 If a single system misbehaves during an event, disable that system instead of taking the whole server offline.
+
+## GitHub Update Orchestrator
+
+`MitchSMP-UpdateOrchestrator` checks GitHub Releases and stages updates safely. It never hot-reloads plugins.
+
+Safe update flow:
+
+```text
+/updates check
+/updates stage latest
+/updates verify
+/updates approve
+```
+
+Approval writes `plugins/.updates/pending-update.json`. Apply the staged jars only while the server is stopped, preferably through a startup/deploy script. The updater also creates backups under `plugins/.updates/backups/` and records actions in `plugins/.updates/history/update-history.log`.
+
+Offline apply helper:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\apply-pending-update.ps1
+```
+
+Run that script only while Paper is stopped, before starting the server again.
+
+Default source:
+
+```text
+github.owner=mhinnen2310
+github.repo=BloodboundSMP
+github.releaseChannel=stable
+github.tokenEnv=MITCHSMP_GITHUB_TOKEN
+```
 
 ## Resource Pack
 

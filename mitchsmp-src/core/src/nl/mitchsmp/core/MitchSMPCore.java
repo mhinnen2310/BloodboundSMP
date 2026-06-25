@@ -49,7 +49,8 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
         "MitchSMP-AuctionHouse", "MitchSMP-HUD", "MitchSMP-RTP", "MitchSMP-Essentials", "MitchSMP-Hub",
         "MitchSMP-Skyblock", "MitchSMP-Performance", "MitchSMP-Artifacts", "MitchSMP-Bosses", "MitchSMP-BedWars",
         "MitchSMP-TNTRun", "MitchSMP-Spleef", "MitchSMP-Cosmetics", "MitchSMP-Events", "MitchSMP-Progression",
-        "MitchSMP-Gameplay", "MitchSMP-Skirmish", "MitchSMP-Skills", "MitchSMP-EndBoss", "MitchSMP-Chat", "MitchSMP-AntiCheat", "MitchSMP-Seasons"
+        "MitchSMP-Gameplay", "MitchSMP-Skirmish", "MitchSMP-Skills", "MitchSMP-EndBoss", "MitchSMP-Chat", "MitchSMP-AntiCheat",
+        "MitchSMP-Seasons", "MitchSMP-UpdateOrchestrator"
     );
     private final Map<Class<?>, Object> services = new HashMap<>();
     private CoreRankService rankService;
@@ -980,7 +981,9 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
                 "mitchsmp.staffchat",
                 "mitchsmp.chat.mute",
                 "mitchsmp.maintenance.bypass",
-                "mitchsmp.qa.run"
+                "mitchsmp.qa.run",
+                "mitchsmp.updates.view",
+                "mitchsmp.updates.check"
             );
             addDefault(MitchRank.MODERATOR,
                 "mitchsmp.tpa.bypass",
@@ -995,7 +998,9 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
                 "mitchsmp.qa.run",
                 "mitchsmp.economy.alerts",
                 "mitchsmp.auctionhouse.alerts",
-                "mitchsmp.reports.staff"
+                "mitchsmp.reports.staff",
+                "mitchsmp.updates.view",
+                "mitchsmp.updates.check"
             );
             addDefault(MitchRank.ADMIN,
                 "mitchsmp.core.reload",
@@ -1022,7 +1027,13 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
                 "mitchsmp.features.admin",
                 "mitchsmp.features.override",
                 "mitchsmp.maintenance.admin",
-                "mitchsmp.recovery.admin"
+                "mitchsmp.recovery.admin",
+                "mitchsmp.updates.stage",
+                "mitchsmp.updates.verify",
+                "mitchsmp.updates.approve",
+                "mitchsmp.updates.rollback",
+                "mitchsmp.updates.admin",
+                "mitchsmp.updates.debug"
             );
             addDefault(MitchRank.OWNER, "mitchsmp.*");
         }

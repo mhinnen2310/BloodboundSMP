@@ -1,0 +1,12 @@
+name: MitchSMP-UpdateOrchestrator
+version: 0.1.0
+main: nl.mitchsmp.updater.UpdateOrchestratorPlugin
+api-version: '1.21'
+depend:
+  - MitchSMP-Core
+description: Restart-safe GitHub release updater and staging manager for BloodboundSMP.
+commands:
+  updates:
+    aliases: [update, updater]
+    description: Checks, stages and approves BloodboundSMP GitHub releases.
+    usage: /updates status
