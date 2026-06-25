@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.7 Hosted Updater Apply Fix
+
+- Added built-in pending-update application for hosts that do not run the external offline update script.
+- Pending updates are now copied during plugin shutdown/restart where possible.
+- If a pending update is still present at startup, the updater applies it and logs that one extra restart is required so Paper loads the new jars.
+- Added protection against applying an older pending release over a newer manually uploaded updater jar.
+
 ## 1.0.6 Update Staging Manifest Fallback
 
 - Hardened `MitchSMP-UpdateOrchestrator` asset parsing against nested GitHub release JSON.

@@ -71,6 +71,12 @@ public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCom
         command("updates");
         ensureDirs();
         startupDiagnostics();
+        applyPendingAtStartup();
+    }
+
+    @Override
+    public void onDisable() {
+        applyPending("shutdown");
     }
 
     @Override
@@ -200,6 +206,17 @@ public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCom
         historyLine("STARTUP current=" + currentRelease() + " pending=" + Files.exists(pendingFile));
     }
 
+    private void applyPendingAtStartup() {
+        if (!Files.exists(pendingFile)) {
+            return;
+        }
+        getLogger().warning("Pending update marker found after startup. This host did not apply updates while stopped.");
+        if (applyPending("startup")) {
+            getLogger().warning("Pending update files were copied during startup. Restart once more so Paper loads the new jars.");
+            historyLine("STARTUP applied pending update; second restart required");
+        }
+    }
+
     private void status(CommandSender sender) {
         Text.msg(sender, "&4Bloodbound Updates");
         Text.msg(sender, "&7Current release: &f" + currentRelease());
@@ -318,7 +335,7 @@ public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCom
             historyLine(sender.getName() + " approved " + target.getFileName() + " backup=" + backup.getFileName());
             Text.msg(sender, "&aUpdate approved for next restart: &f" + target.getFileName());
             Text.msg(sender, "&7Pending marker: &f" + pendingFile);
-            Text.msg(sender, "&cNo hot reload was performed. Apply with the startup/update script while the server is stopped.");
+            Text.msg(sender, "&7Restart the server. Bloodbound will copy the pending jars during shutdown/startup if your host has no update script.");
         } catch (Exception exception) {
             Text.msg(sender, "&cApprove failed: " + exception.getMessage());
             historyLine(sender.getName() + " approve error " + exception.getMessage());
@@ -465,6 +482,87 @@ public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCom
         }
     }
 
+    private boolean applyPending(String trigger) {
+        if (pendingFile == null || !Files.exists(pendingFile)) {
+            return false;
+        }
+        try {
+            String pending = Files.readString(pendingFile, StandardCharsets.UTF_8);
+            Optional<String> rollback = first(pending, "\"rollbackBackup\"\\s*:\\s*\"([^\"]+)\"");
+            if (rollback.isPresent()) {
+                applyRollback(Path.of(rollback.get()), trigger);
+                return true;
+            }
+
+            String targetVersion = first(pending, "\"targetVersion\"\\s*:\\s*\"([^\"]+)\"")
+                .orElseThrow(() -> new IOException("pending update has no targetVersion"));
+            if (compareRelease(targetVersion, currentRelease()) < 0) {
+                getLogger().warning("Ignoring older pending update " + targetVersion + " because updater is already " + currentRelease() + ".");
+                historyLine(trigger + " ignored older pending update " + targetVersion + " current=" + currentRelease());
+                Files.deleteIfExists(pendingFile);
+                return false;
+            }
+
+            Path target = stagedRoot.resolve(targetVersion);
+            applyStaged(target, targetVersion, trigger);
+            return true;
+        } catch (Exception exception) {
+            getLogger().severe("Could not apply pending update during " + trigger + ": " + exception.getMessage());
+            historyLine(trigger + " apply error " + exception.getMessage());
+            return false;
+        }
+    }
+
+    private void applyStaged(Path target, String targetVersion, String trigger) throws IOException {
+        Path manifestPath = target.resolve(MANIFEST);
+        if (!Files.exists(manifestPath)) {
+            throw new IOException("staged manifest missing for " + targetVersion);
+        }
+        String manifest = Files.readString(manifestPath, StandardCharsets.UTF_8);
+        List<PluginAsset> expected = parseManifest(manifest);
+        if (expected.isEmpty()) {
+            throw new IOException("staged manifest has no plugin assets");
+        }
+
+        List<String> failures = new ArrayList<>();
+        for (PluginAsset asset : expected) {
+            Path stagedJar = target.resolve(asset.file());
+            if (!Files.exists(stagedJar)) {
+                failures.add(asset.file() + " missing");
+            } else if (!sha256(stagedJar).equalsIgnoreCase(asset.sha256())) {
+                failures.add(asset.file() + " checksum mismatch");
+            }
+        }
+        if (!failures.isEmpty()) {
+            throw new IOException("staged verification failed: " + failures);
+        }
+
+        Path backup = backupCurrentJars(targetVersion + "_apply_" + trigger);
+        for (PluginAsset asset : expected) {
+            Files.copy(target.resolve(asset.file()), pluginsDir.resolve(asset.file()), StandardCopyOption.REPLACE_EXISTING);
+        }
+        Files.deleteIfExists(pendingFile);
+        stagedVersion = targetVersion;
+        stagedStatus = "applied";
+        getLogger().warning("Applied pending update " + targetVersion + " during " + trigger + ". Backup: " + backup);
+        historyLine(trigger + " applied " + targetVersion + " backup=" + backup.getFileName());
+    }
+
+    private void applyRollback(Path backup, String trigger) throws IOException {
+        Path jars = backup.resolve("plugins");
+        if (!Files.isDirectory(jars)) {
+            throw new IOException("rollback backup has no plugins directory: " + backup);
+        }
+        try (Stream<Path> stream = Files.list(jars)) {
+            for (Path jar : stream.filter(path -> path.getFileName().toString().endsWith(".jar")).toList()) {
+                Files.copy(jar, pluginsDir.resolve(jar.getFileName()), StandardCopyOption.REPLACE_EXISTING);
+            }
+        }
+        Files.deleteIfExists(pendingFile);
+        getLogger().warning("Applied rollback during " + trigger + ": " + backup);
+        historyLine(trigger + " applied rollback " + backup.getFileName());
+    }
+
     private Path backupCurrentJars(String targetVersion) throws IOException {
         Path backup = backupRoot.resolve(BACKUP_FORMAT.format(Instant.now()) + "_before_" + targetVersion);
         Path jars = backup.resolve("plugins");
@@ -529,6 +627,45 @@ public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCom
 
     private String currentRelease() {
         return getDescription() == null ? "unknown" : "v" + getDescription().getVersion();
+    }
+
+    private int compareRelease(String left, String right) {
+        int[] a = releaseParts(left);
+        int[] b = releaseParts(right);
+        for (int index = 0; index < Math.max(a.length, b.length); index++) {
+            int av = index < a.length ? a[index] : 0;
+            int bv = index < b.length ? b[index] : 0;
+            if (av != bv) {
+                return Integer.compare(av, bv);
+            }
+        }
+        return 0;
+    }
+
+    private int[] releaseParts(String release) {
+        String normalized = release == null ? "" : release.trim().toLowerCase(Locale.ROOT);
+        if (normalized.startsWith("v")) {
+            normalized = normalized.substring(1);
+        }
+        String[] raw = normalized.split("[^0-9]+");
+        List<Integer> parts = new ArrayList<>();
+        for (String part : raw) {
+            if (!part.isBlank()) {
+                try {
+                    parts.add(Integer.parseInt(part));
+                } catch (NumberFormatException ignored) {
+                    parts.add(0);
+                }
+            }
+        }
+        if (parts.isEmpty()) {
+            return new int[] {0};
+        }
+        int[] result = new int[parts.size()];
+        for (int index = 0; index < parts.size(); index++) {
+            result[index] = parts.get(index);
+        }
+        return result;
     }
 
     private String owner() {
