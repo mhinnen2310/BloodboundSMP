@@ -605,11 +605,21 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
     @EventHandler
     public void onCommandSend(PlayerCommandSendEvent event) {
         Player player = event.getPlayer();
-        Collection<String> commands = event.getCommands();
+        Collection<String> commands = commandCollection(event);
         if (player == null || commands == null) {
             return;
         }
         commands.removeIf(command -> !canSeeRootCommand(player, command));
+    }
+
+    @SuppressWarnings("unchecked")
+    private Collection<String> commandCollection(PlayerCommandSendEvent event) {
+        try {
+            Object raw = event.getClass().getMethod("getCommands").invoke(event);
+            return raw instanceof Collection<?> collection ? (Collection<String>) collection : null;
+        } catch (ReflectiveOperationException | RuntimeException exception) {
+            return null;
+        }
     }
 
     private boolean canSeeRootCommand(CommandSender sender, String rawCommand) {
@@ -838,11 +848,14 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         ItemStack item = event.getItemDrop() == null ? null : event.getItemDrop().getItemStack();
         audit(player, "drop", itemName(item));
         if (MitchSMP.permissions().isAdminMode(player)) {
+            if (isTestWorld(player.getWorld())) {
+                return;
+            }
             event.setCancelled(true);
             if (event.getItemDrop() != null) {
                 event.getItemDrop().remove();
             }
-            Text.msg(player, "&cAdmin mode items kun je niet droppen. Drop is gewist.");
+            Text.msg(player, "&cAdmin mode items cannot be dropped outside the test world. Drop was removed.");
         }
     }
 

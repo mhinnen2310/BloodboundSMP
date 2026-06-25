@@ -662,6 +662,10 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
                 Text.msg(player, "&cThis listing failed validation and was removed. No money was charged.");
                 return false;
             }
+            if (!hasInventorySpace(player, claimed.item())) {
+                Text.msg(player, "&cYour inventory does not have enough room for this listing.");
+                return false;
+            }
             store().set("listing." + claimed.id(), null);
             store().save();
             if (!economy.withdraw(player.getUniqueId(), claimed.price(), "auction buy #" + claimed.id())) {
@@ -968,6 +972,10 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
         for (String key : keys) {
             try {
                 ItemStack item = ItemStack.deserializeBytes(Base64.getDecoder().decode(store().getString(key, "")));
+                if (!hasInventorySpace(player, item)) {
+                    Text.msg(player, "&eAuctionHouse has a returned item waiting. Free inventory space and rejoin or reopen AH.");
+                    continue;
+                }
                 store().set(key, null);
                 store().set(key + ".reason", null);
                 store().save();
@@ -1142,6 +1150,22 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
 
     private void give(Player player, ItemStack item) {
         player.getInventory().addItem(item).values().forEach(left -> player.getWorld().dropItemNaturally(player.getLocation(), left));
+    }
+
+    private boolean hasInventorySpace(Player player, ItemStack item) {
+        if (player == null || item == null || item.getType() == Material.AIR) {
+            return true;
+        }
+        int remaining = item.getAmount();
+        for (ItemStack content : player.getInventory().getContents()) {
+            if (content == null || content.getType() == Material.AIR) {
+                remaining -= 64;
+            }
+            if (remaining <= 0) {
+                return true;
+            }
+        }
+        return false;
     }
 
     private String itemName(ItemStack item) {

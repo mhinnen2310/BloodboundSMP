@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.0-rc.6 Launch Stability Hardening
+
+- Fixed maintenance/QA access so staff/op can run guided smoke QA while players remain locked out.
+- Added automatic smoke QA preflight checks for plugin set, key services and SQLite backend.
+- Fixed Ritual Chest Corrupted Heart detection by using the registered CorruptedHeartService before item-model fallbacks.
+- Allowed adminmode item drops inside `mitchtest_*` sandbox worlds while preserving strict SMP cleanup.
+- Hardened economy amount handling against `NaN`, `Infinity`, `1e309`, negative values and over-limit transactions.
+- Hardened stored double reads so non-finite persisted values fall back safely.
+- Added AuctionHouse full-inventory checks before purchase withdrawal and kept full-inventory refunds queued.
+- Reduced noisy performance alerts by requiring sustained lag samples and increasing launch alert defaults.
+- Reworked command-send filtering to avoid Paper API return-type mismatch crashes.
+
 ## 1.0.0-rc.5 EndBoss Ritual And Sandbox Isolation
 
 - Fixed physical EndBoss Ritual Chest validation for Boss Shards and Corrupted Hearts using `item_model` as well as legacy CustomModelData.

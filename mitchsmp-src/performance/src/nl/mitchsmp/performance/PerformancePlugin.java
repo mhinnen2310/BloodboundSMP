@@ -39,6 +39,7 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter,
     private int lastEntityCount;
     private int lastDroppedItemCount;
     private int lastMobCount;
+    private int consecutiveLagSamples;
     private final Map<String, Integer> chunkEntityCounts = new HashMap<>();
     private long profileCalls;
     private long profileTotalNanos;
@@ -47,10 +48,27 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter,
     @Override
     public void onEnable() {
         config = new PropertiesFile(getDataFolder().toPath().resolve("performance.properties"));
+        normalizeLaunchDefaults();
         Bukkit.getPluginManager().registerEvents(this, this);
         command("perf");
         Bukkit.getScheduler().runTaskTimer(this, this::sample, 40L, 20L);
         getLogger().info("MitchSMP-Performance enabled.");
+    }
+
+    private void normalizeLaunchDefaults() {
+        boolean changed = false;
+        if (setting("lag_ms", 1500.0D) < 1500.0D) {
+            config.set("lag_ms", 1500.0D);
+            changed = true;
+        }
+        if (setting("alert_cooldown_seconds", 180.0D) < 180.0D) {
+            config.set("alert_cooldown_seconds", 180.0D);
+            changed = true;
+        }
+        if (changed) {
+            config.save();
+            getLogger().info("Performance launch defaults normalized: lag_ms>=1500, alert_cooldown_seconds>=180.");
+        }
     }
 
     @Override
@@ -141,7 +159,9 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter,
             return;
         }
 
-        boolean lag = lastElapsedMillis - 1000.0D >= setting("lag_ms", 500.0D);
+        boolean rawLag = lastElapsedMillis - 1000.0D >= setting("lag_ms", 1500.0D) || lastTps < 16.5D;
+        consecutiveLagSamples = rawLag ? consecutiveLagSamples + 1 : 0;
+        boolean lag = consecutiveLagSamples >= 3;
         boolean memory = lastMemoryPercent >= setting("memory_percent", 88.0D);
         boolean entity = lastEntityCount >= (int) setting("entity_count", 7000.0D);
         if (lag || memory || entity) {
@@ -167,7 +187,7 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter,
 
     private void alert(boolean lag, boolean memory, boolean entity) {
         long now = System.currentTimeMillis();
-        long cooldown = (long) setting("alert_cooldown_seconds", 60.0D) * 1000L;
+        long cooldown = (long) setting("alert_cooldown_seconds", 180.0D) * 1000L;
         if (now - lastAlertMillis < cooldown) {
             return;
         }
@@ -192,11 +212,11 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter,
     }
 
     private void showStatus(CommandSender sender) {
-        double lagLimit = setting("lag_ms", 500.0D);
+        double lagLimit = setting("lag_ms", 1500.0D);
         double memoryLimit = setting("memory_percent", 88.0D);
         int entityLimit = (int) setting("entity_count", 7000.0D);
-        boolean tickBad = lastElapsedMillis - 1000.0D >= lagLimit || lastTps < 18.0D;
-        boolean tickWarn = !tickBad && (lastElapsedMillis - 1000.0D >= Math.max(100.0D, lagLimit * 0.35D) || lastTps < 19.4D);
+        boolean tickBad = lastElapsedMillis - 1000.0D >= lagLimit || lastTps < 16.5D;
+        boolean tickWarn = !tickBad && (lastElapsedMillis - 1000.0D >= Math.max(250.0D, lagLimit * 0.35D) || lastTps < 18.5D);
         boolean memoryBad = lastMemoryPercent >= memoryLimit;
         boolean memoryWarn = !memoryBad && lastMemoryPercent >= Math.max(60.0D, memoryLimit - 10.0D);
         boolean entityBad = lastEntityCount >= entityLimit;
@@ -212,7 +232,7 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter,
         Text.msg(sender, verdict(memoryBad, memoryWarn) + " &7Memory: &f" + mb(lastMemoryUsedBytes) + "/" + mb(lastMemoryMaxBytes) + "MB &8(&f" + format(lastMemoryPercent) + "%&8)");
         Text.msg(sender, verdict(entityBad, entityWarn) + " &7Entities: &f" + lastEntityCount + " &8| &7mobs/non-player &f" + lastMobCount + " &8| &7drops &f" + lastDroppedItemCount);
         Text.msg(sender, verdict(false, chunkWarn) + " &7Loaded chunks: &f" + (loadedChunks <= 0 ? "onbekend" : String.valueOf(loadedChunks)));
-        Text.msg(sender, "&7Limits: lag &f+" + format(lagLimit) + "ms&7, mem &f" + format(memoryLimit) + "%&7, entities &f" + entityLimit + "&7, alerts elke &f" + (int) setting("alert_cooldown_seconds", 60.0D) + "s&7.");
+        Text.msg(sender, "&7Limits: lag &f+" + format(lagLimit) + "ms for 3 samples&7, mem &f" + format(memoryLimit) + "%&7, entities &f" + entityLimit + "&7, alerts every &f" + (int) setting("alert_cooldown_seconds", 180.0D) + "s&7.");
         int hottestChunk = chunkEntityCounts.values().stream().mapToInt(Integer::intValue).max().orElse(0);
         Text.msg(sender, "&7Chunk cap: &f" + (int) setting("entity_per_chunk", 120.0D) + " &8| &7enforced: &f" + (setting("enforce_entity_per_chunk", 1.0D) >= 0.5D) + " &8| &7hottest chunk: &f" + hottestChunk);
         Text.msg(sender, "&7Worlds:");

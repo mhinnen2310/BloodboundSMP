@@ -116,7 +116,8 @@ public final class PropertiesFile {
             return fallback;
         }
         try {
-            return Double.parseDouble(value);
+            double parsed = Double.parseDouble(value);
+            return Double.isFinite(parsed) ? parsed : fallback;
         } catch (NumberFormatException ignored) {
             return fallback;
         }

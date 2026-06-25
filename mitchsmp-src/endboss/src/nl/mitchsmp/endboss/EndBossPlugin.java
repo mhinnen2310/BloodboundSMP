@@ -17,8 +17,9 @@ import java.util.UUID;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
-import nl.mitchsmp.core.api.HeartService;
 import nl.mitchsmp.core.api.BossShardService;
+import nl.mitchsmp.core.api.CorruptedHeartService;
+import nl.mitchsmp.core.api.HeartService;
 import nl.mitchsmp.core.api.MitchSMP;
 import nl.mitchsmp.core.storage.PropertiesFile;
 import nl.mitchsmp.core.util.Tab;
@@ -795,14 +796,6 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
         return missing;
     }
 
-    private boolean oldRitualRequirementsPresent(Inventory inventory) {
-        return countInventory(inventory, this::isBossShard) >= requiredBossShards()
-            && countInventory(inventory, this::isCorruptedHeart) >= requiredCorruptedHearts()
-            && countInventory(inventory, item -> item != null && item.getType() == Material.DRAGON_EGG) >= 1
-            && countInventory(inventory, this::isPlainNetherStar) >= 1
-            && countInventory(inventory, item -> item != null && item.getType() == Material.ENCHANTED_GOLDEN_APPLE) >= requiredEnchantedApples();
-    }
-
     private void consumeRitualInventory(Inventory inventory) {
         removeInventory(inventory, this::isBossShard, requiredBossShards());
         removeInventory(inventory, this::isCorruptedHeart, requiredCorruptedHearts());
@@ -1355,6 +1348,10 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
     }
 
     private boolean isCorruptedHeart(ItemStack item) {
+        CorruptedHeartService hearts = MitchSMP.corruptedHearts();
+        if (hearts != null && hearts.isCorruptedHeart(item)) {
+            return true;
+        }
         return item != null
             && item.getType() == Material.ECHO_SHARD
             && (hasCustomModelData(item, CORRUPTED_HEART_MODEL) || hasItemModel(item, "bloodbound", "corrupted_heart"));

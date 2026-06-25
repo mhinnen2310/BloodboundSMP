@@ -49,6 +49,8 @@ import org.bukkit.plugin.java.JavaPlugin;
 public final class EconomyPlugin extends JavaPlugin implements EconomyService, Listener, TabCompleter {
     private static final double START_BALANCE = 100.0D;
     private static final double ADMIN_START_BALANCE = 1_000_000.0D;
+    private static final double MAX_BALANCE = 100_000_000_000.0D;
+    private static final double MAX_TRANSACTION = 10_000_000_000.0D;
     private static final int QUICKSELL_SELL_SLOTS = 45;
     private static final int QUICKSELL_CANCEL_SLOT = 45;
     private static final int QUICKSELL_PRICES_SLOT = 47;
@@ -109,7 +111,7 @@ public final class EconomyPlugin extends JavaPlugin implements EconomyService, L
 
     @Override
     public void deposit(UUID playerId, double amount, String reason) {
-        if (amount <= 0.0D) {
+        if (!validTransaction(amount)) {
             return;
         }
         String key = depositBalanceKey(playerId, reason);
@@ -125,7 +127,7 @@ public final class EconomyPlugin extends JavaPlugin implements EconomyService, L
         double start = activeStartBalance(playerId);
         ensure(key, start);
         double current = Math.max(0.0D, balances.getDouble(key, start));
-        if (amount <= 0.0D || current < amount) {
+        if (!validTransaction(amount) || current < amount) {
             return false;
         }
         setBalance(key, current - amount);
@@ -138,7 +140,7 @@ public final class EconomyPlugin extends JavaPlugin implements EconomyService, L
         if (isAdminWalletActive(from) || isAdminWalletActive(to)) {
             return false;
         }
-        if (amount <= 0.0D || !withdraw(from, amount, reason)) {
+        if (!validTransaction(amount) || !withdraw(from, amount, reason)) {
             return false;
         }
         deposit(to, amount, reason);
@@ -392,8 +394,9 @@ public final class EconomyPlugin extends JavaPlugin implements EconomyService, L
             return true;
         }
         Double amount = parse(args[2]);
-        if (amount == null || amount < 0.0D) {
-            Text.msg(sender, "&cOngeldig bedrag.");
+        double limit = args[0].equalsIgnoreCase("set") ? MAX_BALANCE : MAX_TRANSACTION;
+        if (amount == null || amount < 0.0D || amount > limit) {
+            Text.msg(sender, "&cInvalid amount. Use a finite value up to $" + format(limit) + ".");
             return true;
         }
         switch (args[0].toLowerCase()) {
@@ -430,8 +433,8 @@ public final class EconomyPlugin extends JavaPlugin implements EconomyService, L
 
         if (args.length >= 3) {
             Double amount = parse(args[2]);
-            if (amount == null || amount < 0.0D) {
-                Text.msg(sender, "&cOngeldig bedrag.");
+            if (amount == null || amount < 0.0D || amount > MAX_BALANCE) {
+                Text.msg(sender, "&cInvalid amount. Use a finite value up to $" + format(MAX_BALANCE) + ".");
                 return true;
             }
             setAdminBalance(targetId, amount);
@@ -1147,7 +1150,7 @@ public final class EconomyPlugin extends JavaPlugin implements EconomyService, L
     }
 
     private void setBalance(String key, double amount) {
-        balances.set(key, format(Math.max(0.0D, amount)));
+        balances.set(key, format(clampBalance(amount)));
         balances.save();
     }
 
@@ -1172,10 +1175,22 @@ public final class EconomyPlugin extends JavaPlugin implements EconomyService, L
 
     private Double parse(String input) {
         try {
-            return Double.parseDouble(input);
+            double parsed = Double.parseDouble(input);
+            return Double.isFinite(parsed) ? parsed : null;
         } catch (NumberFormatException exception) {
             return null;
         }
+    }
+
+    private boolean validTransaction(double amount) {
+        return Double.isFinite(amount) && amount > 0.0D && amount <= MAX_TRANSACTION;
+    }
+
+    private double clampBalance(double amount) {
+        if (!Double.isFinite(amount)) {
+            return START_BALANCE;
+        }
+        return Math.max(0.0D, Math.min(MAX_BALANCE, amount));
     }
 
     private String format(double amount) {

@@ -7,10 +7,14 @@ This file records active work in a simple visible format. New requests should be
 - Manual in-game validation of the EndBoss physical ritual with real Boss Shards and Corrupted Hearts.
 - Manual in-game validation that sandbox AuctionHouse listings are invisible from the SMP AuctionHouse.
 - Manual in-game validation that sandbox QuickSell uses sandbox balance and does not affect EconomyWatch.
+- Run launch smoke QA after the maintenance/adminmode fixes and record the final READY verdict.
+- Verify the Ritual Chest accepts the live Corrupted Heart item stack requirement.
+- Verify performance alerts stay quiet during normal solo mining/building.
+- Make a pre-launch host backup of `plugins/`, worlds, configs, and plugin data before `/maintenance off`.
 
 ## Bezig
 
-- None.
+- Manual in-game launch validation on the actual server instance.
 
 ## Afgerond
 
@@ -25,8 +29,20 @@ This file records active work in a simple visible format. New requests should be
 - Separated sandbox QuickSell wallet behavior from the SMP wallet.
 - Made `mitchtest_*` sandbox worlds full-permission test spaces for Admin/Owner/OP.
 - Reworked the repository README into a professional GitHub front page.
+- Fixed maintenance/QA access so staff/op can run `/qa start smoke` while maintenance is active.
+- Added automatic `/qa start smoke` preflight checks for plugin set, key services, and SQLite backend.
+- Fixed Ritual Chest Corrupted Heart recognition by using the registered CorruptedHeartService before model fallbacks.
+- Allowed adminmode item drops inside `mitchtest_*` test worlds while keeping SMP/admin item cleanup strict elsewhere.
+- Hardened economy amounts against `NaN`, `Infinity`, `1e309`, negative values, and over-limit transactions.
+- Hardened `PropertiesFile.getDouble()` so corrupt non-finite stored values fall back safely.
+- Added AuctionHouse buyer inventory precheck before money withdrawal.
+- Kept AuctionHouse queued refunds in storage when player inventory is full instead of dropping them on the ground.
+- Reduced noisy performance alerts by requiring sustained lag samples and raising launch alert cooldown/default threshold.
+- Rebuilt and staged all 33 Bloodbound plugin jars as `1.0.0-rc.5`.
+- Verified command permission filtering covers all 184 declared commands and aliases.
 
 ## Niet Gedaan / Onzeker
 
 - RC1 tag was not recreated because the exact RC1 commit is not known with certainty.
 - Runtime folders are kept on disk because this workspace is also the local server. They remain ignored by git.
+- Local clean boot is blocked before plugin load by Paperclip `AccessDeniedException` on `_clean-server-test/cache/mojang_26.1.2.jar`; no plugin startup stacktrace was reached in that test.

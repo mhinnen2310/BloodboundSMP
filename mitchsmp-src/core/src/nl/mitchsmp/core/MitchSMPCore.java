@@ -163,7 +163,9 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
             return;
         }
         String root = message.substring(1).split("\\s+", 2)[0].toLowerCase(Locale.ROOT);
-        if (maintenanceEnabled() && !canBypassMaintenance(event.getPlayer()) && !Set.of("help", "discord", "rules").contains(root)) {
+        if (maintenanceEnabled()
+            && !canBypassMaintenance(event.getPlayer())
+            && !Set.of("help", "discord", "rules", "qa", "maintenance").contains(root)) {
             event.setCancelled(true);
             Text.msg(event.getPlayer(), "&cBloodbound is in maintenance mode. Please try again later.");
             return;
@@ -399,6 +401,7 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
                 return true;
             }
             QaSession session = new QaSession(System.currentTimeMillis(), smokeSteps());
+            applyAutomaticSmokeChecks(player, session);
             qaSessions.put(player.getUniqueId(), session);
             qaLog.append("START", player.getName() + " started smoke QA");
             Text.msg(player, "&6Guided smoke QA started. Use &f/qa pass&6, &f/qa warn <note>&6, &f/qa fail <note>&6, or &f/qa next&6.");
@@ -471,7 +474,14 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
     }
 
     private boolean canBypassMaintenance(Player player) {
-        return player != null && (permissionService.has(player, "mitchsmp.maintenance.bypass") || permissionService.has(player, "mitchsmp.qa.run"));
+        if (player == null) {
+            return false;
+        }
+        MitchRank rank = rankService.getRank(player.getUniqueId());
+        return player.isOp()
+            || rank.staff()
+            || permissionService.has(player, "mitchsmp.maintenance.bypass")
+            || permissionService.has(player, "mitchsmp.qa.run");
     }
 
     private void kickForMaintenance(Player player) {
@@ -486,13 +496,48 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
         Text.msg(player, "&7Use &a/qa pass&7, &e/qa warn <note>&7, &c/qa fail <note>&7, or &f/qa next&7.");
     }
 
+    private void applyAutomaticSmokeChecks(Player player, QaSession session) {
+        List<String> failures = new ArrayList<>();
+        List<String> warnings = new ArrayList<>();
+        for (String pluginName : EXPECTED_PLUGINS) {
+            org.bukkit.plugin.Plugin plugin = Bukkit.getPluginManager().getPlugin(pluginName);
+            if (plugin == null || !plugin.isEnabled()) {
+                failures.add("Missing/disabled plugin: " + pluginName);
+            }
+        }
+        if (MitchSMP.economy() == null) {
+            failures.add("Economy service is not registered.");
+        }
+        if (MitchSMP.ranks() == null || MitchSMP.permissions() == null) {
+            failures.add("Rank/permission services are not registered.");
+        }
+        if (!PropertiesFile.sqliteEnabled()) {
+            warnings.add("SQLite backend is not active; properties fallback is in use.");
+        }
+
+        failures.forEach(failure -> {
+            session.failures++;
+            qaLog.append("AUTO_FAIL", player.getName() + " | " + failure);
+            Text.msg(player, "&c[QA auto] " + failure);
+        });
+        warnings.forEach(warning -> {
+            session.warnings++;
+            qaLog.append("AUTO_WARN", player.getName() + " | " + warning);
+            Text.msg(player, "&e[QA auto] " + warning);
+        });
+        if (failures.isEmpty() && warnings.isEmpty()) {
+            qaLog.append("AUTO_PASS", player.getName() + " | launch preflight checks passed");
+            Text.msg(player, "&a[QA auto] Launch preflight checks passed.");
+        }
+    }
+
     private List<String> smokeSteps() {
         return List.of(
-            "Confirm Core loaded: run /mitchcore and check version/services.",
+            "AUTO checked: core plugin set, key services, and storage backend. Review auto warnings/failures above.",
             "Confirm feature flags UI: run /features list.",
             "Confirm error tracker: run /errors recent 5.",
             "Confirm economy read path: run /balance.",
-            "Confirm invalid pay is rejected cleanly: run /pay NotAPlayer 1e309.",
+            "Confirm invalid pay is rejected cleanly: run /pay NotAPlayer NaN, Infinity, and 1e309.",
             "Confirm Auction House opens: run /ah.",
             "Confirm invalid AH sell gives a friendly error: run /ah sell abc.",
             "Confirm player menu opens: run /menu.",
