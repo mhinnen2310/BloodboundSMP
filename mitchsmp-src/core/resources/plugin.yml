@@ -14,3 +14,9 @@ commands:
   errors:
     description: Review captured command execution errors.
     usage: /errors [recent [count]|clear]
+  maintenance:
+    description: Toggle Bloodbound maintenance mode for guided testing.
+    usage: /maintenance <on|off|status>
+  qa:
+    description: Run guided Bloodbound launch QA while maintenance is active.
+    usage: /qa <start smoke|pass|warn|fail|next|status|stop|recent>

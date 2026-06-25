@@ -1008,6 +1008,9 @@ public final class EconomyPlugin extends JavaPlugin implements EconomyService, L
     }
 
     private boolean canUseQuickSell(Player player) {
+        if (isSandboxAdmin(player)) {
+            return true;
+        }
         return player != null
             && !MitchSMP.permissions().isAdminMode(player)
             && player.getGameMode() != GameMode.CREATIVE
@@ -1020,7 +1023,14 @@ public final class EconomyPlugin extends JavaPlugin implements EconomyService, L
             return false;
         }
         String world = player.getWorld().getName().toLowerCase(java.util.Locale.ROOT);
-        return world.startsWith("bedwars_") || world.startsWith("bw_") || world.contains("bedwars") || world.startsWith("mitchtest_");
+        return world.startsWith("bedwars_") || world.startsWith("bw_") || world.contains("bedwars");
+    }
+
+    private boolean isSandboxAdmin(Player player) {
+        return player != null
+            && player.getWorld() != null
+            && player.getWorld().getName().toLowerCase(java.util.Locale.ROOT).startsWith("mitchtest_")
+            && MitchSMP.permissions().has(player, "mitchsmp.essentials.admin");
     }
 
     private String pretty(Material material) {

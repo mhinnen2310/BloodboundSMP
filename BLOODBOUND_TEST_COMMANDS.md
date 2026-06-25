@@ -12,6 +12,9 @@
 8. Run `/perf status` and `/perf profiler`; tune with `/perf config entity_per_chunk <value>`.
 9. Test an ability item: sneak + `F` toggles it; verify `READY`, `ACTIVE` and `COOLDOWN` in the HUD.
 10. Run `/setheart <player> <1-20>` and verify the client health bar updates immediately.
+11. Run `/maintenance on`; verify non-staff players are removed and only staff/QA users can continue.
+12. Run `/qa start smoke`; follow each guided step with `/qa pass`, `/qa warn <note>` or `/qa fail <note>`.
+13. Run `/qa recent`; verify recent QA verdict records are shown, then run `/maintenance off`.
 
 Use this file for testing the BloodboundSMP testserver copy. Do not run these tests on the official/live server until approved.
 

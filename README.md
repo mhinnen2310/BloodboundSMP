@@ -29,7 +29,7 @@ From this server folder:
 powershell -ExecutionPolicy Bypass -File .\mitchsmp-src\build.ps1
 ```
 
-The build script creates staged Java 25 artifacts. Live deployment is a separate offline-only action documented in [BUILD_AND_DEPLOY.md](BUILD_AND_DEPLOY.md).
+The build script creates staged Java 25 artifacts. Production runtime, staging runtime and build target are Java 25. Do not deploy these plugins on Java 21; they will not load correctly. Live deployment is a separate offline-only action documented in [BUILD_AND_DEPLOY.md](BUILD_AND_DEPLOY.md).
 
 Current release candidate: `1.0.0-rc.2`.
 

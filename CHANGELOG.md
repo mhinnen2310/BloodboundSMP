@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.0.0-rc.4 Maintenance QA And Error Alerts
+
+- Added `/maintenance <on|off|status>` for staff-controlled launch/test lockdown.
+- Added `/qa start smoke` guided smoke-test flow with pass/warn/fail verdict logging.
+- Added staff notifications for severe command/server errors captured by the error tracker.
+- Added bounded `.db` record stores for new error/QA records to avoid unbounded RAM/disk growth.
+- Added SQLite-first storage for legacy `PropertiesFile` data when Paper/Xerial JDBC is visible, with automatic fallback to files.
+- Added console and staff join status for the active storage backend.
+- Let Admin/Owner/OP use full permissions inside `mitchtest_*` sandbox worlds, including AuctionHouse and QuickSell testing.
+- Made legacy `PropertiesFile` saves crash-safer with `.tmp` writes and `.bak` backups.
+- Documented Java 25 as production runtime, staging runtime and build target.
+
 ## 1.0.0-rc.3 Rookie HUD And Skirmish Ability Cache
 
 - Added an automatic `ROOKIE: ACTIVE` HUD line while Rookie protection is active.

@@ -181,6 +181,9 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
     }
 
     private boolean blockAdminMode(Player player) {
+        if (isSandboxAdmin(player)) {
+            return false;
+        }
         if (!MitchSMP.permissions().isAdminMode(player) && !isTestWorld(player)) {
             return false;
         }
@@ -193,6 +196,10 @@ public final class AuctionHousePlugin extends JavaPlugin implements Listener, Ta
         return player != null
             && player.getWorld() != null
             && player.getWorld().getName().toLowerCase(Locale.ROOT).startsWith("mitchtest_");
+    }
+
+    private boolean isSandboxAdmin(Player player) {
+        return isTestWorld(player) && MitchSMP.permissions().has(player, "mitchsmp.essentials.admin");
     }
 
     @EventHandler

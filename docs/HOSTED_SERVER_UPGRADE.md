@@ -2,6 +2,8 @@
 
 Use this procedure when upgrading from an earlier BloodboundSMP release candidate.
 
+Production runtime, staging runtime and build target are Java 25. Do not deploy these jars on Java 21.
+
 1. Download a full host backup containing worlds, plugin data, configs and the current jars.
 2. Stop Paper from the hosting panel and wait until the process is fully offline.
 3. Keep every `plugins/MitchSMP-*` data folder. These contain persistent player and server data.

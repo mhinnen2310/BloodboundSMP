@@ -3,6 +3,8 @@
 ## Requirements
 
 - Java 25 runtime on production.
+- Java 25 runtime on staging.
+- Java 25 build target. Java 21 is not supported for these jars.
 - JDK 25 or newer for compilation. Newer JDKs compile with `--release 25`.
 - Paper 26.1.2 API already present under `libraries/`.
 

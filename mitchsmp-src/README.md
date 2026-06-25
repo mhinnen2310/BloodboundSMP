@@ -6,6 +6,8 @@ The public server branding is BloodboundSMP. Internal plugin IDs, jars and depen
 
 ## Build
 
+Production runtime, staging runtime and build target are all Java 25. Do not deploy these plugins on Java 21; they are built for Java 25 and will not load correctly on older runtimes.
+
 Compile safely while the server is running (staging only):
 
 ```powershell
@@ -68,6 +70,10 @@ Deployment is refused while the configured Minecraft port is listening. This pre
 - `/adminmode [on|off|override]`: switches separated staff mode. Staff/admin/OP powers only work while this is on. `override` is Owner-only for testing.
 - `/adminmode override`: Owner-only test override while admin mode stays active.
 - `/staffmode [on|off]`: alias for admin mode.
+- `/maintenance <on|off|status>`: Admin-only launch/test lock. Normal players are removed and cannot keep playing while guided QA is active.
+- `/qa start smoke`: starts the guided smoke-test checklist while maintenance is on. Use `/qa pass`, `/qa warn <note>`, `/qa fail <note>`, `/qa next`, `/qa status`, `/qa stop`, and `/qa recent`.
+- `/errors recent [count]`: staff-visible bounded error tracker. Severe command/server errors are also announced to staff with throttling.
+- Core logs the active storage backend at every startup. Staff also see it on join: `SQLite` when Paper/Xerial JDBC is visible, otherwise `crash-safe properties fallback`.
 - `/v` or `/vanish [player]`: vanish while in admin mode.
 - Outside admin mode, staff and OPs are capped to normal Legend-style player permissions.
 - Admin mode has its own stored inventory. Your normal SMP inventory is restored when you switch off.
@@ -148,6 +154,9 @@ Each fight creates a fresh temporary hell world, blocks escape commands while in
 - Jailed players cannot run commands.
 - Jail and Hall of Fame block breaking/placing is blocked for everyone, including admins.
 - Auction listings are stored in `plugins/MitchSMP-AuctionHouse/listings.properties`.
+- New launch QA and error records are stored in bounded `.db` record stores under `plugins/MitchSMP-Core/`.
+- Legacy `PropertiesFile` data uses SQLite automatically when `org.sqlite.JDBC` is visible from Paper's bundled libraries. On hosts where that driver is not exposed to plugins, it falls back to crash-safe `.tmp`/`.bak` properties files.
+- Admin/Owner/OP have full testing freedom inside `mitchtest_*` sandbox worlds. This is intentionally not applied to the normal SMP, hub, minigames, jail or Hall of Fame worlds.
 
 ## Rank Benefits
 

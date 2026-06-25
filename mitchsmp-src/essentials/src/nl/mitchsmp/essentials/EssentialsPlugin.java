@@ -241,6 +241,8 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         Map.entry("mitchcore", "mitchsmp.core.reload"),
         Map.entry("features", "mitchsmp.features.admin"),
         Map.entry("errors", "mitchsmp.errors.view"),
+        Map.entry("maintenance", "mitchsmp.maintenance.admin"),
+        Map.entry("qa", "mitchsmp.qa.run"),
         Map.entry("rollback", "mitchsmp.recovery.admin"),
         Map.entry("rb", "mitchsmp.recovery.admin"),
         Map.entry("snapshots", "mitchsmp.recovery.admin"),

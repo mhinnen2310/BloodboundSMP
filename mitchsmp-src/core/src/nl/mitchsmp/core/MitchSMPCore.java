@@ -2,7 +2,6 @@ package nl.mitchsmp.core;
 
 import java.nio.file.Path;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -23,6 +22,8 @@ import nl.mitchsmp.core.api.MitchRank;
 import nl.mitchsmp.core.api.MitchSMP;
 import nl.mitchsmp.core.api.PermissionService;
 import nl.mitchsmp.core.api.RankService;
+import nl.mitchsmp.core.storage.BoundedRecordStore;
+import nl.mitchsmp.core.storage.KeyValueStore;
 import nl.mitchsmp.core.storage.PropertiesFile;
 import nl.mitchsmp.core.util.Text;
 import org.bukkit.Bukkit;
@@ -55,6 +56,10 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
     private CorePermissionService permissionService;
     private CoreFeatureFlagService featureFlagService;
     private CommandErrorTracker commandErrorTracker;
+    private KeyValueStore systemState;
+    private BoundedRecordStore qaLog;
+    private final Map<UUID, QaSession> qaSessions = new HashMap<>();
+    private long lastErrorAlertAt;
 
     @Override
     public void onEnable() {
@@ -64,7 +69,9 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
         rankService = new CoreRankService(new PropertiesFile(dataRoot.resolve("players.properties")));
         permissionService = new CorePermissionService(rankService, new PropertiesFile(dataRoot.resolve("permissions.properties")));
         featureFlagService = new CoreFeatureFlagService(new PropertiesFile(dataRoot.resolve("features.properties")));
-        commandErrorTracker = new CommandErrorTracker(new PropertiesFile(dataRoot.resolve("command-errors.properties")));
+        systemState = new KeyValueStore(dataRoot.resolve("system-state.db"));
+        qaLog = new BoundedRecordStore(dataRoot.resolve("qa-runs.db"), 1000);
+        commandErrorTracker = new CommandErrorTracker(new BoundedRecordStore(dataRoot.resolve("command-errors.db"), 250));
 
         registerService(RankService.class, rankService);
         registerService(PermissionService.class, permissionService);
@@ -74,6 +81,8 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
         command("mitchcore");
         command("features");
         command("errors");
+        command("maintenance");
+        command("qa");
 
         Logger.getLogger("").addHandler(commandErrorTracker);
 
@@ -82,7 +91,11 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
         }
 
         getLogger().info("Bloodbound Core " + getDescription().getVersion() + " enabled on Java " + Runtime.version().feature() + " with " + services.size() + " services.");
+        getLogger().info("Storage backend: " + PropertiesFile.backendName() + (PropertiesFile.sqliteEnabled() ? " (Paper/Xerial JDBC detected)" : " (SQLite JDBC not visible; using .tmp/.bak protected files)"));
         getLogger().info("Feature flags: " + featureFlagService.summary());
+        if (maintenanceEnabled()) {
+            getLogger().warning("Maintenance mode is active. Only staff/QA players can join.");
+        }
         Bukkit.getScheduler().runTaskLater(this, this::runStartupDiagnostics, 40L);
     }
 
@@ -124,6 +137,18 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
     public void onJoin(PlayerJoinEvent event) {
         permissionService.remember(event.getPlayer());
         permissionService.sync(event.getPlayer());
+        if (maintenanceEnabled() && !canBypassMaintenance(event.getPlayer())) {
+            Bukkit.getScheduler().runTask(this, () -> kickForMaintenance(event.getPlayer()));
+            return;
+        }
+        if (maintenanceEnabled() && canBypassMaintenance(event.getPlayer())) {
+            Text.msg(event.getPlayer(), "&6Maintenance mode is active. Use &f/qa start smoke &6to begin guided testing.");
+        }
+        if (permissionService.has(event.getPlayer(), "mitchsmp.errors.view")) {
+            Text.msg(event.getPlayer(), PropertiesFile.sqliteEnabled()
+                ? "&8[&4Storage&8] &7SQLite backend active for Bloodbound data."
+                : "&8[&4Storage&8] &eSQLite JDBC not visible; using crash-safe properties fallback.");
+        }
     }
 
     @EventHandler
@@ -138,6 +163,11 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
             return;
         }
         String root = message.substring(1).split("\\s+", 2)[0].toLowerCase(Locale.ROOT);
+        if (maintenanceEnabled() && !canBypassMaintenance(event.getPlayer()) && !Set.of("help", "discord", "rules").contains(root)) {
+            event.setCancelled(true);
+            Text.msg(event.getPlayer(), "&cBloodbound is in maintenance mode. Please try again later.");
+            return;
+        }
         String feature = featureFlagService.featureForCommand(root);
         if (feature == null || featureFlagService.isEnabled(feature)) {
             return;
@@ -164,6 +194,12 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
         }
         if (command.getName().equalsIgnoreCase("errors")) {
             return errorsCommand(sender, args);
+        }
+        if (command.getName().equalsIgnoreCase("maintenance")) {
+            return maintenanceCommand(sender, args);
+        }
+        if (command.getName().equalsIgnoreCase("qa")) {
+            return qaCommand(sender, args);
         }
         if (!command.getName().equalsIgnoreCase("mitchcore")) {
             return true;
@@ -204,6 +240,24 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
                 return List.of();
             }
             return args.length == 1 ? nl.mitchsmp.core.util.Tab.complete(args[0], "recent", "clear") : List.of();
+        }
+        if (command.getName().equalsIgnoreCase("maintenance")) {
+            if (!permissionService.has(sender, "mitchsmp.maintenance.admin")) {
+                return List.of();
+            }
+            return args.length == 1 ? nl.mitchsmp.core.util.Tab.complete(args[0], "on", "off", "status") : List.of();
+        }
+        if (command.getName().equalsIgnoreCase("qa")) {
+            if (!permissionService.has(sender, "mitchsmp.qa.run")) {
+                return List.of();
+            }
+            if (args.length == 1) {
+                return nl.mitchsmp.core.util.Tab.complete(args[0], "start", "next", "pass", "warn", "fail", "status", "stop", "recent");
+            }
+            if (args.length == 2 && args[0].equalsIgnoreCase("start")) {
+                return nl.mitchsmp.core.util.Tab.complete(args[1], "smoke");
+            }
+            return List.of();
         }
         if (args.length == 1) {
             return nl.mitchsmp.core.util.Tab.complete(args[0], "reload");
@@ -283,6 +337,120 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
         return true;
     }
 
+    private boolean maintenanceCommand(CommandSender sender, String[] args) {
+        if (!permissionService.has(sender, "mitchsmp.maintenance.admin")) {
+            Text.msg(sender, "&cYou do not have permission to manage maintenance mode.");
+            return true;
+        }
+        if (args.length == 0 || args[0].equalsIgnoreCase("status")) {
+            Text.msg(sender, maintenanceEnabled()
+                ? "&6Maintenance is &aON&6. Normal players cannot join."
+                : "&6Maintenance is &cOFF&6. The server is public.");
+            return true;
+        }
+        if (args[0].equalsIgnoreCase("on")) {
+            systemState.set("maintenance.enabled", true);
+            systemState.set("maintenance.changed_by", sender.getName());
+            systemState.set("maintenance.changed_at", System.currentTimeMillis());
+            alertStaff("&6[Maintenance] &f" + sender.getName() + " &7enabled maintenance mode.");
+            for (Player online : Bukkit.getOnlinePlayers()) {
+                if (!canBypassMaintenance(online)) {
+                    kickForMaintenance(online);
+                }
+            }
+            return true;
+        }
+        if (args[0].equalsIgnoreCase("off")) {
+            systemState.set("maintenance.enabled", false);
+            systemState.set("maintenance.changed_by", sender.getName());
+            systemState.set("maintenance.changed_at", System.currentTimeMillis());
+            alertStaff("&6[Maintenance] &f" + sender.getName() + " &7disabled maintenance mode.");
+            return true;
+        }
+        Text.msg(sender, "&cUsage: /maintenance <on|off|status>");
+        return true;
+    }
+
+    private boolean qaCommand(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            Text.msg(sender, "&cQA sessions are in-game only.");
+            return true;
+        }
+        if (!permissionService.has(player, "mitchsmp.qa.run")) {
+            Text.msg(player, "&cYou do not have permission to run guided QA.");
+            return true;
+        }
+        if (args.length == 0 || args[0].equalsIgnoreCase("status")) {
+            QaSession session = qaSessions.get(player.getUniqueId());
+            if (session == null) {
+                Text.msg(player, "&6No active QA session. Use &f/qa start smoke&6.");
+            } else {
+                showQaStep(player, session);
+            }
+            return true;
+        }
+        if (args[0].equalsIgnoreCase("start")) {
+            if (args.length < 2 || !args[1].equalsIgnoreCase("smoke")) {
+                Text.msg(player, "&cUsage: /qa start smoke");
+                return true;
+            }
+            if (!maintenanceEnabled()) {
+                Text.msg(player, "&cEnable maintenance first with &f/maintenance on&c. Guided launch QA must run while players are locked out.");
+                return true;
+            }
+            QaSession session = new QaSession(System.currentTimeMillis(), smokeSteps());
+            qaSessions.put(player.getUniqueId(), session);
+            qaLog.append("START", player.getName() + " started smoke QA");
+            Text.msg(player, "&6Guided smoke QA started. Use &f/qa pass&6, &f/qa warn <note>&6, &f/qa fail <note>&6, or &f/qa next&6.");
+            showQaStep(player, session);
+            return true;
+        }
+        if (args[0].equalsIgnoreCase("recent")) {
+            Text.msg(player, "&6Recent QA records:");
+            qaLog.recent(10).forEach(line -> Text.msg(player, "&7- &f" + line));
+            return true;
+        }
+        QaSession session = qaSessions.get(player.getUniqueId());
+        if (session == null) {
+            Text.msg(player, "&cNo active QA session. Use &f/qa start smoke&c.");
+            return true;
+        }
+        if (args[0].equalsIgnoreCase("stop")) {
+            qaLog.append("STOP", player.getName() + " stopped QA at step " + (session.index + 1));
+            qaSessions.remove(player.getUniqueId());
+            Text.msg(player, "&eQA session stopped.");
+            return true;
+        }
+        if (args[0].equalsIgnoreCase("pass") || args[0].equalsIgnoreCase("warn") || args[0].equalsIgnoreCase("fail")) {
+            String verdict = args[0].toUpperCase(Locale.ROOT);
+            String note = args.length > 1 ? String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length)) : "";
+            qaLog.append(verdict, player.getName() + " | " + session.current() + (note.isBlank() ? "" : " | " + note));
+            if (args[0].equalsIgnoreCase("warn")) {
+                session.warnings++;
+            }
+            if (args[0].equalsIgnoreCase("fail")) {
+                session.failures++;
+            }
+            session.index++;
+            if (session.index >= session.steps.size()) {
+                String finalVerdict = session.failures > 0 ? "NOT_READY" : session.warnings > 0 ? "READY_WITH_WARNINGS" : "READY";
+                qaLog.append("VERDICT", player.getName() + " | " + finalVerdict + " | warnings=" + session.warnings + " failures=" + session.failures);
+                qaSessions.remove(player.getUniqueId());
+                alertStaff("&6[QA] &f" + player.getName() + " &7finished smoke QA: &f" + finalVerdict);
+                return true;
+            }
+            showQaStep(player, session);
+            return true;
+        }
+        if (args[0].equalsIgnoreCase("next")) {
+            session.index = Math.min(session.index + 1, session.steps.size() - 1);
+            showQaStep(player, session);
+            return true;
+        }
+        Text.msg(player, "&cUsage: /qa <start smoke|pass|warn <note>|fail <note>|next|status|stop|recent>");
+        return true;
+    }
+
     private void runStartupDiagnostics() {
         List<String> missing = new ArrayList<>();
         for (String pluginName : EXPECTED_PLUGINS) {
@@ -295,6 +463,85 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
             getLogger().info("STARTUP CHECK PASS: all " + (EXPECTED_PLUGINS.size() + 1) + " Bloodbound plugins are enabled.");
         } else {
             getLogger().severe("STARTUP CHECK FAILED: missing/disabled plugins: " + String.join(", ", missing));
+        }
+    }
+
+    private boolean maintenanceEnabled() {
+        return systemState != null && systemState.getBoolean("maintenance.enabled", false);
+    }
+
+    private boolean canBypassMaintenance(Player player) {
+        return player != null && (permissionService.has(player, "mitchsmp.maintenance.bypass") || permissionService.has(player, "mitchsmp.qa.run"));
+    }
+
+    private void kickForMaintenance(Player player) {
+        if (player != null) {
+            Bukkit.dispatchCommand(Bukkit.getConsoleSender(), "kick " + player.getName() + " BloodboundSMP maintenance is active while staff run launch checks.");
+        }
+    }
+
+    private void showQaStep(Player player, QaSession session) {
+        Text.msg(player, "&6QA step &f" + (session.index + 1) + "&7/&f" + session.steps.size() + "&6:");
+        Text.msg(player, "&f" + session.current());
+        Text.msg(player, "&7Use &a/qa pass&7, &e/qa warn <note>&7, &c/qa fail <note>&7, or &f/qa next&7.");
+    }
+
+    private List<String> smokeSteps() {
+        return List.of(
+            "Confirm Core loaded: run /mitchcore and check version/services.",
+            "Confirm feature flags UI: run /features list.",
+            "Confirm error tracker: run /errors recent 5.",
+            "Confirm economy read path: run /balance.",
+            "Confirm invalid pay is rejected cleanly: run /pay NotAPlayer 1e309.",
+            "Confirm Auction House opens: run /ah.",
+            "Confirm invalid AH sell gives a friendly error: run /ah sell abc.",
+            "Confirm player menu opens: run /menu.",
+            "Confirm shop opens and does not expose OP gear: run /shop.",
+            "Confirm contracts UI/countdowns: run /contracts.",
+            "Confirm orders UI/countdowns: run /orders.",
+            "Confirm skills UI and tooltips: run /skills.",
+            "Confirm mechanics guide command: run /mechanics.",
+            "Confirm adminmode permission behavior: toggle /adminmode on and off.",
+            "Confirm staff-only command protection outside adminmode: test /freeze on a test account.",
+            "Confirm recovery snapshot capture works on a test player.",
+            "Confirm report submit/staff review path works.",
+            "Confirm skirmish join/leave restores inventory.",
+            "Confirm minigame leave/rejoin recovery does not strand players.",
+            "Manual combat tag check: attack a test player and verify home/tpa are blocked."
+        );
+    }
+
+    private void alertStaff(String message) {
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            if (permissionService.has(player, "mitchsmp.errors.view") || permissionService.has(player, "mitchsmp.qa.run")) {
+                Text.msg(player, message);
+            }
+        }
+    }
+
+    private void alertStaffError(String summary) {
+        long now = System.currentTimeMillis();
+        if (now - lastErrorAlertAt < 5000L) {
+            return;
+        }
+        lastErrorAlertAt = now;
+        Bukkit.getScheduler().runTask(this, () -> alertStaff("&c[ErrorTracker] &f" + summary + " &7Use &f/errors recent&7."));
+    }
+
+    private static final class QaSession {
+        private final long startedAt;
+        private final List<String> steps;
+        private int index;
+        private int warnings;
+        private int failures;
+
+        private QaSession(long startedAt, List<String> steps) {
+            this.startedAt = startedAt;
+            this.steps = steps;
+        }
+
+        private String current() {
+            return steps.get(Math.max(0, Math.min(index, steps.size() - 1)));
         }
     }
 
@@ -368,14 +615,11 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
         }
     }
 
-    private static final class CommandErrorTracker extends Handler {
-        private static final int MAX_ERRORS = 250;
-        private final PropertiesFile file;
-        private long sequence;
+    private final class CommandErrorTracker extends Handler {
+        private final BoundedRecordStore store;
 
-        CommandErrorTracker(PropertiesFile file) {
-            this.file = file;
-            this.sequence = System.currentTimeMillis();
+        CommandErrorTracker(BoundedRecordStore store) {
+            this.store = store;
         }
 
         @Override
@@ -391,31 +635,17 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
                 return;
             }
             String cause = thrown == null ? "" : deepest(thrown).getClass().getSimpleName() + ": " + safe(deepest(thrown).getMessage());
-            String value = System.currentTimeMillis() + " | " + safe(message) + (cause.isBlank() ? "" : " | " + cause);
-            file.set("error." + (++sequence), value);
-            trim();
-            file.save();
+            String value = safe(message) + (cause.isBlank() ? "" : " | " + cause);
+            store.append("ERROR", value);
+            alertStaffError(value.length() > 120 ? value.substring(0, 120) + "..." : value);
         }
 
         List<String> recent(int limit) {
-            return file.keys().stream()
-                .filter(key -> key.startsWith("error."))
-                .sorted(Comparator.reverseOrder())
-                .limit(limit)
-                .map(key -> file.getString(key, ""))
-                .toList();
+            return store.recent(limit);
         }
 
         void clear() {
-            file.keys().stream().filter(key -> key.startsWith("error.")).toList().forEach(key -> file.set(key, null));
-            file.save();
-        }
-
-        private void trim() {
-            List<String> keys = file.keys().stream().filter(key -> key.startsWith("error.")).sorted().toList();
-            for (int index = 0; index < Math.max(0, keys.size() - MAX_ERRORS); index++) {
-                file.set(keys.get(index), null);
-            }
+            store.clear();
         }
 
         private static Throwable deepest(Throwable throwable) {
@@ -537,6 +767,9 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
             }
             String requested = permission.toLowerCase(Locale.ROOT);
             MitchRank rank = ranks.getRank(player.getUniqueId());
+            if (isSandboxAdmin(player, rank)) {
+                return true;
+            }
             if (requested.equals("mitchsmp.staffmode")) {
                 return player.isOp() || rank.staff();
             }
@@ -567,6 +800,9 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
 
         @Override
         public boolean isAdminRestricted(Player player) {
+            if (player != null && isSandboxAdmin(player, ranks.getRank(player.getUniqueId()))) {
+                return false;
+            }
             return isAdminMode(player) && !isAdminModeOverride(player);
         }
 
@@ -697,7 +933,9 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
                 "mitchsmp.staffmode",
                 "mitchsmp.essentials.back",
                 "mitchsmp.staffchat",
-                "mitchsmp.chat.mute"
+                "mitchsmp.chat.mute",
+                "mitchsmp.maintenance.bypass",
+                "mitchsmp.qa.run"
             );
             addDefault(MitchRank.MODERATOR,
                 "mitchsmp.tpa.bypass",
@@ -708,6 +946,8 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
                 "mitchsmp.anticheat.admin",
                 "mitchsmp.performance.alerts",
                 "mitchsmp.errors.view",
+                "mitchsmp.maintenance.bypass",
+                "mitchsmp.qa.run",
                 "mitchsmp.economy.alerts",
                 "mitchsmp.auctionhouse.alerts",
                 "mitchsmp.reports.staff"
@@ -736,6 +976,7 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
                 "mitchsmp.season.admin",
                 "mitchsmp.features.admin",
                 "mitchsmp.features.override",
+                "mitchsmp.maintenance.admin",
                 "mitchsmp.recovery.admin"
             );
             addDefault(MitchRank.OWNER, "mitchsmp.*");
@@ -777,6 +1018,13 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
                 return requested.startsWith(prefix);
             }
             return false;
+        }
+
+        private boolean isSandboxAdmin(Player player, MitchRank rank) {
+            return player != null
+                && player.getWorld() != null
+                && player.getWorld().getName().toLowerCase(Locale.ROOT).startsWith("mitchtest_")
+                && (player.isOp() || rank.inherits(MitchRank.ADMIN));
         }
 
         private boolean isPassiveStaffPermission(String requested) {
