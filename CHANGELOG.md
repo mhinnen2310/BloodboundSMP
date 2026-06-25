@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.0-rc.5 EndBoss Ritual And Sandbox Isolation
+
+- Fixed physical EndBoss Ritual Chest validation for Boss Shards and Corrupted Hearts using `item_model` as well as legacy CustomModelData.
+- Made the ritual sacrifice mob die through real lightning/lethal removal before the Ritual Chest appears.
+- Added clearer missing-item feedback when breaking an incomplete Ritual Chest.
+- Separated sandbox AuctionHouse listings from normal SMP AuctionHouse listings.
+- Separated sandbox QuickSell balance behavior from normal SMP balances and EconomyWatch.
+- Reworked the repository README into a clearer GitHub front page.
+- Added `BLOODBOUND_TASK_BOARD.md` for visible Te Doen/Afgerond tracking.
+
 ## 1.0.0-rc.4 Maintenance QA And Error Alerts
 
 - Added `/maintenance <on|off|status>` for staff-controlled launch/test lockdown.

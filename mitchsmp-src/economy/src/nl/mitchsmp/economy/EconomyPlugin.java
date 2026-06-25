@@ -600,7 +600,9 @@ public final class EconomyPlugin extends JavaPlugin implements EconomyService, L
             if (!isSellable(item)) {
                 continue;
             }
-            recordMarketSale(item.getType(), item.getAmount(), quickSellValue(player, item), "quicksell basket");
+            if (!isSandboxAdmin(player)) {
+                recordMarketSale(item.getType(), item.getAmount(), quickSellValue(player, item), "quicksell basket");
+            }
             inventory.setItem(slot, null);
         }
         deposit(player.getUniqueId(), quote.total(), "quicksell basket");
@@ -1054,10 +1056,16 @@ public final class EconomyPlugin extends JavaPlugin implements EconomyService, L
     }
 
     private String activeBalanceKey(UUID playerId) {
+        if (isSandboxWalletActive(playerId)) {
+            return sandboxBalanceKey(playerId);
+        }
         return isAdminWalletActive(playerId) ? adminBalanceKey(playerId) : playerId.toString();
     }
 
     private String depositBalanceKey(UUID playerId, String reason) {
+        if (isSandboxWalletActive(playerId)) {
+            return sandboxBalanceKey(playerId);
+        }
         String lowerReason = reason == null ? "" : reason.toLowerCase(java.util.Locale.ROOT);
         if (lowerReason.startsWith("auction sale")) {
             return playerId.toString();
@@ -1066,15 +1074,30 @@ public final class EconomyPlugin extends JavaPlugin implements EconomyService, L
     }
 
     private double activeStartBalance(UUID playerId) {
+        if (isSandboxWalletActive(playerId)) {
+            return ADMIN_START_BALANCE;
+        }
         return isAdminWalletActive(playerId) ? ADMIN_START_BALANCE : START_BALANCE;
     }
 
     private String activeBalanceLabel(UUID playerId) {
+        if (isSandboxWalletActive(playerId)) {
+            return "Sandbox balance";
+        }
         return isAdminWalletActive(playerId) ? "Admin balance" : "Balance";
     }
 
     private String adminBalanceKey(UUID playerId) {
         return "admin.shared";
+    }
+
+    private boolean isSandboxWalletActive(UUID playerId) {
+        Player player = Bukkit.getPlayer(playerId);
+        return isSandboxAdmin(player);
+    }
+
+    private String sandboxBalanceKey(UUID playerId) {
+        return "sandbox." + playerId;
     }
 
     private UUID findPlayerId(String name) {

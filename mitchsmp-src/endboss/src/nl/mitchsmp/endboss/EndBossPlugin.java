@@ -565,7 +565,8 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
         Inventory inventory = chestInventory(key);
         if (inventory == null || !ritualRequirementsPresent(inventory)) {
             event.setCancelled(true);
-            Text.msg(player, "&cThe Ritual Chest is incomplete. Use &f/endboss ritual &cfor the required items.");
+            Text.msg(player, "&cThe Ritual Chest is incomplete: &f" + String.join("&7, &f", missingRequirements(inventory)) + "&c.");
+            Text.msg(player, "&7Use &f/endboss ritual &7for the full ritual list.");
             return;
         }
         ritualChests.remove(key);
@@ -711,8 +712,7 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
             torch.setType(Material.AIR, false);
         }
         ritualBurst(frame.center, player);
-        strikeLightning(mob.getLocation() == null ? frame.center : mob.getLocation());
-        mob.remove();
+        killRitualMobWithLightning(mob, frame.center);
         Bukkit.getScheduler().runTaskLater(this, () -> placeRitualChest(player, frame.center), 2L);
     }
 
@@ -767,6 +767,35 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
     }
 
     private boolean ritualRequirementsPresent(Inventory inventory) {
+        return missingRequirements(inventory).isEmpty();
+    }
+
+    private List<String> missingRequirements(Inventory inventory) {
+        List<String> missing = new ArrayList<>();
+        int bossShards = countInventory(inventory, this::isBossShard);
+        int corruptedHearts = countInventory(inventory, this::isCorruptedHeart);
+        int dragonEggs = countInventory(inventory, item -> item != null && item.getType() == Material.DRAGON_EGG);
+        int plainNetherStars = countInventory(inventory, this::isPlainNetherStar);
+        int enchantedApples = countInventory(inventory, item -> item != null && item.getType() == Material.ENCHANTED_GOLDEN_APPLE);
+        if (bossShards < requiredBossShards()) {
+            missing.add((requiredBossShards() - bossShards) + " Boss Shards");
+        }
+        if (corruptedHearts < requiredCorruptedHearts()) {
+            missing.add((requiredCorruptedHearts() - corruptedHearts) + " Corrupted Hearts");
+        }
+        if (dragonEggs < 1) {
+            missing.add("1 Dragon Egg");
+        }
+        if (plainNetherStars < 1) {
+            missing.add("1 plain Nether Star");
+        }
+        if (enchantedApples < requiredEnchantedApples()) {
+            missing.add((requiredEnchantedApples() - enchantedApples) + " Enchanted Golden Apples");
+        }
+        return missing;
+    }
+
+    private boolean oldRitualRequirementsPresent(Inventory inventory) {
         return countInventory(inventory, this::isBossShard) >= requiredBossShards()
             && countInventory(inventory, this::isCorruptedHeart) >= requiredCorruptedHearts()
             && countInventory(inventory, item -> item != null && item.getType() == Material.DRAGON_EGG) >= 1
@@ -941,13 +970,30 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
         }, 20L * 12L);
     }
 
-    private void strikeLightning(Location location) {
+    private void killRitualMobWithLightning(LivingEntity mob, Location fallback) {
+        Location location = mob == null || mob.getLocation() == null ? fallback : mob.getLocation();
         if (location == null || location.getWorld() == null) {
             return;
         }
+        boolean struck = false;
         try {
-            location.getWorld().getClass().getMethod("strikeLightningEffect", Location.class).invoke(location.getWorld(), location);
+            location.getWorld().getClass().getMethod("strikeLightning", Location.class).invoke(location.getWorld(), location);
+            struck = true;
         } catch (ReflectiveOperationException ignored) {
+        }
+        if (!struck) {
+            try {
+                location.getWorld().getClass().getMethod("strikeLightningEffect", Location.class).invoke(location.getWorld(), location);
+            } catch (ReflectiveOperationException ignored) {
+            }
+        }
+        if (mob != null) {
+            try {
+                mob.setHealth(0.0D);
+            } catch (RuntimeException ignored) {
+                mob.remove();
+            }
+            Bukkit.getScheduler().runTaskLater(this, mob::remove, 1L);
         }
     }
 
@@ -1299,11 +1345,19 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
     }
 
     private boolean isBossShard(ItemStack item) {
-        return item != null && item.getType() == Material.NETHER_STAR && hasCustomModelData(item, BOSS_SHARD_MODEL);
+        BossShardService shards = MitchSMP.bossShards();
+        if (shards != null && shards.isShard(item)) {
+            return true;
+        }
+        return item != null
+            && item.getType() == Material.NETHER_STAR
+            && (hasCustomModelData(item, BOSS_SHARD_MODEL) || hasItemModel(item, "bloodbound", "boss_shard"));
     }
 
     private boolean isCorruptedHeart(ItemStack item) {
-        return item != null && item.getType() == Material.ECHO_SHARD && hasCustomModelData(item, CORRUPTED_HEART_MODEL);
+        return item != null
+            && item.getType() == Material.ECHO_SHARD
+            && (hasCustomModelData(item, CORRUPTED_HEART_MODEL) || hasItemModel(item, "bloodbound", "corrupted_heart"));
     }
 
     private boolean isPlainNetherStar(ItemStack item) {
@@ -1328,6 +1382,24 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
         try {
             Object value = meta.getClass().getMethod("getCustomModelData").invoke(meta);
             return value instanceof Integer integer && integer == modelData;
+        } catch (ReflectiveOperationException | RuntimeException exception) {
+            return false;
+        }
+    }
+
+    private boolean hasItemModel(ItemStack item, String namespace, String key) {
+        if (item == null || !item.hasItemMeta()) {
+            return false;
+        }
+        ItemMeta meta = item.getItemMeta();
+        if (meta == null) {
+            return false;
+        }
+        try {
+            Object model = meta.getClass().getMethod("getItemModel").invoke(meta);
+            return model instanceof NamespacedKey namespacedKey
+                && namespacedKey.getNamespace().equalsIgnoreCase(namespace)
+                && namespacedKey.getKey().equalsIgnoreCase(key);
         } catch (ReflectiveOperationException | RuntimeException exception) {
             return false;
         }

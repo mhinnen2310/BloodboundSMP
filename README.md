@@ -1,90 +1,139 @@
-# BloodboundSMP Server
+# BloodboundSMP
 
-BloodboundSMP is the English public-facing rebrand of the current custom PvP Lifesteal SMP plugin suite.
+**Steal Hearts. Build Legacy.**
+**No Claims. No Mercy.**
 
-Tagline: **Steal Hearts. Build Legacy.**
+BloodboundSMP is a custom Paper 26.1.2 PvP Lifesteal SMP plugin suite. The project is built as a complete no-external-Minecraft-plugin ecosystem: economy, auction house, lifesteal, ranks, skills, minigames, staff tools, boss systems, resource pack support and launch QA are all maintained inside this repository.
 
-Secondary tagline: **No Claims. No Mercy.**
+Internal plugin IDs still use `MitchSMP-*` for Paper compatibility. Public-facing branding is BloodboundSMP/Bloodbound.
 
-## Active Server
+## Runtime Requirements
 
-The approved Bloodbound test build has been merged into this single active server folder:
+- Paper `26.1.2`
+- Java `25` for production
+- Java `25` for staging
+- Java `25` build target
 
-`C:\Users\Mitchel\Desktop\SMP`
+Do not deploy these jars on Java 21. They are built for Java 25 and will not load correctly on older runtimes.
 
-Pre-merge rollback backup:
+## Main Systems
 
-`C:\Users\Mitchel\Desktop\SMP_BACKUPS\SMP-before-bloodbound-merge-20260619`
-
-- Paper jar: `paper-26.1.2-70.jar`
-- Server port: `25565`
-- MOTD: `BloodboundSMP - Steal Hearts. Build Legacy. / No Claims. No Mercy.`
-- Server icon: `server-icon.png`
+- Lifesteal hearts, bounties and combat-tag protection
+- Internal economy, EconomyWatch, QuickSell and Auction House
+- Skills, item-bound abilities and mechanics guide
+- Endboss ritual, per-player bosses and Boss Shard progression
+- BedWars, TNT Run, Spleef, Skirmish, Skyblock and Hub worlds
+- Seasons, legacy rankings and Hall of Fame
+- Staff mode, vanish, model tools, jail, audit, anti-cheat and recovery tooling
+- Maintenance mode, guided smoke QA and bounded error tracking
 
 ## Build
 
-From this server folder:
+From the repository/server root:
 
 ```powershell
-powershell -ExecutionPolicy Bypass -File .\mitchsmp-src\build.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\mitchsmp-src\build.ps1
 ```
 
-The build script creates staged Java 25 artifacts. Production runtime, staging runtime and build target are Java 25. Do not deploy these plugins on Java 21; they will not load correctly. Live deployment is a separate offline-only action documented in [BUILD_AND_DEPLOY.md](BUILD_AND_DEPLOY.md).
+The build output is staged in:
 
-Current release candidate: `1.0.0-rc.2`.
+```text
+mitchsmp-src/build/jars/
+```
 
-Release records:
+Deployment is intentionally separate and offline-only:
 
-- `CHANGELOG.md`
-- `RELEASE_CHECKLIST.md`
-- `P0_LAUNCH_READINESS.md`
-- `P1_GAMEPLAY_READINESS.md`
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\mitchsmp-src\build.ps1 -Deploy
+```
 
-Launch documentation:
+The deploy command refuses to run while the configured Minecraft port is listening.
 
-- `docs/PLAYER_GUIDE.md`
-- `docs/STAFF_GUIDE.md`
-- `docs/TECHNICAL_REFERENCE.md`
+## Release Artifacts
 
-## Public Branding
+Versioned local release folders are created under:
 
-Visible player-facing text should use:
+```text
+C:\Users\Mitchel\Desktop\BloodboundSMP-Jars\<version>
+```
 
-- BloodboundSMP for the full server name
-- Bloodbound for compact HUD/menu/prefix use
-- Dark red, crimson, ancient gold, black, gray and bone white colors
-- Professional English PvP Lifesteal language
+Each release folder should contain:
 
-## Internal Plugin IDs
+- all 33 plugin jars
+- `BloodboundSMP-resourcepack.zip`
+- `VERSION`
+- `build-info.json`
+- `SHA256SUMS.txt`
+- tester/deploy documentation
 
-Internal plugin names and jars intentionally still use `MitchSMP-*`.
-These are technical IDs used by Paper dependency loading and should not be renamed during this safe rebrand pass.
+## Storage
 
-## Player-Facing Command Areas
+Core data storage is SQLite-first when Paper/Xerial JDBC is visible to plugins. If SQLite is not available on a host, the system falls back to crash-safe `.properties` files with `.tmp` writes and `.bak` backups.
 
-- Lifesteal and hearts
-- Auction House
-- Economy and QuickSell
-- BedWars, TNT Run and Spleef
-- Homes, TPA and RTP
-- Skills, item abilities and mechanics guide
-- Seasons, legacy rankings and Hall of Fame
-- Staff mode, audit tools and anti-cheat alerts
+At every server startup Core logs the active backend:
 
-## Player Entry Points
+```text
+Storage backend: SQLite (Paper/Xerial JDBC detected)
+```
 
-- `/menu` opens the sectioned player GUI.
-- `/commands` shows the permission-filtered command list.
-- `/hub` opens the protected Bloodbound hub flow.
-- `/rtp` uses the active SMP wilderness.
+or:
 
-Recent administration additions:
+```text
+Storage backend: crash-safe properties fallback
+```
 
-- `/bounty place <player> <amount>` supports cached offline targets.
-- `/progression config orderDurationMinutes <minutes>` controls resource-order rotation.
-- `/smpworld load <name>` safely loads a new Owner-only SMP wilderness after two confirmations.
-- `/smpworld active` shows the wilderness used by `/rtp` and the hub Wilderness button.
+Staff also receive a short storage-backend message when joining.
 
-## Rollback
+## Test And Maintenance Flow
 
-Stop the server and restore the pre-merge backup above. Never overwrite current worlds or plugin data while the server is running.
+Use maintenance mode before guided launch QA:
+
+```text
+/maintenance on
+/qa start smoke
+/qa pass
+/qa warn <note>
+/qa fail <note>
+/qa recent
+/maintenance off
+```
+
+Maintenance mode removes normal players while staff test. QA logs are bounded so they do not grow forever.
+
+## Sandbox Worlds
+
+Test worlds use the `mitchtest_*` prefix. Admin/Owner/OP accounts have full testing freedom there. AuctionHouse and QuickSell use separated sandbox data/wallets so test listings and test sales do not affect the real SMP economy.
+
+## Git Workflow
+
+Primary release branch:
+
+```text
+release/1.0
+```
+
+Release candidates are tagged as:
+
+```text
+v1.0.0-rc.X
+```
+
+Do not force-push release tags. Create a new RC tag for each approved release build.
+
+## Documentation
+
+- [Build and Deploy](BUILD_AND_DEPLOY.md)
+- [Changelog](CHANGELOG.md)
+- [Release Checklist](RELEASE_CHECKLIST.md)
+- [Launch Test Commands](BLOODBOUND_TEST_COMMANDS.md)
+- [Hosted Server Upgrade](docs/HOSTED_SERVER_UPGRADE.md)
+- [Player Guide](docs/PLAYER_GUIDE.md)
+- [Staff Guide](docs/STAFF_GUIDE.md)
+- [Technical Reference](docs/TECHNICAL_REFERENCE.md)
+
+## Safety Notes
+
+- Never hot-replace plugin jars while Paper is running.
+- Never delete plugin data folders during an ordinary upgrade.
+- Keep runtime folders such as `world/`, `plugins/`, `logs/`, `cache/`, `libraries/` and `versions/` out of git.
+- Public release jars must be built from a committed release state and verified on a clean boot test.
