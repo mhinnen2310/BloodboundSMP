@@ -14,7 +14,7 @@ This file records active work in a simple visible format. New requests should be
 
 ## Bezig
 
-- Manual in-game launch validation on the actual server instance.
+- Promote `1.0.0-rc.6` to the first stable `1.0.0` release and push GitHub release tags/docs.
 
 ## Afgerond
 
@@ -39,6 +39,8 @@ This file records active work in a simple visible format. New requests should be
 - Kept AuctionHouse queued refunds in storage when player inventory is full instead of dropping them on the ground.
 - Reduced noisy performance alerts by requiring sustained lag samples and raising launch alert cooldown/default threshold.
 - Rebuilt and staged all 33 Bloodbound plugin jars as `1.0.0-rc.5`.
+- Promoted BloodboundSMP to `1.0.0` first public release.
+- Reworked the GitHub README with server-owner quick start, system overview, command tables, storage, feature flags and production safety notes.
 - Verified command permission filtering covers all 184 declared commands and aliases.
 
 ## Niet Gedaan / Onzeker

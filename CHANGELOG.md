@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0 First Public Release
+
+- Promoted the launch-hardened RC6 build to the first public BloodboundSMP release.
+- Finalized Java 25 release packaging, maintenance QA guidance and GitHub documentation.
+- Kept all gameplay/data behavior from RC6 intact.
+
 ## 1.0.0-rc.6 Launch Stability Hardening
 
 - Fixed maintenance/QA access so staff/op can run guided smoke QA while players remain locked out.
