@@ -38,7 +38,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCompleter {
     private static final String MANIFEST = "mitchsmp-release-manifest.json";
-    private static final Pattern ASSET_PATTERN = Pattern.compile("\\{[^{}]*\"name\"\\s*:\\s*\"([^\"]+)\"[^{}]*\"browser_download_url\"\\s*:\\s*\"([^\"]+)\"[^{}]*}", Pattern.DOTALL);
+    private static final Pattern ASSET_OBJECT_PATTERN = Pattern.compile("\\{[^{}]*\"browser_download_url\"\\s*:\\s*\"[^\"]+\"[^{}]*}", Pattern.DOTALL);
     private static final Pattern MANIFEST_PLUGIN_PATTERN = Pattern.compile("\\{[^{}]*\"name\"\\s*:\\s*\"([^\"]+)\"[^{}]*\"file\"\\s*:\\s*\"([^\"]+)\"[^{}]*\"version\"\\s*:\\s*\"([^\"]+)\"[^{}]*\"sha256\"\\s*:\\s*\"([a-fA-F0-9]{64})\"[^{}]*}", Pattern.DOTALL);
     private static final DateTimeFormatter BACKUP_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss").withZone(ZoneId.systemDefault());
 
@@ -408,12 +408,22 @@ public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCom
             throw new IllegalStateException("Latest release is prerelease and includePrereleases=false.");
         }
         String notes = first(body, "\"body\"\\s*:\\s*\"((?:\\\\.|[^\"])*)\"").map(this::unescapeJson).orElse("");
-        Map<String, String> assets = new HashMap<>();
-        Matcher matcher = ASSET_PATTERN.matcher(body);
-        while (matcher.find()) {
-            assets.put(unescapeJson(matcher.group(1)), unescapeJson(matcher.group(2)));
-        }
+        Map<String, String> assets = parseAssets(body);
         return new ReleaseInfo(tag, notes, assets);
+    }
+
+    private Map<String, String> parseAssets(String body) {
+        Map<String, String> assets = new HashMap<>();
+        Matcher matcher = ASSET_OBJECT_PATTERN.matcher(body);
+        while (matcher.find()) {
+            String object = matcher.group();
+            Optional<String> name = first(object, "\"name\"\\s*:\\s*\"([^\"]+)\"").map(this::unescapeJson);
+            Optional<String> url = first(object, "\"browser_download_url\"\\s*:\\s*\"([^\"]+)\"").map(this::unescapeJson);
+            if (name.isPresent() && url.isPresent()) {
+                assets.put(name.get(), url.get());
+            }
+        }
+        return assets;
     }
 
     private List<PluginAsset> parseManifest(String manifest) {

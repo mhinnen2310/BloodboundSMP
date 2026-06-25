@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.3 Update Manifest Parser Fix
+
+- Fixed the GitHub release asset parser in `MitchSMP-UpdateOrchestrator`.
+- Release assets are now detected regardless of GitHub API field order, including `browser_download_url` before `name`.
+- This fixes `/updates stage <version>` incorrectly reporting that `mitchsmp-release-manifest.json` is missing.
+
 ## 1.0.2 Adminmode Performance And EndBoss Flow
 
 - Cached HUD season/progression storage reads so the one-second HUD loop no longer reloads stat files every tick.

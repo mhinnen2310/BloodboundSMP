@@ -4,6 +4,7 @@ This file records active work in a simple visible format. New requests should be
 
 ## Te Doen
 
+- Manually replace the hosted server's updater jar once so future `/updates` commands can self-stage correctly.
 - Manual in-game validation of the EndBoss physical ritual with real Boss Shards and Corrupted Hearts.
 - Manual in-game validation that sandbox AuctionHouse listings are invisible from the SMP AuctionHouse.
 - Manual in-game validation that sandbox QuickSell uses sandbox balance and does not affect EconomyWatch.
@@ -53,6 +54,7 @@ This file records active work in a simple visible format. New requests should be
 - Added EndBoss spectator respawn for fallen party members while teammates survive.
 - Added EndBoss victory Hall of Fame group sections with clear time.
 - Added EndBoss red aura/glow, four bounded mob waves and arena fall safety.
+- Fixed GitHub UpdateOrchestrator release asset parsing so manifest detection works with GitHub API field order.
 
 ## Niet Gedaan / Onzeker
 
