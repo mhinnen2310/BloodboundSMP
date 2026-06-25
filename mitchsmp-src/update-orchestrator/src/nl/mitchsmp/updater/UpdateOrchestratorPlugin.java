@@ -39,6 +39,7 @@ import org.bukkit.plugin.java.JavaPlugin;
 public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCompleter {
     private static final String MANIFEST = "mitchsmp-release-manifest.json";
     private static final Pattern ASSET_OBJECT_PATTERN = Pattern.compile("\\{[^{}]*\"browser_download_url\"\\s*:\\s*\"[^\"]+\"[^{}]*}", Pattern.DOTALL);
+    private static final Pattern ASSET_PAIR_PATTERN = Pattern.compile("\"name\"\\s*:\\s*\"([^\"]+)\"(?:(?!\"name\"\\s*:).)*?\"browser_download_url\"\\s*:\\s*\"([^\"]+)\"", Pattern.DOTALL);
     private static final Pattern MANIFEST_PLUGIN_PATTERN = Pattern.compile("\\{[^{}]*\"name\"\\s*:\\s*\"([^\"]+)\"[^{}]*\"file\"\\s*:\\s*\"([^\"]+)\"[^{}]*\"version\"\\s*:\\s*\"([^\"]+)\"[^{}]*\"sha256\"\\s*:\\s*\"([a-fA-F0-9]{64})\"[^{}]*}", Pattern.DOTALL);
     private static final DateTimeFormatter BACKUP_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd_HH-mm-ss").withZone(ZoneId.systemDefault());
 
@@ -245,20 +246,14 @@ public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCom
         deleteDirectory(target);
         Files.createDirectories(target);
         Map<String, String> assets = release.assets();
-        if (!assets.containsKey(MANIFEST)) {
-            throw new IllegalStateException("Release has no " + MANIFEST);
-        }
-        download(assets.get(MANIFEST), target.resolve(MANIFEST));
+        download(assetUrl(release, MANIFEST), target.resolve(MANIFEST));
         String manifest = Files.readString(target.resolve(MANIFEST), StandardCharsets.UTF_8);
         List<PluginAsset> expected = parseManifest(manifest);
         if (expected.isEmpty()) {
             throw new IllegalStateException("Manifest has no plugin assets.");
         }
         for (PluginAsset asset : expected) {
-            if (!assets.containsKey(asset.file())) {
-                throw new IllegalStateException("Release asset missing: " + asset.file());
-            }
-            download(assets.get(asset.file()), target.resolve(asset.file()));
+            download(assetUrl(release, asset.file()), target.resolve(asset.file()));
         }
         stagedVersion = release.tag();
         stagedStatus = "downloaded";
@@ -414,6 +409,10 @@ public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCom
 
     private Map<String, String> parseAssets(String body) {
         Map<String, String> assets = new HashMap<>();
+        Matcher pairMatcher = ASSET_PAIR_PATTERN.matcher(body);
+        while (pairMatcher.find()) {
+            assets.put(unescapeJson(pairMatcher.group(1)), unescapeJson(pairMatcher.group(2)));
+        }
         Matcher matcher = ASSET_OBJECT_PATTERN.matcher(body);
         while (matcher.find()) {
             String object = matcher.group();
@@ -424,6 +423,14 @@ public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCom
             }
         }
         return assets;
+    }
+
+    private String assetUrl(ReleaseInfo release, String file) {
+        String parsed = release.assets().get(file);
+        if (parsed != null && !parsed.isBlank()) {
+            return parsed;
+        }
+        return "https://github.com/" + owner() + "/" + repo() + "/releases/download/" + release.tag() + "/" + file;
     }
 
     private List<PluginAsset> parseManifest(String manifest) {

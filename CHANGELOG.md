@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.6 Update Staging Manifest Fallback
+
+- Hardened `MitchSMP-UpdateOrchestrator` asset parsing against nested GitHub release JSON.
+- Added direct GitHub release download fallback for `mitchsmp-release-manifest.json` and plugin jars.
+- This fixes `/updates stage latest` reporting `Release has no mitchsmp-release-manifest.json` even when the release contains the manifest asset.
+
 ## 1.0.5 Launch Performance Hotpath Patch
 
 - Added debounced `PropertiesFile.saveSoon(...)` storage writes to reduce repeated full-store saves during high-frequency gameplay events.

@@ -18,6 +18,7 @@ This file records active work in a simple visible format. New requests should be
 
 ## Bezig
 
+- Validate UpdateOrchestrator 1.0.6 on the hosted server after manually uploading the fixed updater jar once.
 - Validate launch hotpath performance patch in-game: fast block break, inventory clicks, QuickSell, AH buy/list/cancel, contracts, adminmode block break/place.
 - Validate adminmode/HUD performance fixes and EndBoss party spectator flow in-game.
 
@@ -64,6 +65,7 @@ This file records active work in a simple visible format. New requests should be
 - Batched economy balances, AuctionHouse saves, skill cooldown/progression saves and progression contract/stat saves.
 - Removed normal player block break/place audit writes from the gameplay hot path while keeping adminmode tracing.
 - Reduced performance sampling overhead from every second to every 5 seconds with corrected TPS math.
+- Hardened UpdateOrchestrator release asset parsing and added direct manifest/jar download fallback.
 
 ## Niet Gedaan / Onzeker
 
@@ -71,3 +73,4 @@ This file records active work in a simple visible format. New requests should be
 - Runtime folders are kept on disk because this workspace is also the local server. They remain ignored by git.
 - Local clean boot is blocked before plugin load by Paperclip `AccessDeniedException` on `_clean-server-test/cache/mojang_26.1.2.jar`; no plugin startup stacktrace was reached in that test.
 - This patch reduces main hotpath write pressure, but real 1000+ player readiness still requires a hosted load test/profiler run.
+- Because the hosted 1.0.5 updater is the broken component, at least `MitchSMP-UpdateOrchestrator-1.0.6.jar` must be manually uploaded once before `/updates stage latest` can repair future versions automatically.
