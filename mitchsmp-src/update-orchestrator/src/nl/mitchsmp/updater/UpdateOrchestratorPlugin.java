@@ -539,6 +539,7 @@ public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCom
 
         Path backup = backupCurrentJars(targetVersion + "_apply_" + trigger);
         for (PluginAsset asset : expected) {
+            removeOldPluginJars(asset);
             Files.copy(target.resolve(asset.file()), pluginsDir.resolve(asset.file()), StandardCopyOption.REPLACE_EXISTING);
         }
         Files.deleteIfExists(pendingFile);
@@ -548,10 +549,37 @@ public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCom
         historyLine(trigger + " applied " + targetVersion + " backup=" + backup.getFileName());
     }
 
+    private void removeOldPluginJars(PluginAsset asset) throws IOException {
+        String expectedFile = asset.file();
+        String prefix = asset.name() + "-";
+        try (Stream<Path> stream = Files.list(pluginsDir)) {
+            for (Path jar : stream.filter(path -> isOldPluginJar(path, prefix, expectedFile)).toList()) {
+                Files.deleteIfExists(jar);
+                historyLine("removed old plugin jar " + jar.getFileName());
+            }
+        }
+    }
+
+    private boolean isOldPluginJar(Path path, String prefix, String expectedFile) {
+        String file = path.getFileName().toString();
+        return file.startsWith(prefix)
+            && file.endsWith(".jar")
+            && !file.equals(expectedFile);
+    }
+
     private void applyRollback(Path backup, String trigger) throws IOException {
         Path jars = backup.resolve("plugins");
         if (!Files.isDirectory(jars)) {
             throw new IOException("rollback backup has no plugins directory: " + backup);
+        }
+        try (Stream<Path> stream = Files.list(jars)) {
+            for (Path jar : stream.filter(path -> path.getFileName().toString().endsWith(".jar")).toList()) {
+                String file = jar.getFileName().toString();
+                String prefix = pluginPrefixFromJar(file);
+                if (!prefix.isBlank()) {
+                    removeOldPluginJars(new PluginAsset(prefix.substring(0, prefix.length() - 1), file, "rollback", ""));
+                }
+            }
         }
         try (Stream<Path> stream = Files.list(jars)) {
             for (Path jar : stream.filter(path -> path.getFileName().toString().endsWith(".jar")).toList()) {
@@ -561,6 +589,11 @@ public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCom
         Files.deleteIfExists(pendingFile);
         getLogger().warning("Applied rollback during " + trigger + ": " + backup);
         historyLine(trigger + " applied rollback " + backup.getFileName());
+    }
+
+    private String pluginPrefixFromJar(String file) {
+        Matcher matcher = Pattern.compile("^(MitchSMP-[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*)-\\d+\\.\\d+\\.\\d+(?:[-.][A-Za-z0-9]+)?\\.jar$").matcher(file);
+        return matcher.find() ? matcher.group(1) + "-" : "";
     }
 
     private Path backupCurrentJars(String targetVersion) throws IOException {

@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.8 Update Jar Cleanup
+
+- Update application now removes old versioned `MitchSMP-*.jar` files for each plugin before copying the newly staged jar.
+- This prevents Paper from continuing to load older plugin versions such as `1.0.3` when `1.0.8` jars are staged.
+- Rollback application also clears matching newer/older versioned jars before restoring the backup jars.
+
 ## 1.0.7 Hosted Updater Apply Fix
 
 - Added built-in pending-update application for hosts that do not run the external offline update script.

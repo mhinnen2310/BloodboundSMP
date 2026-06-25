@@ -5,7 +5,7 @@ This file records active work in a simple visible format. New requests should be
 ## Te Doen
 
 - Manual in-game validation of the Bloodbound Archfiend EndBoss visual with the rebuilt resourcepack enabled.
-- Manually replace the hosted server's updater jar with `v1.0.7` once so future `/updates` commands can self-stage and self-apply on restart.
+- Manually replace the hosted server's updater jar with `v1.0.8` once so future `/updates` commands can self-stage, self-apply and clean old versioned jars on restart.
 - Manual in-game validation of the EndBoss physical ritual with real Boss Shards and Corrupted Hearts.
 - Manual in-game validation that sandbox AuctionHouse listings are invisible from the SMP AuctionHouse.
 - Manual in-game validation that sandbox QuickSell uses sandbox balance and does not affect EconomyWatch.
@@ -18,7 +18,7 @@ This file records active work in a simple visible format. New requests should be
 
 ## Bezig
 
-- Validate UpdateOrchestrator 1.0.7 on the hosted server after manually uploading the fixed updater jar once.
+- Validate UpdateOrchestrator 1.0.8 on the hosted server after manually uploading the fixed updater jar once.
 - Validate launch hotpath performance patch in-game: fast block break, inventory clicks, QuickSell, AH buy/list/cancel, contracts, adminmode block break/place.
 - Validate adminmode/HUD performance fixes and EndBoss party spectator flow in-game.
 
@@ -67,6 +67,7 @@ This file records active work in a simple visible format. New requests should be
 - Reduced performance sampling overhead from every second to every 5 seconds with corrected TPS math.
 - Hardened UpdateOrchestrator release asset parsing and added direct manifest/jar download fallback.
 - Added hosted-server pending update application during shutdown/startup for panels without an external update script.
+- Added updater cleanup for old versioned `MitchSMP-*.jar` files before applying staged or rollback jars.
 
 ## Niet Gedaan / Onzeker
 
@@ -74,4 +75,4 @@ This file records active work in a simple visible format. New requests should be
 - Runtime folders are kept on disk because this workspace is also the local server. They remain ignored by git.
 - Local clean boot is blocked before plugin load by Paperclip `AccessDeniedException` on `_clean-server-test/cache/mojang_26.1.2.jar`; no plugin startup stacktrace was reached in that test.
 - This patch reduces main hotpath write pressure, but real 1000+ player readiness still requires a hosted load test/profiler run.
-- Because hosted servers may not run the external offline update script, manually upload `MitchSMP-UpdateOrchestrator-1.0.7.jar` once, then cancel any older pending update and stage `v1.0.7`.
+- Because hosted servers may not run the external offline update script, manually upload `MitchSMP-UpdateOrchestrator-1.0.8.jar` once, then cancel any older pending update and stage `v1.0.8`.
