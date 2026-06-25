@@ -172,7 +172,7 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter,
     @EventHandler
     public void onEntitySpawn(EntitySpawnEvent event) {
         Entity entity = event.getEntity();
-        if (entity instanceof Player || isNamedEntity(entity) || setting("enforce_entity_per_chunk", 1.0D) < 0.5D) {
+        if (entity instanceof Player || isFallingBlock(entity) || isNamedEntity(entity) || setting("enforce_entity_per_chunk", 1.0D) < 0.5D) {
             return;
         }
         int limit = Math.max(20, (int) setting("entity_per_chunk", 120.0D));
@@ -183,6 +183,10 @@ public final class PerformancePlugin extends JavaPlugin implements TabCompleter,
             return;
         }
         chunkEntityCounts.put(key, count + 1);
+    }
+
+    private boolean isFallingBlock(Entity entity) {
+        return entity != null && "FALLING_BLOCK".equals(entity.getType().name());
     }
 
     private void alert(boolean lag, boolean memory, boolean entity) {

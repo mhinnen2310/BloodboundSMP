@@ -3,9 +3,11 @@ package nl.mitchsmp.hud;
 import java.lang.reflect.Method;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -29,12 +31,15 @@ import org.bukkit.plugin.java.JavaPlugin;
 
 public final class HudPlugin extends JavaPlugin implements Listener, TabCompleter {
     private static final String DEFAULT_COMPONENTS = "balance,kills,deaths,rank";
+    private static final long STATS_REFRESH_MILLIS = 30_000L;
 
     private PropertiesFile data;
     private PropertiesFile seasonStats;
     private PropertiesFile progressionStats;
     private Method componentText;
     private boolean warnedScoreboard;
+    private long lastStatsRefreshMillis;
+    private final Map<UUID, List<String>> lastRenderedLines = new HashMap<>();
 
     @Override
     public void onEnable() {
@@ -147,15 +152,32 @@ public final class HudPlugin extends JavaPlugin implements Listener, TabComplete
     }
 
     private void tick() {
-        seasonStats.load();
-        progressionStats.load();
+        refreshStatsIfNeeded();
         for (Player player : Bukkit.getOnlinePlayers()) {
             if (!enabled(player)) {
-                clearSidebar(player);
+                if (lastRenderedLines.remove(player.getUniqueId()) != null) {
+                    clearSidebar(player);
+                }
                 continue;
             }
-            showSidebar(player, buildLines(player));
+            List<String> lines = buildLines(player);
+            List<String> previous = lastRenderedLines.get(player.getUniqueId());
+            if (previous != null && previous.equals(lines)) {
+                continue;
+            }
+            showSidebar(player, lines);
+            lastRenderedLines.put(player.getUniqueId(), List.copyOf(lines));
         }
+    }
+
+    private void refreshStatsIfNeeded() {
+        long now = System.currentTimeMillis();
+        if (now - lastStatsRefreshMillis < STATS_REFRESH_MILLIS) {
+            return;
+        }
+        lastStatsRefreshMillis = now;
+        seasonStats.load();
+        progressionStats.load();
     }
 
     private List<String> buildLines(Player player) {

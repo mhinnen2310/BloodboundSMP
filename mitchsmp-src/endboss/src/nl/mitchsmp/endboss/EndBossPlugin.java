@@ -25,6 +25,7 @@ import nl.mitchsmp.core.storage.PropertiesFile;
 import nl.mitchsmp.core.util.Tab;
 import nl.mitchsmp.core.util.Text;
 import org.bukkit.Bukkit;
+import org.bukkit.GameMode;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
@@ -40,6 +41,7 @@ import org.bukkit.command.TabCompleter;
 import org.bukkit.enchantments.Enchantment;
 import org.bukkit.entity.Entity;
 import org.bukkit.entity.EntityType;
+import org.bukkit.entity.ArmorStand;
 import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
@@ -73,8 +75,12 @@ import org.bukkit.scheduler.BukkitTask;
 
 public final class EndBossPlugin extends JavaPlugin implements Listener, TabCompleter {
     private static final String WORLD_PREFIX = "mitchsmp_hellboss_";
+    private static final String HOF_WORLD = "mitchsmp_hall_of_fame";
     private static final long CONFIRM_TIMEOUT_MS = 60_000L;
     private static final long RITUAL_CHEST_TIMEOUT_MS = 15L * 60L * 1000L;
+    private static final int ARENA_Y = 80;
+    private static final int ARENA_RADIUS = 31;
+    private static final int MAX_WAVES = 4;
     private static final int BOSS_SHARD_MODEL = 910001;
     private static final int CORRUPTED_HEART_MODEL = 910002;
     private final Random random = new Random();
@@ -83,6 +89,7 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
     private final Set<String> ritualFireBlocks = new LinkedHashSet<>();
     private final Set<UUID> lockedPlayers = new LinkedHashSet<>();
     private final Set<UUID> respawnToMain = new LinkedHashSet<>();
+    private final Set<UUID> respawnToSpectator = new LinkedHashSet<>();
     private PropertiesFile config;
     private NamespacedKey wardKey;
     private NamespacedKey relicKey;
@@ -341,12 +348,14 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
             cleanupSession(false);
             return;
         }
+        disableNaturalSpawns(world);
         buildArena(world);
         List<Player> players = onlineParticipants();
         if (players.isEmpty()) {
             cleanupSession(false);
             return;
         }
+        session.startedAtMillis = System.currentTimeMillis();
         for (int index = 0; index < players.size(); index++) {
             Player player = players.get(index);
             lockedPlayers.add(player.getUniqueId());
@@ -373,6 +382,9 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
         boss.setHealth(bossHealth());
         boss.setCustomName(Text.color("&4Infernal Sovereign"));
         boss.setCustomNameVisible(true);
+        setEntityFlag(boss, "setGlowing", true);
+        setEntityFlag(boss, "setRemoveWhenFarAway", false);
+        boss.setFireTicks(0);
         boss.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION, 20 * 60 * 60, 0, false, true, true));
         return boss;
     }
@@ -387,12 +399,19 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
             return;
         }
         purgeLooseEntities(world);
+        enforceArenaBounds(world);
         session.ticks += 40;
         for (Player player : onlineParticipants()) {
             if (sameWorld(player.getLocation(), new Location(world, 0, 80, 0))) {
                 world.spawnParticle(Particle.ASH, player.getLocation(), 12, 0.5D, 0.8D, 0.5D, 0.02D);
             }
         }
+        LivingEntity boss = activeBoss(world);
+        if (boss != null) {
+            boss.setFireTicks(0);
+            world.spawnParticle(particle("CRIMSON_SPORE", Particle.FLAME), boss.getLocation().add(0.0D, 1.0D, 0.0D), 35, 1.1D, 1.4D, 1.1D, 0.02D);
+        }
+        maybeSpawnWave(world);
         if (session.ticks % 200 == 0) {
             chargedAttack(world);
         }
@@ -400,6 +419,125 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
             Bukkit.broadcastMessage(Text.color("&8[&4EndBoss&8] &cThe party wiped. The hell world is closing."));
             cleanupSession(true);
         }
+    }
+
+    private void maybeSpawnWave(World world) {
+        if (session.wave >= MAX_WAVES) {
+            return;
+        }
+        int nextWaveAt = 160 + (session.wave * 240);
+        if (session.ticks < nextWaveAt) {
+            return;
+        }
+        session.wave++;
+        spawnWave(world, session.wave);
+    }
+
+    private void spawnWave(World world, int wave) {
+        List<EntityType> types = switch (wave) {
+            case 1 -> mobTypes("WITHER_SKELETON", "WITHER_SKELETON", "BLAZE");
+            case 2 -> mobTypes("PIGLIN_BRUTE", "WITHER_SKELETON", "BLAZE", "BLAZE");
+            case 3 -> mobTypes("PIGLIN_BRUTE", "PIGLIN_BRUTE", "WITHER_SKELETON", "WITHER_SKELETON");
+            default -> mobTypes("PIGLIN_BRUTE", "PIGLIN_BRUTE", "BLAZE", "WITHER_SKELETON", "WITHER_SKELETON");
+        };
+        int index = 0;
+        for (EntityType type : types) {
+            double angle = (Math.PI * 2.0D / types.size()) * index++;
+            Location location = new Location(world, Math.cos(angle) * 17.0D + 0.5D, ARENA_Y + 2.0D, Math.sin(angle) * 17.0D + 0.5D);
+            Entity entity = world.spawnEntity(location, type);
+            if (entity instanceof LivingEntity living) {
+                setEntityFlag(living, "setRemoveWhenFarAway", false);
+                living.setFireTicks(0);
+                living.setCustomName(Text.color("&4Bloodbound Wave " + wave));
+                living.setCustomNameVisible(false);
+            }
+        }
+        for (Player player : onlineParticipantsInWorld(world)) {
+            player.sendTitle(Text.color("&4Wave " + wave + "/" + MAX_WAVES), Text.color("&7The arena answers in blood."), 5, 40, 10);
+            player.playSound(player.getLocation(), sound("ENTITY_WITHER_SPAWN", Sound.ENTITY_ENDER_DRAGON_GROWL), 0.7F, 1.4F);
+        }
+    }
+
+    private LivingEntity activeBoss(World world) {
+        if (session == null || session.bossId == null) {
+            return null;
+        }
+        for (Entity entity : world.getEntities()) {
+            if (session.bossId.equals(entity.getUniqueId()) && entity instanceof LivingEntity living) {
+                return living;
+            }
+        }
+        return null;
+    }
+
+    private List<EntityType> mobTypes(String... names) {
+        List<EntityType> types = new ArrayList<>();
+        for (String name : names) {
+            try {
+                types.add(EntityType.valueOf(name));
+            } catch (IllegalArgumentException exception) {
+                types.add(EntityType.ZOMBIE);
+            }
+        }
+        return types;
+    }
+
+    private Particle particle(String name, Particle fallback) {
+        try {
+            return Particle.valueOf(name);
+        } catch (IllegalArgumentException exception) {
+            return fallback;
+        }
+    }
+
+    private Sound sound(String name, Sound fallback) {
+        try {
+            return Sound.valueOf(name);
+        } catch (IllegalArgumentException exception) {
+            return fallback;
+        }
+    }
+
+    private void setEntityFlag(Entity entity, String method, boolean value) {
+        try {
+            entity.getClass().getMethod(method, boolean.class).invoke(entity, value);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+        }
+    }
+
+    private void disableNaturalSpawns(World world) {
+        try {
+            world.getClass().getMethod("setSpawnFlags", boolean.class, boolean.class).invoke(world, false, false);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+        }
+    }
+
+    private void enforceArenaBounds(World world) {
+        Location center = new Location(world, 0.5D, ARENA_Y + 2.0D, 0.5D);
+        for (Player player : onlineParticipants()) {
+            if (player.getWorld() == null || !world.getName().equals(player.getWorld().getName())) {
+                continue;
+            }
+            boolean spectator = session != null && session.deadPlayers.contains(player.getUniqueId());
+            Location safe = spectator ? spectatorLocation(world) : new Location(world, center.getX(), center.getY(), center.getZ(), center.getYaw(), center.getPitch());
+            Location location = player.getLocation();
+            if (location.getY() < ARENA_Y - 6 || horizontalDistanceSquared(location) > Math.pow(ARENA_RADIUS + 5.0D, 2.0D)) {
+                player.teleport(safe);
+                player.setFallDistance(0.0F);
+            }
+        }
+        LivingEntity boss = activeBoss(world);
+        if (boss != null && (boss.getLocation().getY() < ARENA_Y - 3 || horizontalDistanceSquared(boss.getLocation()) > Math.pow(ARENA_RADIUS - 2.0D, 2.0D))) {
+            boss.teleport(center);
+        }
+    }
+
+    private double horizontalDistanceSquared(Location location) {
+        return location.getX() * location.getX() + location.getZ() * location.getZ();
+    }
+
+    private Location spectatorLocation(World world) {
+        return new Location(world, 0.5D, ARENA_Y + 18.0D, 0.5D, 0.0F, 65.0F);
     }
 
     private void chargedAttack(World world) {
@@ -464,8 +602,9 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
         }
         event.getDrops().clear();
         rewardParticipants(event.getEntity().getLocation());
+        sendVictoryToHallOfFame();
         Bukkit.broadcastMessage(Text.color("&8[&4EndBoss&8] &6The Infernal Sovereign has been defeated. The hell world is resetting."));
-        cleanupSession(true);
+        cleanupSession(false);
     }
 
     @EventHandler
@@ -474,16 +613,32 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
         if (!lockedPlayers.contains(player.getUniqueId())) {
             return;
         }
-        lockedPlayers.remove(player.getUniqueId());
-        respawnToMain.add(player.getUniqueId());
-        Text.msg(player, "&cJe bent uit de bossfight gevallen.");
         if (session != null) {
             session.deadPlayers.add(player.getUniqueId());
+            if (!onlineParticipantsInWorld(player.getWorld()).isEmpty()) {
+                respawnToSpectator.add(player.getUniqueId());
+                Text.msg(player, "&cYou fell in the bossfight. Spectating while your party survives.");
+                return;
+            }
         }
+        lockedPlayers.remove(player.getUniqueId());
+        respawnToMain.add(player.getUniqueId());
+        Text.msg(player, "&cYour party has fallen.");
     }
 
     @EventHandler
     public void onRespawn(PlayerRespawnEvent event) {
+        if (respawnToSpectator.remove(event.getPlayer().getUniqueId()) && session != null && session.state == State.RUNNING) {
+            World world = Bukkit.getWorld(session.worldName);
+            if (world != null) {
+                event.setRespawnLocation(spectatorLocation(world));
+                Bukkit.getScheduler().runTask(this, () -> {
+                    event.getPlayer().setGameMode(GameMode.SPECTATOR);
+                    event.getPlayer().teleport(spectatorLocation(world));
+                });
+                return;
+            }
+        }
         if (respawnToMain.remove(event.getPlayer().getUniqueId()) || lockedPlayers.contains(event.getPlayer().getUniqueId()) || (session != null && session.deadPlayers.contains(event.getPlayer().getUniqueId()))) {
             event.setRespawnLocation(mainSpawn());
         }
@@ -1046,9 +1201,6 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
     private void rewardParticipants(Location bossLocation) {
         List<ItemStack> customDrops = configuredDrops();
         for (Player player : onlineParticipants()) {
-            if (session != null && session.deadPlayers.contains(player.getUniqueId())) {
-                continue;
-            }
             player.sendTitle(Text.color("&6Infernal Victory"), Text.color("&fEndgame loot unlocked"), 10, 80, 20);
             player.playSound(player.getLocation(), Sound.UI_TOAST_CHALLENGE_COMPLETE, 1.0F, 1.0F);
             player.playSound(player.getLocation(), Sound.ENTITY_ENDER_DRAGON_DEATH, 1.0F, 1.2F);
@@ -1073,6 +1225,92 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
         if (bossLocation != null && bossLocation.getWorld() != null) {
             bossLocation.getWorld().spawnParticle(Particle.TOTEM_OF_UNDYING, bossLocation, 200, 4.0D, 2.0D, 4.0D, 0.2D);
         }
+    }
+
+    private void sendVictoryToHallOfFame() {
+        if (session == null) {
+            return;
+        }
+        World world = hallWorld();
+        Location fallback = mainSpawn();
+        List<Player> players = onlineParticipants();
+        long durationMillis = Math.max(0L, System.currentTimeMillis() - session.startedAtMillis);
+        Location groupSpawn = world == null ? fallback : buildBossVictoryHallEntry(world, players, durationMillis);
+        for (Player player : players) {
+            player.setGameMode(GameMode.SURVIVAL);
+            player.teleport(groupSpawn);
+            player.setFallDistance(0.0F);
+        }
+    }
+
+    private Location buildBossVictoryHallEntry(World world, List<Player> players, long durationMillis) {
+        int index = config.getInt("hof.boss_victories", 0);
+        config.set("hof.boss_victories", index + 1);
+        config.save();
+        int baseZ = 220 + index * 24;
+        for (int x = -32; x <= 32; x++) {
+            for (int z = baseZ - 8; z <= baseZ + 8; z++) {
+                boolean edge = Math.abs(x) == 32 || z == baseZ - 8 || z == baseZ + 8;
+                set(world, x, 101, z, edge ? Material.GOLD_BLOCK : Material.QUARTZ_BLOCK);
+            }
+        }
+        spawnHallLabel(world, 0.5D, 105.0D, baseZ - 5.5D, "&4&lEndboss Victory #" + (index + 1));
+        spawnHallLabel(world, 0.5D, 103.7D, baseZ - 2.5D, "&6Time: &f" + formatDuration(durationMillis) + " &8| &6Party: &f" + players.size());
+        int startX = -Math.min(24, Math.max(0, players.size() - 1) * 6 / 2);
+        for (int i = 0; i < players.size(); i++) {
+            Player player = players.get(i);
+            int x = startX + i * 8;
+            set(world, x, 102, baseZ + 4, Material.GOLD_BLOCK);
+            ArmorStand stand = (ArmorStand) world.spawnEntity(new Location(world, x + 0.5D, 103.0D, baseZ + 4.5D), EntityType.ARMOR_STAND);
+            stand.setCustomName(Text.color("&4Boss Slayer &f" + player.getName()));
+            stand.setCustomNameVisible(true);
+            stand.setArms(true);
+            stand.setBasePlate(false);
+            stand.setGravity(false);
+            if (stand.getEquipment() != null) {
+                stand.getEquipment().setHelmet(new ItemStack(Material.NETHERITE_HELMET));
+                stand.getEquipment().setChestplate(new ItemStack(Material.NETHERITE_CHESTPLATE));
+                stand.getEquipment().setLeggings(new ItemStack(Material.NETHERITE_LEGGINGS));
+                stand.getEquipment().setBoots(new ItemStack(Material.NETHERITE_BOOTS));
+                stand.getEquipment().setItemInMainHand(new ItemStack(i == 0 ? Material.NETHERITE_SWORD : Material.NETHER_STAR));
+            }
+        }
+        return new Location(world, 0.5D, 102.0D, baseZ - 5.5D, 0.0F, 0.0F);
+    }
+
+    private void spawnHallLabel(World world, double x, double y, double z, String text) {
+        ArmorStand stand = (ArmorStand) world.spawnEntity(new Location(world, x, y, z), EntityType.ARMOR_STAND);
+        stand.setVisible(false);
+        stand.setGravity(false);
+        stand.setBasePlate(false);
+        stand.setCustomName(Text.color(text));
+        stand.setCustomNameVisible(true);
+    }
+
+    private World hallWorld() {
+        World world = Bukkit.getWorld(HOF_WORLD);
+        if (world != null) {
+            return world;
+        }
+        try {
+            Class<?> creatorClass = Class.forName("org.bukkit.WorldCreator");
+            Constructor<?> constructor = creatorClass.getConstructor(String.class);
+            Object creator = constructor.newInstance(HOF_WORLD);
+            Class<?> generatorClass = Class.forName("org.bukkit.generator.ChunkGenerator");
+            creatorClass.getMethod("generator", generatorClass).invoke(creator, new HellChunkGenerator());
+            creatorClass.getMethod("generateStructures", boolean.class).invoke(creator, false);
+            Bukkit.class.getMethod("createWorld", creatorClass).invoke(null, creator);
+        } catch (ReflectiveOperationException exception) {
+            getLogger().warning("Could not create Hall of Fame world: " + exception.getMessage());
+        }
+        return Bukkit.getWorld(HOF_WORLD);
+    }
+
+    private String formatDuration(long millis) {
+        long seconds = Math.max(0L, millis / 1000L);
+        long minutes = seconds / 60L;
+        long remainder = seconds % 60L;
+        return String.format(Locale.US, "%02d:%02d", minutes, remainder);
     }
 
     private void giveShardReward(Player player, int amount) {
@@ -1407,8 +1645,8 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
     }
 
     private void buildArena(World world) {
-        int y = 80;
-        int radius = 31;
+        int y = ARENA_Y;
+        int radius = ARENA_RADIUS;
         for (int x = -radius; x <= radius; x++) {
             for (int z = -radius; z <= radius; z++) {
                 double dist = Math.sqrt(x * x + z * z);
@@ -1422,6 +1660,17 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
                 }
                 if (dist > radius - 5 && dist < radius - 3 && (x + z) % 5 == 0) {
                     set(world, x, y + 1, z, Material.MAGMA_BLOCK);
+                }
+            }
+        }
+        for (int x = -(radius + 3); x <= radius + 3; x++) {
+            for (int z = -(radius + 3); z <= radius + 3; z++) {
+                double dist = Math.sqrt(x * x + z * z);
+                if (dist < radius + 1 || dist > radius + 3) {
+                    continue;
+                }
+                for (int yy = 1; yy <= 8; yy++) {
+                    set(world, x, y + yy, z, Material.BARRIER);
                 }
             }
         }
@@ -1508,17 +1757,21 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
             for (UUID id : old.participants) {
                 Player player = Bukkit.getPlayer(id);
                 if (player != null) {
+                    player.setGameMode(GameMode.SURVIVAL);
                     player.teleport(mainSpawn());
                     player.setFallDistance(0.0F);
                 }
             }
         }
         lockedPlayers.removeAll(old.participants);
+        respawnToSpectator.removeAll(old.participants);
+        respawnToMain.removeAll(old.participants);
         if (old.worldName != null) {
             World world = Bukkit.getWorld(old.worldName);
             if (world != null) {
                 for (Entity entity : world.getEntities()) {
                     if (entity instanceof Player player) {
+                        player.setGameMode(GameMode.SURVIVAL);
                         player.teleport(mainSpawn());
                         player.setFallDistance(0.0F);
                     } else {
@@ -1728,6 +1981,8 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
         private UUID bossId;
         private BukkitTask task;
         private int ticks;
+        private int wave;
+        private long startedAtMillis;
 
         private Session(UUID leader) {
             this.leader = leader;

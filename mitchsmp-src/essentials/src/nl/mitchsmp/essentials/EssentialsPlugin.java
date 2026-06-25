@@ -303,7 +303,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             }
         }
         Bukkit.getScheduler().runTaskTimer(this, this::tickJails, 100L, 100L);
-        Bukkit.getScheduler().runTaskTimer(this, this::tickModelDisguises, 1L, 2L);
+        Bukkit.getScheduler().runTaskTimer(this, this::tickModelDisguises, 20L, 20L);
     }
 
     @Override
@@ -2381,11 +2381,6 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             } catch (RuntimeException exception) {
                 modelDisguises.remove(entry.getKey());
                 revealPlayer(player);
-            }
-            for (Player viewer : Bukkit.getOnlinePlayers()) {
-                if (!viewer.equals(player)) {
-                    viewer.hidePlayer(this, player);
-                }
             }
         }
     }

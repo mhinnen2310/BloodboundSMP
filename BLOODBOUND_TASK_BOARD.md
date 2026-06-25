@@ -7,6 +7,8 @@ This file records active work in a simple visible format. New requests should be
 - Manual in-game validation of the EndBoss physical ritual with real Boss Shards and Corrupted Hearts.
 - Manual in-game validation that sandbox AuctionHouse listings are invisible from the SMP AuctionHouse.
 - Manual in-game validation that sandbox QuickSell uses sandbox balance and does not affect EconomyWatch.
+- Manual in-game validation of EndBoss spectator mode, four wave timing, arena fall safety and Hall of Fame victory section.
+- Run the adminmode lag isolation test matrix: survival sand, adminmode sand, adminmode no vanish/model, adminmode with vanish/model, limiter off, HUD cached.
 - Run launch smoke QA after the maintenance/adminmode fixes and record the final READY verdict.
 - Verify the Ritual Chest accepts the live Corrupted Heart item stack requirement.
 - Verify performance alerts stay quiet during normal solo mining/building.
@@ -14,7 +16,7 @@ This file records active work in a simple visible format. New requests should be
 
 ## Bezig
 
-- Add restart-safe GitHub UpdateOrchestrator and prepare GitHub release assets.
+- Validate adminmode/HUD performance fixes and EndBoss party spectator flow in-game.
 
 ## Afgerond
 
@@ -45,6 +47,12 @@ This file records active work in a simple visible format. New requests should be
 - Added `MitchSMP-UpdateOrchestrator` for GitHub release check/stage/verify/approve/history/rollback scheduling.
 - Added offline `scripts/apply-pending-update.ps1` helper for applying staged updates only while Paper is stopped.
 - Verified command permission filtering covers all 184 declared commands and aliases.
+- Added HUD stat read caching and sidebar change detection while preserving one-second ability cooldown updates.
+- Reduced staff model/disguise tick overhead and stopped repeated per-viewer hide/show calls.
+- Added FallingBlock bypass for the Performance entity-per-chunk limiter.
+- Added EndBoss spectator respawn for fallen party members while teammates survive.
+- Added EndBoss victory Hall of Fame group sections with clear time.
+- Added EndBoss red aura/glow, four bounded mob waves and arena fall safety.
 
 ## Niet Gedaan / Onzeker
 

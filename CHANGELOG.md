@@ -1,5 +1,15 @@
 # Changelog
 
+## 1.0.2 Adminmode Performance And EndBoss Flow
+
+- Cached HUD season/progression storage reads so the one-second HUD loop no longer reloads stat files every tick.
+- Skipped sidebar rewrites when HUD lines are unchanged, while keeping ability cooldown HUD updates responsive.
+- Reduced staff model/disguise overhead by removing repeated per-viewer hide/show calls from the model tick and lowering the model sync rate.
+- Excluded FallingBlock entities from the performance entity-per-chunk limiter to protect sand/gravel physics.
+- Reworked EndBoss deaths so fallen party members spectate while teammates are still alive.
+- Added EndBoss victory Hall of Fame group sections with party stands and clear time.
+- Added EndBoss arena fall safety for players and boss, red boss aura/glow, and four bounded mob waves.
+
 ## 1.0.1 Update Orchestrator
 
 - Added `MitchSMP-UpdateOrchestrator` for restart-safe GitHub release checks, staging, verification, approval, backups and rollback scheduling.
