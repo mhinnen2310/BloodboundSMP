@@ -22,6 +22,7 @@ _clean-server-test/
 resourcepacks/backups/
 
 # Generated distributables and secrets
+release-assets/
 BloodboundSMP-resourcepack.zip
 paper-*.jar
 server.properties
