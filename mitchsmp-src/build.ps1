@@ -332,6 +332,7 @@ Build-Module "hub" "hub" "MitchSMP-Hub-0.1.0.jar" $coreClassPath
 Build-Module "skyblock" "skyblock" "MitchSMP-Skyblock-0.1.0.jar" $coreClassPath
 Build-Module "performance" "performance" "MitchSMP-Performance-0.1.0.jar" $coreClassPath
 Build-Module "update-orchestrator" "update-orchestrator" "MitchSMP-UpdateOrchestrator-0.1.0.jar" $coreClassPath
+Build-Module "custommobs" "custommobs" "MitchSMP-CustomMobs-0.1.0.jar" $coreClassPath
 Build-Module "artifacts" "artifacts" "MitchSMP-Artifacts-0.1.0.jar" $coreClassPath
 Build-Module "bosses" "bosses" "MitchSMP-Bosses-0.1.0.jar" $coreClassPath
 Build-Module "bedwars" "bedwars" "MitchSMP-BedWars-0.1.0.jar" $coreClassPath

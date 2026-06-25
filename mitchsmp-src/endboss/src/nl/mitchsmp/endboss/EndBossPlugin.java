@@ -68,6 +68,7 @@ import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.PlayerInventory;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.persistence.PersistentDataType;
+import org.bukkit.plugin.Plugin;
 import org.bukkit.plugin.java.JavaPlugin;
 import org.bukkit.potion.PotionEffect;
 import org.bukkit.potion.PotionEffectType;
@@ -386,7 +387,20 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
         setEntityFlag(boss, "setRemoveWhenFarAway", false);
         boss.setFireTicks(0);
         boss.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION, 20 * 60 * 60, 0, false, true, true));
+        attachCustomArchfiendVisual(boss);
         return boss;
+    }
+
+    private void attachCustomArchfiendVisual(LivingEntity boss) {
+        Plugin plugin = Bukkit.getPluginManager().getPlugin("MitchSMP-CustomMobs");
+        if (plugin == null || !plugin.isEnabled()) {
+            return;
+        }
+        try {
+            plugin.getClass().getMethod("attachArchfiend", Entity.class).invoke(plugin, boss);
+        } catch (ReflectiveOperationException | RuntimeException exception) {
+            getLogger().warning("Could not attach Archfiend visual: " + exception.getMessage());
+        }
     }
 
     private void tickFight() {

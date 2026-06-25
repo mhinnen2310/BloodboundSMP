@@ -50,7 +50,7 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
         "MitchSMP-Skyblock", "MitchSMP-Performance", "MitchSMP-Artifacts", "MitchSMP-Bosses", "MitchSMP-BedWars",
         "MitchSMP-TNTRun", "MitchSMP-Spleef", "MitchSMP-Cosmetics", "MitchSMP-Events", "MitchSMP-Progression",
         "MitchSMP-Gameplay", "MitchSMP-Skirmish", "MitchSMP-Skills", "MitchSMP-EndBoss", "MitchSMP-Chat", "MitchSMP-AntiCheat",
-        "MitchSMP-Seasons", "MitchSMP-UpdateOrchestrator"
+        "MitchSMP-Seasons", "MitchSMP-UpdateOrchestrator", "MitchSMP-CustomMobs"
     );
     private final Map<Class<?>, Object> services = new HashMap<>();
     private CoreRankService rankService;
@@ -1017,6 +1017,7 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
                 "mitchsmp.spleef.admin",
                 "mitchsmp.events.admin",
                 "mitchsmp.bosses.admin",
+                "mitchsmp.custommobs.admin",
                 "mitchsmp.progression.admin",
                 "mitchsmp.skills.admin",
                 "mitchsmp.endboss.admin",

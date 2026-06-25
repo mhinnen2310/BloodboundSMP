@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.4 Bloodbound Archfiend Custom Boss Model
+
+- Added `MitchSMP-CustomMobs`, a vanilla-resourcepack custom mob visual controller.
+- Added Bloodbound Archfiend Blockbench source model metadata loading and runtime visual attachment.
+- Converted the Archfiend `.bbmodel` into a `bloodbound:archfiend` item model for the Bloodbound resourcepack.
+- Added 512x512 crisp-upscaled Archfiend body, glow, wings and weapon textures.
+- Integrated the Archfiend visual with the EndBoss while keeping the real boss hitbox/server AI intact.
+- Added staff-only `/custommob` diagnostics and test commands.
+
 ## 1.0.3 Update Manifest Parser Fix
 
 - Fixed the GitHub release asset parser in `MitchSMP-UpdateOrchestrator`.

@@ -4,6 +4,7 @@ This file records active work in a simple visible format. New requests should be
 
 ## Te Doen
 
+- Manual in-game validation of the Bloodbound Archfiend EndBoss visual with the rebuilt resourcepack enabled.
 - Manually replace the hosted server's updater jar once so future `/updates` commands can self-stage correctly.
 - Manual in-game validation of the EndBoss physical ritual with real Boss Shards and Corrupted Hearts.
 - Manual in-game validation that sandbox AuctionHouse listings are invisible from the SMP AuctionHouse.
@@ -55,6 +56,9 @@ This file records active work in a simple visible format. New requests should be
 - Added EndBoss victory Hall of Fame group sections with clear time.
 - Added EndBoss red aura/glow, four bounded mob waves and arena fall safety.
 - Fixed GitHub UpdateOrchestrator release asset parsing so manifest detection works with GitHub API field order.
+- Added `MitchSMP-CustomMobs` for Bloodbound Archfiend custom boss visuals.
+- Converted the Archfiend Blockbench model into the Bloodbound resourcepack as `bloodbound:archfiend`.
+- Added crisp-upscaled 512x512 Archfiend body/glow/wings/weapon textures and source model documentation.
 
 ## Niet Gedaan / Onzeker
 

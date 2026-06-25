@@ -1,0 +1,13 @@
+name: MitchSMP-CustomMobs
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.custommobs.CustomMobsPlugin
+author: Mitchel
+description: Bloodbound custom model controller for vanilla-resourcepack boss visuals.
+depend:
+  - MitchSMP-Core
+commands:
+  custommob:
+    aliases: [custommobs, mobmodel]
+    description: Manage Bloodbound custom mob visuals.
+    usage: /custommob <status|reload|attach|test|clear>

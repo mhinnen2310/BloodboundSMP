@@ -48,6 +48,7 @@ public final class PermissionsPlugin extends JavaPlugin implements TabCompleter 
         new CommandPermission("/relic give, /progression config/reset, /legacy snapshot/delete/purgehof/rebuild", "mitchsmp.progression.admin"),
         new CommandPermission("/skills admin, /abilities config", "mitchsmp.skills.admin"),
         new CommandPermission("/endboss force/end/config", "mitchsmp.endboss.admin"),
+        new CommandPermission("/custommob status/reload/attach/test/clear", "mitchsmp.custommobs.admin"),
         new CommandPermission("/season start/end/reset/delete/purge", "mitchsmp.season.admin"),
         new CommandPermission("/bw paid/premade/start/end/admin", "mitchsmp.bedwars.admin"),
         new CommandPermission("/tntrun premade/paid/start/end", "mitchsmp.tntrun.admin"),
