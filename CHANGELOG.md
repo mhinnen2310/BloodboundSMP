@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.0.9 Archfiend Resourcepack Model Fix
+
+- Fixed the Bloodbound Archfiend item model so Minecraft no longer rejects it as an invalid model.
+- Scaled model elements into vanilla item-model bounds.
+- Normalized custom model rotation angles to values accepted by Minecraft item models.
+- Rebuilt `BloodboundSMP-resourcepack.zip` with the corrected Archfiend visual.
+
 ## 1.0.8 Update Jar Cleanup
 
 - Update application now removes old versioned `MitchSMP-*.jar` files for each plugin before copying the newly staged jar.
