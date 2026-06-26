@@ -641,7 +641,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         if (!MitchSMP.permissions().isAdminRestricted(player)) {
             addSkillXp(player, Category.ENCHANTING, Math.max(10, effectiveEnchantLevel(event.getExpLevelCost()) * 2));
         }
-        Ability ability = baseAbilityFor(item);
+        Ability ability = item.getType() == Material.ENCHANTED_BOOK ? randomBookAbility() : baseAbilityFor(item);
         if (ability == null || hasAwakenedAbility(item, ability)) {
             return;
         }
@@ -1206,12 +1206,11 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
     private void applyMiningPerks(Player player, Block block, ItemStack tool) {
         int speed = perk(player, Perk.MINING_SPEED);
         if (speed > 0) {
-            int discipline = perk(player, Perk.VEIN_DISCIPLINE);
             int mastery = perk(player, Perk.MINING_MASTERY);
-            player.addPotionEffect(new PotionEffect(PotionEffectType.HASTE, 120 + discipline * 10, Math.min(3, (speed + mastery) / 6), false, false, true));
+            player.addPotionEffect(new PotionEffect(PotionEffectType.HASTE, 140, Math.min(3, (speed + mastery) / 6), false, false, true));
         }
         int yield = perk(player, Perk.MINING_YIELD);
-        double yieldChance = yield * 2.0D + perk(player, Perk.ORE_SURVEYOR) + perk(player, Perk.MINING_MASTERY) * 2.0D;
+        double yieldChance = yield * 2.5D + perk(player, Perk.ORE_SURVEYOR) * 1.5D + perk(player, Perk.VEIN_DISCIPLINE) + perk(player, Perk.MINING_MASTERY) * 3.0D;
         if (yieldChance > 0.0D && block.getType().name().contains("ORE") && Math.random() * 100.0D < Math.min(75.0D, yieldChance)) {
             player.getWorld().dropItemNaturally(block.getLocation(), new ItemStack(block.getType()));
         }
@@ -1773,6 +1772,11 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             return Ability.AEGIS_GUARD;
         }
         return null;
+    }
+
+    private Ability randomBookAbility() {
+        Ability[] abilities = Ability.values();
+        return abilities[random.nextInt(abilities.length)];
     }
 
     private AbilityState state(ItemStack item, Ability ability) {
@@ -2678,11 +2682,11 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
 
     private enum Perk {
         MINING_SPEED("mining_speed", "Mining Speed", Category.MINING, Material.DIAMOND_PICKAXE, 19, 1, 20, "Effect: frequent Haste while mining so long sessions feel faster.|Per tier: stronger and more reliable mining speed boosts."),
-        MINING_YIELD("mining_yield", "Mining Yield", Category.MINING, Material.DIAMOND_ORE, 20, 5, 25, "Effect: ore blocks can drop an extra ore block on break.|Per tier: +2% bonus-drop chance, max +50%."),
+        MINING_YIELD("mining_yield", "Mining Yield", Category.MINING, Material.DIAMOND_ORE, 20, 5, 25, "Effect: ore blocks can drop an extra ore block on break.|Per tier: +2.5% bonus-drop chance, max +62.5%."),
         DEEP_MINER("deep_miner", "Deep Miner", Category.MINING, Material.DEEPSLATE_DIAMOND_ORE, 21, 15, 15, "Effect: grants bonus Mining XP at Y 0 and below.|Per tiers: up to +7 XP for every deep-mined block."),
-        ORE_SURVEYOR("ore_surveyor", "Ore Surveyor", Category.MINING, Material.COMPASS, 22, 25, 10, "Effect: improves the chance that ore produces a bonus ore block.|Per tier: +1% bonus ore chance."),
-        VEIN_DISCIPLINE("vein_discipline", "Vein Discipline", Category.MINING, Material.IRON_PICKAXE, 23, 40, 10, "Effect: extends the Haste supplied by Mining Speed.|Per tier: +0.5 seconds of Haste after mining."),
-        MINING_MASTERY("mining_mastery", "Mining Mastery", Category.MINING, Material.NETHERITE_PICKAXE, 24, 75, 5, "Effect: strengthens Haste and bonus ore yield.|Per tier: +2% bonus ore chance and contributes to Haste level."),
+        ORE_SURVEYOR("ore_surveyor", "Ore Surveyor", Category.MINING, Material.COMPASS, 22, 25, 10, "Effect: improves valuable ore payout without changing mining speed.|Per tier: +1.5% bonus ore chance."),
+        VEIN_DISCIPLINE("vein_discipline", "Vein Discipline", Category.MINING, Material.IRON_PICKAXE, 23, 40, 10, "Effect: cleaner vein work improves ore yield instead of duplicating Haste.|Per tier: +1% bonus ore chance."),
+        MINING_MASTERY("mining_mastery", "Mining Mastery", Category.MINING, Material.NETHERITE_PICKAXE, 24, 75, 5, "Effect: mining capstone for stronger Haste and better ore yield.|Per tier: +3% bonus ore chance and contributes to Haste level."),
         FARMING_YIELD("farming_yield", "Farming Yield", Category.FARMING, Material.WHEAT, 21, 1, 25, "Effect: crops and logs can drop extra block loot.|Per tier: +3.5% bonus-drop chance, max 87.5%."),
         FORESTER("forester", "Forester", Category.FARMING, Material.OAK_LOG, 22, 8, 15, "Effect: logs grant more Farming XP and can duplicate.|Per tier: extra XP plus +1.5% bonus-log chance."),
         REPLANTER("replanter", "Replanter", Category.FARMING, Material.CARROT, 23, 15, 10, "Effect: broken crop blocks can auto-replant.|Per tier: higher replant chance, up to 95%."),
@@ -2701,15 +2705,15 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         RELIC_ALCHEMY("relic_alchemy", "Relic Alchemy", Category.ALCHEMY, Material.ECHO_SHARD, 27, 45, 10, "Effect: raises Alchemy progression from rare consumables.|Per tier: contributes to mastery rewards without consuming boss currency."),
         INFERNAL_RESOLVE("infernal_resolve", "Infernal Resolve", Category.ALCHEMY, Material.MAGMA_BLOCK, 28, 60, 10, "Effect: grants maintained Fire Resistance while exploring the Nether.|Any purchased tier unlocks the passive protection."),
         ALCHEMY_GRANDMASTER("alchemy_grandmaster", "Alchemy Grandmaster", Category.ALCHEMY, Material.DRAGON_EGG, 29, 85, 5, "Effect: consumed potion effects last longer.|Per tier: +5% duration, max +25%."),
-        ENCHANTING_MASTERY("enchanting_mastery", "Enchanting Mastery", Category.ENCHANTING, Material.EXPERIENCE_BOTTLE, 25, 10, 20, "Effect: sneller item-ability challenges.|Per tier: meer progress uit ability acties."),
+        ENCHANTING_MASTERY("enchanting_mastery", "Enchanting Mastery", Category.ENCHANTING, Material.EXPERIENCE_BOTTLE, 25, 10, 20, "Effect: improves Bloodbound ability challenge progression.|Per tier: more progress from ability actions."),
         RUNE_SENSE("rune_sense", "Rune Sense", Category.ENCHANTING, Material.BOOK, 26, 15, 10, "Effect: increases the chance to roll a Bloodbound ability enchant.|Per tier: improves rare ability discovery."),
         TABLE_ATTUNEMENT("table_attunement", "Table Attunement", Category.ENCHANTING, Material.ANVIL, 27, 25, 10, "Effect: improves high-level Bloodbound enchant rolls.|Per tier: further raises ability-enchant chance."),
         BOOKSMITH("booksmith", "Booksmith", Category.ENCHANTING, Material.ENCHANTED_BOOK, 28, 35, 10, "Effect: max rank unlocks `/skills anvil` from anywhere.|The portable anvil still follows normal item rules."),
         ANVIL_CARE("anvil_care", "Anvil Care", Category.ENCHANTING, Material.IRON_INGOT, 29, 50, 10, "Effect: represents mastery of repair and combination work.|Per tier: increases Enchanting progression gained from ability challenges."),
         ENCHANTING_GRANDMASTER("enchanting_grandmaster", "Enchanting Grandmaster", Category.ENCHANTING, Material.NETHER_STAR, 30, 80, 5, "Effect: max rank unlocks `/skills enchant` from anywhere.|Portable enchanting still uses normal XP and lapis."),
         ECONOMY_QUICKSELL_EFFICIENCY("economy_quicksell_efficiency", "QuickSell Efficiency", Category.ECONOMY, Material.EMERALD, 31, 1, 15, "Effect: improves the final `/sell` payout.|Per tier: +1% QuickSell value, max +15%."),
-        MARKET_ANALYST("market_analyst", "Market Analyst", Category.ECONOMY, Material.PAPER, 32, 5, 10, "Effect: beter inzicht in dynamische prijzen.|Per tier: sterkere market-awareness hooks."),
-        BULK_SELLER("bulk_seller", "Bulk Seller", Category.ECONOMY, Material.HOPPER, 33, 10, 10, "Effect: bulk verkoop wordt waardevoller.|Per tier: betere grote-sale progression."),
+        MARKET_ANALYST("market_analyst", "Market Analyst", Category.ECONOMY, Material.PAPER, 32, 5, 10, "Effect: clearer dynamic market guidance in economy UIs.|Per tier: improves market-awareness hooks."),
+        BULK_SELLER("bulk_seller", "Bulk Seller", Category.ECONOMY, Material.HOPPER, 33, 10, 10, "Effect: bulk selling becomes more efficient.|Per tier: improves large-sale progression."),
         ORDER_RUNNER("order_runner", "Order Runner", Category.ECONOMY, Material.CHEST, 34, 15, 10, "Effect: resource orders pay more.|Per tier: +1.5% order payout, max +15%."),
         CONTRACT_BROKER("contract_broker", "Contract Broker", Category.ECONOMY, Material.COMPASS, 35, 20, 10, "Effect: high-risk contracts pay more.|Per tier: +2% contract payout, max +20%."),
         AUCTION_APPRAISER("auction_appraiser", "Auction Appraiser", Category.ECONOMY, Material.GOLD_INGOT, 36, 25, 10, "Effect: AH-prijzen beter leren lezen.|Per tier: betere listing/value hooks."),

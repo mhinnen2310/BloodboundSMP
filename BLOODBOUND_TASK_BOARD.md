@@ -19,6 +19,12 @@ This file records active work in a simple visible format. New requests should be
 
 ## Afgerond
 
+- Repaired legacy Boss Shards and Corrupted Hearts so existing items regain their Bloodbound item model.
+- Rebuilt the Bloodbound resourcepack with verified 26.1.2 Boss Shard, Corrupted Heart and Archfiend item model entries.
+- Added UpdateOrchestrator startup release checks and staff join update-status messages.
+- Allowed Bloodbound ability enchants to roll on enchanted books.
+- Updated EconomyWatch to account for Bloodbound ability rarity when valuing books/tools.
+- Reduced duplicated Mining skill behavior by changing Vein Discipline from Haste duration into ore-yield identity.
 - Added visible startup/storage backend reporting for SQLite vs fallback properties.
 - Added SQLite-first storage with fallback for legacy `PropertiesFile` users.
 - Added maintenance mode and guided smoke QA.

@@ -351,14 +351,32 @@ public final class ArtifactsPlugin extends JavaPlugin implements Listener, TabCo
             return false;
         }
         ItemMeta meta = item.getItemMeta();
-        if (meta == null || !meta.getPersistentDataContainer().has(shardKey, PersistentDataType.BYTE)) {
+        if (meta == null || (!meta.getPersistentDataContainer().has(shardKey, PersistentDataType.BYTE) && !looksLikeLegacyShard(meta))) {
             return false;
         }
+        meta.getPersistentDataContainer().set(shardKey, PersistentDataType.BYTE, (byte) 1);
         setVisualModel(meta, 910001, "boss_shard");
         meta.setDisplayName(Text.color("&dBoss Shard"));
         meta.setLore(List.of(Text.color("&7Extremely rare boss currency."), Text.color("&7Spend it in &f/opshop&7.")));
         item.setItemMeta(meta);
         return true;
+    }
+
+    private boolean looksLikeLegacyShard(ItemMeta meta) {
+        if (meta == null || !meta.hasDisplayName()) {
+            return false;
+        }
+        String display = Text.stripColorCodes(meta.getDisplayName());
+        if (!"Boss Shard".equalsIgnoreCase(display)) {
+            return false;
+        }
+        if (meta.getLore() == null || meta.getLore().isEmpty()) {
+            return true;
+        }
+        return meta.getLore().stream()
+            .map(Text::stripColorCodes)
+            .anyMatch(line -> line.toLowerCase(Locale.ROOT).contains("boss currency")
+                || line.toLowerCase(Locale.ROOT).contains("/opshop"));
     }
 
     @EventHandler

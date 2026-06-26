@@ -292,9 +292,10 @@ public final class CorruptedHeartsPlugin extends JavaPlugin implements Listener,
             return false;
         }
         ItemMeta meta = item.getItemMeta();
-        if (meta == null || !meta.getPersistentDataContainer().has(key, PersistentDataType.BYTE)) {
+        if (meta == null || (!meta.getPersistentDataContainer().has(key, PersistentDataType.BYTE) && !looksLikeLegacyHeart(meta))) {
             return false;
         }
+        meta.getPersistentDataContainer().set(key, PersistentDataType.BYTE, (byte) 1);
         setVisualModel(meta, 910002, "corrupted_heart");
         meta.setDisplayName(Text.color("&5Corrupted Heart"));
         meta.setLore(List.of(
@@ -304,6 +305,23 @@ public final class CorruptedHeartsPlugin extends JavaPlugin implements Listener,
         ));
         item.setItemMeta(meta);
         return true;
+    }
+
+    private boolean looksLikeLegacyHeart(ItemMeta meta) {
+        if (meta == null || !meta.hasDisplayName()) {
+            return false;
+        }
+        String display = Text.stripColorCodes(meta.getDisplayName());
+        if (!"Corrupted Heart".equalsIgnoreCase(display)) {
+            return false;
+        }
+        if (meta.getLore() == null || meta.getLore().isEmpty()) {
+            return true;
+        }
+        return meta.getLore().stream()
+            .map(Text::stripColorCodes)
+            .anyMatch(line -> line.toLowerCase(Locale.ROOT).contains("restore 1 heart")
+                || line.toLowerCase(Locale.ROOT).contains("below 10 hearts"));
     }
 
     @EventHandler

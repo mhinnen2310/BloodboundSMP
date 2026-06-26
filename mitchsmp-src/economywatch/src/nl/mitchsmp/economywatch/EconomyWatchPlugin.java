@@ -226,12 +226,20 @@ public final class EconomyWatchPlugin extends JavaPlugin implements EconomyWatch
         double enchantBonus = enchantmentValue(item);
         double durability = durabilityMultiplier(item);
         double rarityBonus = rarityBonus(item);
+        double bloodboundBonus = bloodboundAbilityValue(item);
         double value = (price + enchantBonus + rarityBonus) * durability;
+        if (bloodboundBonus > 0.0D) {
+            value += bloodboundBonus;
+        }
         double floor = safeFloor;
         if (floor > 0.0D && enchantBonus > 0.0D) {
             floor *= 1.35D;
         }
         double cap = Math.max(maximumPrice(item.getType()) * (isGear(item.getType()) ? 12.0D : 2.0D), value * 1.25D);
+        if (bloodboundBonus > 0.0D) {
+            cap = Math.max(cap, bloodboundBonus * 1.5D);
+            floor = Math.max(floor, item.getType() == Material.ENCHANTED_BOOK ? bloodboundBonus * 0.8D : safeFloor);
+        }
         return Math.max(Math.max(minimumPrice(item.getType()), floor), Math.min(cap, value));
     }
 
@@ -853,6 +861,31 @@ public final class EconomyWatchPlugin extends JavaPlugin implements EconomyWatch
             }
         }
         return bonus;
+    }
+
+    private double bloodboundAbilityValue(ItemStack item) {
+        if (item == null || !item.hasItemMeta() || item.getItemMeta() == null || item.getItemMeta().getLore() == null) {
+            return 0.0D;
+        }
+        double value = 0.0D;
+        for (String line : item.getItemMeta().getLore()) {
+            String stripped = org.bukkit.ChatColor.stripColor(line == null ? "" : line);
+            if (stripped == null) {
+                continue;
+            }
+            String lower = stripped.toLowerCase(Locale.ROOT);
+            if (lower.startsWith("bloodboundsmp enchant:") || lower.startsWith("bloodbound enchant:")) {
+                value += item.getType() == Material.ENCHANTED_BOOK ? 4500.0D : 2200.0D;
+                if (lower.contains("god's drill") || lower.contains("blood-forged") || lower.contains("aegis")) {
+                    value += 1200.0D;
+                }
+            } else if (lower.startsWith("status: unlocked")) {
+                value += 2500.0D;
+            } else if (lower.startsWith("challenge:")) {
+                value += 350.0D;
+            }
+        }
+        return value * moneyMultiplier();
     }
 
     private boolean isUnbreakable(ItemMeta meta) {

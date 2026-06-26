@@ -1,5 +1,14 @@
 # Changelog
 
+## 1.0.16 Resourcepack Repair, Updater Checks and Skill Tuning
+
+- Repaired legacy Boss Shard and Corrupted Heart detection so older/generated items regain their hidden marker and correct Bloodbound item model.
+- Rebuilt and verified the 26.1.2 resourcepack entries for Boss Shards, Corrupted Hearts and the Archfiend item model.
+- Added automatic startup release checks in the updater and staff join update-status notices.
+- Allowed Bloodbound ability enchants to roll on enchanted books.
+- Updated EconomyWatch so rare Bloodbound ability books/items are valued as endgame rarity, not plain gear.
+- Tuned Mining skill perks so Vein Discipline improves ore-yield identity instead of duplicating Haste duration.
+
 ## 1.0.14 Archfiend HD Texture Pass
 
 - Reworked the Archfiend texture atlas to reduce repeated neon surfaces and improve the dark fantasy boss look.

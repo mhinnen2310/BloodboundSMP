@@ -36,9 +36,12 @@ import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
 import org.bukkit.entity.Player;
+import org.bukkit.event.EventHandler;
+import org.bukkit.event.Listener;
+import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.plugin.java.JavaPlugin;
 
-public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCompleter {
+public final class UpdateOrchestratorPlugin extends JavaPlugin implements Listener, TabCompleter {
     private static final String MANIFEST = "mitchsmp-release-manifest.json";
     private static final Pattern ASSET_OBJECT_PATTERN = Pattern.compile("\\{[^{}]*\"browser_download_url\"\\s*:\\s*\"[^\"]+\"[^{}]*}", Pattern.DOTALL);
     private static final Pattern ASSET_PAIR_PATTERN = Pattern.compile("\"name\"\\s*:\\s*\"([^\"]+)\"(?:(?!\"name\"\\s*:).)*?\"browser_download_url\"\\s*:\\s*\"([^\"]+)\"", Pattern.DOTALL);
@@ -72,8 +75,10 @@ public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCom
         defaults();
         command("updates");
         ensureDirs();
+        Bukkit.getPluginManager().registerEvents(this, this);
         startupDiagnostics();
         applyPendingAtStartup();
+        startReleaseCheck("startup");
     }
 
     @Override
@@ -199,6 +204,68 @@ public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCom
         reply(sender, "&7Current: &f" + currentRelease());
         reply(sender, "&7Latest stable: &f" + release.tag());
         reply(sender, release.tag().equals(currentRelease()) ? "&aServer is up to date." : "&eUpdate available. Use &f/updates stage " + release.tag());
+    }
+
+    @EventHandler
+    public void onStaffJoin(PlayerJoinEvent event) {
+        Player player = event.getPlayer();
+        if (!isStaffUpdateViewer(player)) {
+            return;
+        }
+        Bukkit.getScheduler().runTaskLater(this, () -> sendStaffUpdateStatus(player), 60L);
+    }
+
+    private void startReleaseCheck(String source) {
+        Thread thread = new Thread(() -> checkLatestSilently(source), "Bloodbound-UpdateStartupCheck");
+        thread.setDaemon(true);
+        thread.start();
+    }
+
+    private void checkLatestSilently(String source) {
+        try {
+            ReleaseInfo release = fetchRelease("latest");
+            lastCheck = Instant.now().toString();
+            lastAvailable = release.tag();
+            String current = currentRelease();
+            if (release.tag().equals(current)) {
+                getLogger().info("Release check (" + source + "): server is up to date on " + current + ".");
+            } else {
+                getLogger().warning("Release check (" + source + "): update available. Current=" + current + ", latest=" + release.tag() + ".");
+            }
+            historyLine(source + " release-check current=" + current + " latest=" + release.tag());
+        } catch (Exception exception) {
+            lastCheck = Instant.now().toString();
+            getLogger().warning("Release check (" + source + ") failed: " + exception.getMessage());
+            historyLine(source + " release-check failed " + exception.getMessage());
+        }
+    }
+
+    private void sendStaffUpdateStatus(Player player) {
+        if (player == null || !isStaffUpdateViewer(player)) {
+            return;
+        }
+        String latest = lastAvailable == null ? "unknown" : lastAvailable;
+        if (latest.equals("unknown")) {
+            Text.msg(player, "&7Update status: &echecking GitHub releases...");
+            startReleaseCheck("staff-join");
+            return;
+        }
+        String current = currentRelease();
+        if (latest.equals(current)) {
+            Text.msg(player, "&7Update status: &aBloodbound plugins are up to date &8(" + current + ").");
+        } else {
+            Text.msg(player, "&7Update status: &eupdate available &f" + latest + " &8(current " + current + ").");
+        }
+    }
+
+    private boolean isStaffUpdateViewer(Player player) {
+        if (player == null) {
+            return false;
+        }
+        MitchRank rank = MitchSMP.ranks().getRank(player.getUniqueId());
+        return rank.ordinal() >= MitchRank.HELPER.ordinal()
+            || MitchSMP.permissions().has(player, "mitchsmp.updates.admin")
+            || MitchSMP.permissions().has(player, "mitchsmp.errors.view");
     }
 
     private void list(CommandSender sender) throws Exception {
