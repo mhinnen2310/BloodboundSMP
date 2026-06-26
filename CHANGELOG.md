@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.13 Archfiend Texture Path Compatibility
+
+- Replaced numeric Archfiend texture keys with named texture keys for better Minecraft 26.x item model compatibility.
+- Added item-scoped Archfiend texture aliases under `assets/bloodbound/textures/item/archfiend/`.
+- Rebuilt the resourcepack so `/custommob test` can resolve the model and its textures from the same namespace.
+
 ## 1.0.12 Archfiend CustomModelData Fallback
 
 - Added Archfiend `custom_model_data` fallback mapping to `nether_star` item definitions.
