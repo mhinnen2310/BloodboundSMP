@@ -270,12 +270,20 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
             Text.msg(sender, "&cGeen permissie.");
             return true;
         }
-        if (session == null || session.state != State.ASSEMBLING) {
-            Text.msg(sender, "&cGeen ritual party om te starten.");
+        if (session != null && session.state == State.RUNNING) {
+            Text.msg(sender, "&cA boss fight is already running.");
             return true;
         }
+        if (session == null) {
+            if (!(sender instanceof Player player)) {
+                Text.msg(sender, "&cConsole can only force-start an existing assembling party.");
+                return true;
+            }
+            session = new Session(player.getUniqueId());
+            session.participants.add(player.getUniqueId());
+        }
         startFight();
-        Text.msg(sender, "&aEndboss force-start uitgevoerd.");
+        Text.msg(sender, "&aEndboss force-start executed.");
         return true;
     }
 

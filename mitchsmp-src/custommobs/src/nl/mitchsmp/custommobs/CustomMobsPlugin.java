@@ -152,8 +152,58 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
                 return true;
             }
             String targetName = args.length > 1 ? args[1] : player.getName();
-            spawnPlayerClone(player.getLocation(), targetName);
+            String displayName = args.length > 2 ? String.join(" ", java.util.Arrays.copyOfRange(args, 2, args.length)) : "&6Hall of Fame &f" + targetName;
+            spawnPlayerClone(player.getLocation(), targetName, displayName);
             Text.msg(player, "&aSpawned Bloodbound clone for &f" + targetName + "&a.");
+            return true;
+        }
+        if (sub.equals("rename") || sub.equals("name")) {
+            if (!(sender instanceof Player player)) {
+                Text.msg(sender, "&cPlayers only.");
+                return true;
+            }
+            if (args.length < 2) {
+                Text.msg(player, "&cUsage: /custommob rename <display name>");
+                return true;
+            }
+            ArmorStand stand = nearestManagedStand(player, 8.0D);
+            if (stand == null) {
+                Text.msg(player, "&cNo nearby Bloodbound custom visual or clone found.");
+                return true;
+            }
+            stand.setCustomName(Text.color(String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length))));
+            stand.setCustomNameVisible(true);
+            Text.msg(player, "&aRenamed nearest Bloodbound visual.");
+            return true;
+        }
+        if (sub.equals("remove") || sub.equals("delete")) {
+            if (!(sender instanceof Player player)) {
+                Text.msg(sender, "&cPlayers only.");
+                return true;
+            }
+            ArmorStand stand = nearestManagedStand(player, 8.0D);
+            if (stand == null) {
+                Text.msg(player, "&cNo nearby Bloodbound custom visual or clone found.");
+                return true;
+            }
+            removeSolidFootprint(stand.getUniqueId());
+            visuals.entrySet().removeIf(entry -> entry.getValue().visualId().equals(stand.getUniqueId()) || entry.getKey().equals(stand.getUniqueId()));
+            stand.remove();
+            Text.msg(player, "&aRemoved nearest Bloodbound visual.");
+            return true;
+        }
+        if (sub.equals("near") || sub.equals("info")) {
+            if (!(sender instanceof Player player)) {
+                Text.msg(sender, "&cPlayers only.");
+                return true;
+            }
+            ArmorStand stand = nearestManagedStand(player, 12.0D);
+            if (stand == null) {
+                Text.msg(player, "&7No Bloodbound custom visual within 12 blocks.");
+                return true;
+            }
+            Text.msg(player, "&4Bloodbound visual &8| &7distance: &f" + Math.round(stand.getLocation().distance(player.getLocation()) * 10.0D) / 10.0D);
+            Text.msg(player, "&7Name: &f" + customName(stand));
             return true;
         }
         if (sub.equals("test") || sub.equals("place")) {
@@ -171,7 +221,7 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
             Text.msg(player, "&aSpawned standalone &f" + model + " &avisual in &f" + (solid ? "solid" : "ghost") + " &amode. Use &f/custommob clear&a to remove.");
             return true;
         }
-        Text.msg(sender, "&cUsage: /custommob <status|reload|models|animations|uploadinfo|attach|clone|test|place|clear>");
+        Text.msg(sender, "&cUsage: /custommob <status|reload|models|animations|uploadinfo|attach|clone|rename|info|remove|test|place|clear>");
         return true;
     }
 
@@ -181,7 +231,7 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
             return List.of();
         }
         if (args.length == 1) {
-            return Tab.complete(args[0], "status", "reload", "models", "animations", "uploadinfo", "attach", "clone", "test", "place", "clear");
+            return Tab.complete(args[0], "status", "reload", "models", "animations", "uploadinfo", "attach", "clone", "rename", "info", "remove", "test", "place", "clear");
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("clone")) {
             return Tab.onlinePlayers(args[1]);
@@ -333,6 +383,10 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
     }
 
     public Entity spawnPlayerClone(Location location, String playerName) {
+        return spawnPlayerClone(location, playerName, "&6Hall of Fame &f" + playerName);
+    }
+
+    public Entity spawnPlayerClone(Location location, String playerName, String displayName) {
         if (location == null || location.getWorld() == null) {
             return null;
         }
@@ -341,7 +395,7 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
         stand.setGravity(false);
         stand.setBasePlate(false);
         stand.setArms(true);
-        stand.setCustomName(Text.color("&6Hall of Fame &f" + playerName));
+        stand.setCustomName(Text.color(displayName == null || displayName.isBlank() ? "&6Hall of Fame &f" + playerName : displayName));
         stand.setCustomNameVisible(true);
         if (stand.getEquipment() != null) {
             stand.getEquipment().setHelmet(playerHead(playerName));
@@ -352,6 +406,39 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
         }
         addScoreboardTag(stand, "bloodbound_player_clone");
         return stand;
+    }
+
+    private ArmorStand nearestManagedStand(Player player, double radius) {
+        if (player == null || player.getWorld() == null) {
+            return null;
+        }
+        ArmorStand best = null;
+        double bestDistance = radius * radius;
+        for (Entity entity : player.getWorld().getEntities()) {
+            if (!(entity instanceof ArmorStand stand) || !isManagedVisual(stand)) {
+                continue;
+            }
+            double distance = stand.getLocation().distanceSquared(player.getLocation());
+            if (distance < bestDistance) {
+                bestDistance = distance;
+                best = stand;
+            }
+        }
+        return best;
+    }
+
+    private boolean isManagedVisual(Entity entity) {
+        return hasScoreboardTag(entity, "bloodbound_archfiend_visual")
+            || hasScoreboardTag(entity, "bloodbound_player_clone");
+    }
+
+    private boolean hasScoreboardTag(Entity entity, String tag) {
+        try {
+            Object tags = entity.getClass().getMethod("getScoreboardTags").invoke(entity);
+            return tags instanceof java.util.Set<?> set && set.contains(tag);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return false;
+        }
     }
 
     private ItemStack playerHead(String playerName) {

@@ -3088,15 +3088,19 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
     }
 
     private Entity spawnTestEndBoss(Location location) {
-        Entity entity = location.getWorld().spawnEntity(location, EntityType.WARDEN);
+        Entity entity = location.getWorld().spawnEntity(location, EntityType.ZOMBIE);
         if (entity instanceof LivingEntity boss) {
-            boss.setCustomName(Text.color("&4Infernal Sovereign &7(Test)"));
+            boss.setCustomName(Text.color("&4Bloodbound Archfiend &7(Test)"));
             boss.setCustomNameVisible(true);
             if (boss.getAttribute(Attribute.MAX_HEALTH) != null) {
                 boss.getAttribute(Attribute.MAX_HEALTH).setBaseValue(5000.0D);
             }
             boss.setHealth(5000.0D);
-            entityFlag(boss, "setGlowing", true);
+            entityFlag(boss, "setInvisible", true);
+            entityFlag(boss, "setSilent", true);
+            entityFlag(boss, "setAI", false);
+            entityFlag(boss, "setGlowing", false);
+            entityFlag(boss, "setRemoveWhenFarAway", false);
             attachArchfiendVisual(boss);
         }
         return entity;

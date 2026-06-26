@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.0.18 Staff Clones and EndBoss Test Route Fix
+
+- Expanded CustomMobs staff tooling with clone display names, nearest visual info, rename and remove commands for Hall of Fame/NPC decoration work.
+- Added CustomMobs clone support suitable for staff-created Hall of Fame displays and static NPC-like decorations.
+- Fixed `/spawnmob endboss` and `/testmob endboss` so sandbox testing no longer spawns a visible Warden.
+- Made sandbox test EndBoss use a hidden controller with the Bloodbound Archfiend visual attached.
+- Improved `/endboss force` so staff can force-start the full bossfight directly without first opening a ritual party.
+
 ## 1.0.17 Skill Lanes, Ability Books and Archfiend Boss Controller
 
 - Reworked the skilltree into path-based identity lanes with active Bloodbound abilities like `/scout`, `/markvein`, `/bloodrush`, `/brewboost` and `/contractboost`.

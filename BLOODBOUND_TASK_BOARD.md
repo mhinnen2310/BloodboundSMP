@@ -19,6 +19,10 @@ This file records active work in a simple visible format. New requests should be
 
 ## Afgerond
 
+- Expanded CustomMobs staff tooling with clone display names, nearest visual info, rename and remove controls for Hall of Fame/NPC decoration.
+- Fixed `/testmob endboss` and `/spawnmob endboss` so sandbox testing no longer spawns a visible Warden.
+- Made test EndBoss use a hidden controller with the Bloodbound Archfiend visual attached.
+- Improved `/endboss force` so staff can start a full bossfight directly without a pre-opened ritual party.
 - Reworked the skilltree into exclusive Bloodbound path lanes with active abilities instead of mostly repeated percentage perks.
 - Added a one-time wipe for test-launch skill data so the redesigned skilltree starts clean.
 - Added Bloodbound ability books that can transfer the matching ability to the correct weapon/tool through an anvil.
