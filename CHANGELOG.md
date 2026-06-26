@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.10 Archfiend Visual Quality Pass
+
+- Reworked Archfiend textures toward a darker Bloodbound endgame style: obsidian black, crimson cracks, bone accents, gold highlights and hotter wing/glow details.
+- Added extra model silhouette details including infernal horns, crimson horn tips, back spines, bone ribs and a crown aura.
+- Rebuilt `BloodboundSMP-resourcepack.zip` with the scarier Archfiend visual.
+
 ## 1.0.9 Archfiend Resourcepack Model Fix
 
 - Fixed the Bloodbound Archfiend item model so Minecraft no longer rejects it as an invalid model.
