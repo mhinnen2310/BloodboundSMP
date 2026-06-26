@@ -2201,7 +2201,28 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             return false;
         }
         String name = material.name();
-        return name.contains("ORE") || name.contains("STONE") || name.contains("DEEPSLATE") || material == Material.ANCIENT_DEBRIS;
+        if (name.contains("CHEST") || name.contains("SHULKER") || name.contains("BARREL")
+            || name.contains("SPAWNER") || name.contains("BED") || name.contains("DOOR")
+            || name.contains("SIGN") || name.contains("BUTTON") || name.contains("PRESSURE_PLATE")) {
+            return false;
+        }
+        return name.contains("ORE")
+            || name.contains("STONE")
+            || name.contains("DEEPSLATE")
+            || name.contains("BLACKSTONE")
+            || name.contains("BASALT")
+            || name.contains("TUFF")
+            || name.contains("CALCITE")
+            || name.contains("DRIPSTONE")
+            || name.contains("TERRACOTTA")
+            || name.contains("CONCRETE")
+            || name.contains("PRISMARINE")
+            || name.contains("NETHERRACK")
+            || name.contains("END_STONE")
+            || name.contains("OBSIDIAN")
+            || name.contains("BRICKS")
+            || name.contains("COPPER")
+            || material == Material.ANCIENT_DEBRIS;
     }
 
     private boolean isShovelBlock(Material material) {

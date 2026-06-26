@@ -132,6 +132,12 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         Map.entry("modelchanger", "mitchsmp.essentials.admin"),
         Map.entry("lagclear", "mitchsmp.essentials.admin"),
         Map.entry("clearlag", "mitchsmp.essentials.admin"),
+        Map.entry("spawnmob", "mitchsmp.essentials.admin"),
+        Map.entry("mobspawn", "mitchsmp.essentials.admin"),
+        Map.entry("testmob", "mitchsmp.essentials.admin"),
+        Map.entry("killall", "mitchsmp.essentials.admin"),
+        Map.entry("kilall", "mitchsmp.essentials.admin"),
+        Map.entry("clearmobs", "mitchsmp.essentials.admin"),
         Map.entry("testworld", "mitchsmp.essentials.admin"),
         Map.entry("tworld", "mitchsmp.essentials.admin"),
         Map.entry("sandbox", "mitchsmp.essentials.admin"),
@@ -299,7 +305,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         jailWorld();
         loadJails();
         Bukkit.getPluginManager().registerEvents(this, this);
-        for (String command : List.of("spawn", "setspawn", "heal", "feed", "fly", "gamemode", "day", "night", "sun", "rain", "speed", "trash", "admin", "invsee", "enderchest", "tp", "tphere", "clearinventory", "back", "commands", "help", "menu", "noclip", "fakeores", "godtools", "freeze", "lockdown", "release", "jail", "unjail", "adminmode", "staffmode", "vanish", "model", "starterkit", "shop", "lagclear", "testworld", "smpworld", "ownerconfirm", "serverconfig")) {
+        for (String command : List.of("spawn", "setspawn", "heal", "feed", "fly", "gamemode", "day", "night", "sun", "rain", "speed", "trash", "admin", "invsee", "enderchest", "tp", "tphere", "clearinventory", "back", "commands", "help", "menu", "noclip", "fakeores", "godtools", "freeze", "lockdown", "release", "jail", "unjail", "adminmode", "staffmode", "vanish", "model", "starterkit", "shop", "lagclear", "spawnmob", "killall", "testworld", "smpworld", "ownerconfirm", "serverconfig")) {
             if (getCommand(command) != null) {
                 getCommand(command).setExecutor(this);
                 getCommand(command).setTabCompleter(this);
@@ -421,6 +427,12 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         if (name.equals("lagclear")) {
             return lagClear(sender);
         }
+        if (name.equals("spawnmob")) {
+            return spawnMob(sender, args);
+        }
+        if (name.equals("killall")) {
+            return killAll(sender, args);
+        }
         if (name.equals("testworld")) {
             return testWorld(sender, args);
         }
@@ -521,6 +533,16 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             }
             if (args.length == 2 && args[0].equalsIgnoreCase("player")) {
                 return Tab.onlinePlayers(args[1]);
+            }
+        }
+        if (name.equals("spawnmob")) {
+            if (args.length == 1) {
+                List<String> result = new ArrayList<>(Tab.complete(args[0], "endboss", "miniboss"));
+                result.addAll(Tab.complete(args[0], java.util.Arrays.stream(EntityType.values()).map(type -> type.name().toLowerCase(Locale.ROOT)).toArray(String[]::new)));
+                return result;
+            }
+            if (args.length == 2) {
+                return Tab.complete(args[1], "1", "2", "5", "10");
             }
         }
         if (name.equals("tp")) {
@@ -3002,6 +3024,146 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         Bukkit.broadcastMessage(Text.PREFIX + Text.color("&aCleanup: removed &f" + removed + " &adropped items."));
         audit(sender instanceof Player player ? player : null, "lagclear", removed + " dropped items");
         return true;
+    }
+
+    private boolean spawnMob(CommandSender sender, String[] args) {
+        if (!hasAdmin(sender)) {
+            return true;
+        }
+        if (!(sender instanceof Player player)) {
+            Text.msg(sender, "&cPlayers only.");
+            return true;
+        }
+        if (!isTestWorld(player.getWorld())) {
+            Text.msg(player, "&cMob spawning tools are sandbox-only. Use &f/testworld join <name>&c first.");
+            return true;
+        }
+        if (args.length == 0) {
+            Text.msg(player, "&cUsage: /spawnmob <mob|miniboss|endboss> [amount]");
+            return true;
+        }
+        String typeName = args[0].toLowerCase(Locale.ROOT);
+        int amount = args.length > 1 ? parseInt(args[1], 1, 1, 25) : 1;
+        if (typeName.equals("endboss")) {
+            amount = 1;
+        }
+        int spawned = 0;
+        for (int i = 0; i < amount; i++) {
+            Location base = player.getLocation();
+            double yaw = Math.toRadians(base.getYaw());
+            Location location = new Location(base.getWorld(), base.getX() - Math.sin(yaw) * 4.0D, base.getY() + 1.0D, base.getZ() + Math.cos(yaw) * 4.0D, base.getYaw(), base.getPitch());
+            Entity entity;
+            if (typeName.equals("endboss")) {
+                entity = spawnTestEndBoss(location);
+            } else if (typeName.equals("miniboss") || typeName.equals("boss")) {
+                entity = spawnTestMiniBoss(location);
+            } else {
+                EntityType type;
+                try {
+                    type = EntityType.valueOf(typeName.toUpperCase(Locale.ROOT));
+                } catch (IllegalArgumentException exception) {
+                    Text.msg(player, "&cUnknown mob type. Use tab completion.");
+                    return true;
+                }
+                if (type == EntityType.ARMOR_STAND) {
+                    Text.msg(player, "&cThat entity type is blocked for this test command.");
+                    return true;
+                }
+                try {
+                    entity = player.getWorld().spawnEntity(location, type);
+                } catch (RuntimeException exception) {
+                    Text.msg(player, "&cThat entity type cannot be spawned here.");
+                    return true;
+                }
+            }
+            if (entity instanceof LivingEntity living) {
+                entityFlag(living, "setRemoveWhenFarAway", false);
+                living.setFireTicks(0);
+            }
+            spawned++;
+        }
+        Text.msg(player, "&aSpawned &f" + spawned + " &atest mob(s) in sandbox world &f" + player.getWorld().getName() + "&a.");
+        audit(player, "test-spawnmob", typeName + " x" + spawned);
+        return true;
+    }
+
+    private Entity spawnTestEndBoss(Location location) {
+        Entity entity = location.getWorld().spawnEntity(location, EntityType.WARDEN);
+        if (entity instanceof LivingEntity boss) {
+            boss.setCustomName(Text.color("&4Infernal Sovereign &7(Test)"));
+            boss.setCustomNameVisible(true);
+            if (boss.getAttribute(Attribute.MAX_HEALTH) != null) {
+                boss.getAttribute(Attribute.MAX_HEALTH).setBaseValue(5000.0D);
+            }
+            boss.setHealth(5000.0D);
+            entityFlag(boss, "setGlowing", true);
+            attachArchfiendVisual(boss);
+        }
+        return entity;
+    }
+
+    private Entity spawnTestMiniBoss(Location location) {
+        Entity entity = location.getWorld().spawnEntity(location, EntityType.ZOMBIE);
+        if (entity instanceof LivingEntity boss) {
+            boss.setCustomName(Text.color("&4Bloodbound Night Stalker &7(Test)"));
+            boss.setCustomNameVisible(true);
+            if (boss.getAttribute(Attribute.MAX_HEALTH) != null) {
+                boss.getAttribute(Attribute.MAX_HEALTH).setBaseValue(250.0D);
+            }
+            boss.setHealth(250.0D);
+            if (boss.getEquipment() != null) {
+                boss.getEquipment().setHelmet(new ItemStack(Material.NETHERITE_HELMET));
+                boss.getEquipment().setChestplate(new ItemStack(Material.NETHERITE_CHESTPLATE));
+                boss.getEquipment().setLeggings(new ItemStack(Material.NETHERITE_LEGGINGS));
+                boss.getEquipment().setBoots(new ItemStack(Material.NETHERITE_BOOTS));
+                boss.getEquipment().setItemInMainHand(new ItemStack(Material.NETHERITE_SWORD));
+            }
+        }
+        return entity;
+    }
+
+    private void attachArchfiendVisual(LivingEntity boss) {
+        try {
+            org.bukkit.plugin.Plugin plugin = Bukkit.getPluginManager().getPlugin("MitchSMP-CustomMobs");
+            if (plugin != null && plugin.isEnabled()) {
+                plugin.getClass().getMethod("attachArchfiend", Entity.class).invoke(plugin, boss);
+            }
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+        }
+    }
+
+    private boolean killAll(CommandSender sender, String[] args) {
+        if (!hasAdmin(sender)) {
+            return true;
+        }
+        if (!(sender instanceof Player player)) {
+            Text.msg(sender, "&cPlayers only.");
+            return true;
+        }
+        if (!isTestWorld(player.getWorld())) {
+            Text.msg(player, "&cKillall is sandbox-only. Use &f/testworld join <name>&c first.");
+            return true;
+        }
+        int removed = 0;
+        for (Entity entity : new ArrayList<>(player.getWorld().getEntities())) {
+            if (entity instanceof Player) {
+                continue;
+            }
+            if (entity instanceof LivingEntity) {
+                entity.remove();
+                removed++;
+            }
+        }
+        Text.msg(player, "&aRemoved &f" + removed + " &aentities from sandbox world &f" + player.getWorld().getName() + "&a.");
+        audit(player, "test-killall", "mobs removed=" + removed);
+        return true;
+    }
+
+    private void entityFlag(Entity entity, String method, boolean value) {
+        try {
+            entity.getClass().getMethod(method, boolean.class).invoke(entity, value);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+        }
     }
 
     private boolean smpWorld(CommandSender sender, String[] args) {

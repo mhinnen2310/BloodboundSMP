@@ -27,6 +27,7 @@ import java.util.regex.Pattern;
 import java.util.stream.Stream;
 
 import nl.mitchsmp.core.api.MitchSMP;
+import nl.mitchsmp.core.api.MitchRank;
 import nl.mitchsmp.core.storage.PropertiesFile;
 import nl.mitchsmp.core.util.Tab;
 import nl.mitchsmp.core.util.Text;
@@ -34,6 +35,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
+import org.bukkit.entity.Player;
 import org.bukkit.plugin.java.JavaPlugin;
 
 public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCompleter {
@@ -81,58 +83,25 @@ public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCom
 
     @Override
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
-        if (!can(sender, "mitchsmp.updates.view")) {
-            Text.msg(sender, "&cYou do not have permission.");
+        if (!canUseUpdater(sender)) {
+            Text.msg(sender, "&cOnly the Owner rank or console can use the update manager.");
             return true;
         }
         String sub = args.length == 0 ? "status" : args[0].toLowerCase(Locale.ROOT);
         switch (sub) {
             case "status" -> status(sender);
             case "check", "force-check" -> {
-                if (!can(sender, "mitchsmp.updates.check")) {
-                    Text.msg(sender, "&cYou do not have permission.");
-                    return true;
-                }
                 async(sender, "check releases", () -> check(sender));
             }
             case "list" -> async(sender, "list releases", () -> list(sender));
             case "changelog" -> async(sender, "show changelog", () -> changelog(sender, args.length > 1 ? args[1] : "latest"));
-            case "stage" -> {
-                if (!can(sender, "mitchsmp.updates.stage")) {
-                    Text.msg(sender, "&cYou do not have permission.");
-                    return true;
-                }
-                async(sender, "stage release", () -> stage(sender, args.length > 1 ? args[1] : "latest"));
-            }
-            case "verify" -> {
-                if (!can(sender, "mitchsmp.updates.verify")) {
-                    Text.msg(sender, "&cYou do not have permission.");
-                    return true;
-                }
-                verify(sender);
-            }
-            case "approve", "apply" -> {
-                if (!can(sender, "mitchsmp.updates.approve")) {
-                    Text.msg(sender, "&cYou do not have permission.");
-                    return true;
-                }
-                approve(sender);
-            }
-            case "cancel" -> {
-                if (!can(sender, "mitchsmp.updates.approve")) {
-                    Text.msg(sender, "&cYou do not have permission.");
-                    return true;
-                }
-                cancel(sender);
-            }
+            case "stage" -> async(sender, "stage release", () -> stage(sender, args.length > 1 ? args[1] : "latest"));
+            case "downgrade" -> async(sender, "stage downgrade", () -> stageDowngrade(sender, args.length > 1 ? args[1] : ""));
+            case "verify" -> verify(sender);
+            case "approve", "apply" -> approve(sender);
+            case "cancel" -> cancel(sender);
             case "history" -> history(sender);
-            case "rollback" -> {
-                if (!can(sender, "mitchsmp.updates.rollback")) {
-                    Text.msg(sender, "&cYou do not have permission.");
-                    return true;
-                }
-                rollback(sender, args.length > 1 ? args[1] : "");
-            }
+            case "rollback" -> rollback(sender, args.length > 1 ? args[1] : "");
             case "manifest" -> showManifest(sender);
             case "debug", "sources" -> debug(sender);
             default -> usage(sender);
@@ -142,26 +111,17 @@ public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCom
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        if (!canUseUpdater(sender)) {
+            return List.of();
+        }
         if (args.length == 1) {
-            List<String> roots = new ArrayList<>(List.of("status", "check", "list", "changelog", "history"));
-            if (can(sender, "mitchsmp.updates.stage")) {
-                roots.add("stage");
-            }
-            if (can(sender, "mitchsmp.updates.verify")) {
-                roots.add("verify");
-            }
-            if (can(sender, "mitchsmp.updates.approve")) {
-                roots.addAll(List.of("approve", "apply", "cancel"));
-            }
-            if (can(sender, "mitchsmp.updates.rollback")) {
-                roots.add("rollback");
-            }
-            if (can(sender, "mitchsmp.updates.debug")) {
-                roots.addAll(List.of("manifest", "debug", "sources", "force-check"));
-            }
+            List<String> roots = new ArrayList<>(List.of(
+                "status", "check", "force-check", "list", "changelog", "stage", "downgrade",
+                "verify", "approve", "apply", "cancel", "history", "rollback", "manifest", "debug", "sources"
+            ));
             return Tab.complete(args[0], roots.toArray(String[]::new));
         }
-        if (args.length == 2 && args[0].equalsIgnoreCase("stage")) {
+        if (args.length == 2 && (args[0].equalsIgnoreCase("stage") || args[0].equalsIgnoreCase("downgrade"))) {
             return Tab.complete(args[1], "latest", currentRelease());
         }
         return List.of();
@@ -178,6 +138,7 @@ public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCom
         defaultValue("updates.backupBeforeApply", "true");
         defaultValue("updates.applyOnNextRestartOnly", "true");
         defaultValue("updates.requireManualApproval", "true");
+        defaultValue("security.ownerRankOnly", "true");
     }
 
     private void defaultValue(String key, String value) {
@@ -203,6 +164,7 @@ public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCom
         getLogger().info("Channel: " + config.getString("github.releaseChannel", "stable"));
         getLogger().info("Java: " + Runtime.version().feature());
         getLogger().info("Pending update: " + (Files.exists(pendingFile) ? pendingFile.toString() : "none"));
+        getLogger().warning("Security: /updates is hard-gated to Owner rank or console. Rank permission grants alone are ignored.");
         historyLine("STARTUP current=" + currentRelease() + " pending=" + Files.exists(pendingFile));
     }
 
@@ -279,6 +241,19 @@ public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCom
         reply(sender, "&7Next: &f/updates verify");
     }
 
+    private void stageDowngrade(CommandSender sender, String requested) throws Exception {
+        if (requested == null || requested.isBlank() || requested.equalsIgnoreCase("latest")) {
+            throw new IllegalArgumentException("Usage: /updates downgrade <version-tag>");
+        }
+        ReleaseInfo release = fetchRelease(requested);
+        if (compareRelease(release.tag(), currentRelease()) >= 0) {
+            throw new IllegalArgumentException(release.tag() + " is not older than current " + currentRelease() + ". Use /updates stage for normal updates.");
+        }
+        stage(sender, release.tag());
+        historyLine(sender.getName() + " staged downgrade " + release.tag());
+        reply(sender, "&eDowngrade staged. Verify and approve only if you intentionally want to move backwards.");
+    }
+
     private void verify(CommandSender sender) {
         try {
             Path target = latestStage();
@@ -322,11 +297,13 @@ public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCom
                 return;
             }
             Path backup = backupCurrentJars(target.getFileName().toString());
+            boolean downgrade = compareRelease(target.getFileName().toString(), currentRelease()) < 0;
             String json = "{\n"
                 + "  \"targetVersion\": \"" + escape(target.getFileName().toString()) + "\",\n"
                 + "  \"approvedBy\": \"" + escape(sender.getName()) + "\",\n"
                 + "  \"approvedAt\": \"" + Instant.now() + "\",\n"
                 + "  \"applyOnNextRestart\": true,\n"
+                + "  \"allowDowngrade\": " + downgrade + ",\n"
                 + "  \"requiresBackup\": true,\n"
                 + "  \"backupPath\": \"" + escape(backup.toString().replace('\\', '/')) + "\"\n"
                 + "}\n";
@@ -334,6 +311,9 @@ public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCom
             Files.writeString(pendingFile, json, StandardCharsets.UTF_8);
             historyLine(sender.getName() + " approved " + target.getFileName() + " backup=" + backup.getFileName());
             Text.msg(sender, "&aUpdate approved for next restart: &f" + target.getFileName());
+            if (downgrade) {
+                Text.msg(sender, "&eDowngrade flag is set. Restart will intentionally allow this older version.");
+            }
             Text.msg(sender, "&7Pending marker: &f" + pendingFile);
             Text.msg(sender, "&7Restart the server. Bloodbound will copy the pending jars during shutdown/startup if your host has no update script.");
         } catch (Exception exception) {
@@ -406,7 +386,7 @@ public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCom
     }
 
     private void usage(CommandSender sender) {
-        Text.msg(sender, "&cUsage: /updates <status|check|list|changelog|stage|verify|approve|cancel|history|rollback>");
+        Text.msg(sender, "&cUsage: /updates <status|check|list|changelog|stage|downgrade|verify|approve|cancel|history|rollback>");
     }
 
     private ReleaseInfo fetchRelease(String requested) throws Exception {
@@ -496,7 +476,8 @@ public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCom
 
             String targetVersion = first(pending, "\"targetVersion\"\\s*:\\s*\"([^\"]+)\"")
                 .orElseThrow(() -> new IOException("pending update has no targetVersion"));
-            if (compareRelease(targetVersion, currentRelease()) < 0) {
+            boolean allowDowngrade = pending.contains("\"allowDowngrade\": true");
+            if (compareRelease(targetVersion, currentRelease()) < 0 && !allowDowngrade) {
                 getLogger().warning("Ignoring older pending update " + targetVersion + " because updater is already " + currentRelease() + ".");
                 historyLine(trigger + " ignored older pending update " + targetVersion + " current=" + currentRelease());
                 Files.deleteIfExists(pendingFile);
@@ -654,8 +635,14 @@ public final class UpdateOrchestratorPlugin extends JavaPlugin implements TabCom
         }
     }
 
-    private boolean can(CommandSender sender, String permission) {
-        return MitchSMP.permissions().has(sender, permission);
+    private boolean canUseUpdater(CommandSender sender) {
+        if (!bool("security.ownerRankOnly", true)) {
+            return MitchSMP.permissions().has(sender, "mitchsmp.updates.admin");
+        }
+        if (!(sender instanceof Player player)) {
+            return true;
+        }
+        return MitchSMP.ranks().getRank(player.getUniqueId()) == MitchRank.OWNER;
     }
 
     private String currentRelease() {

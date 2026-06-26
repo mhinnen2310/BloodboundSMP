@@ -5,6 +5,7 @@ import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -24,6 +25,7 @@ import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Particle;
 import org.bukkit.World;
+import org.bukkit.block.Block;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
@@ -45,7 +47,9 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
     private static final String ARCHFIEND_SOURCE = "models/bloodbound_archfiend.bbmodel";
     private static final Pattern ELEMENT_PATTERN = Pattern.compile("\"elements\"\\s*:\\s*\\[", Pattern.CASE_INSENSITIVE);
     private static final Pattern TEXTURE_PATTERN = Pattern.compile("\"textures\"\\s*:\\s*\\[", Pattern.CASE_INSENSITIVE);
+    private static final Pattern ANIMATION_NAME_PATTERN = Pattern.compile("\"name\"\\s*:\\s*\"([^\"]+)\"");
     private final Map<UUID, VisualLink> visuals = new HashMap<>();
+    private final Map<UUID, List<Location>> solidFootprints = new HashMap<>();
     private PropertiesFile config;
     private ModelReport archfiendReport = ModelReport.empty();
 
@@ -83,12 +87,39 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
             Text.msg(sender, "&4Bloodbound CustomMobs &8| &7active visuals: &f" + visuals.size());
             Text.msg(sender, "&7Archfiend: &f" + archfiendReport.summary());
             Text.msg(sender, "&7Resourcepack item model: &fbloodbound:" + ARCHFIEND_MODEL);
+            Text.msg(sender, "&7Visual culling mode: &fmarker=" + configBool("visual.marker", false));
             return true;
         }
         if (sub.equals("reload")) {
             config.load();
+            saveBundledModel();
             archfiendReport = inspectModel(getDataFolder().toPath().resolve(ARCHFIEND_SOURCE));
             Text.msg(sender, "&aCustom mob config and model metadata reloaded.");
+            return true;
+        }
+        if (sub.equals("models")) {
+            Text.msg(sender, "&4Bloodbound model IDs:");
+            Text.msg(sender, "&7- &farchfiend &8(default endboss visual)");
+            Text.msg(sender, "&7Use resourcepack item models as &fbloodbound:<id>&7.");
+            Text.msg(sender, "&7Upload .bbmodel sources to &fplugins/MitchSMP-CustomMobs/models/&7 and rebuild the resourcepack model JSON.");
+            return true;
+        }
+        if (sub.equals("animations")) {
+            List<String> names = archfiendReport.animations();
+            Text.msg(sender, "&4Archfiend animation metadata:");
+            if (names.isEmpty()) {
+                Text.msg(sender, "&7No Blockbench animations embedded yet. The plugin is ready to expose them once the model includes animation tracks.");
+            } else {
+                Text.msg(sender, "&7" + String.join(", ", names));
+            }
+            return true;
+        }
+        if (sub.equals("uploadinfo")) {
+            Text.msg(sender, "&4Custom model pipeline");
+            Text.msg(sender, "&71. Add the .bbmodel source under &fplugins/MitchSMP-CustomMobs/models/<id>.bbmodel&7.");
+            Text.msg(sender, "&72. Add the matching item model and textures to the Bloodbound resourcepack as &fbloodbound:<id>&7.");
+            Text.msg(sender, "&73. Use &f/custommob place <id> ghost|solid &7to spawn it.");
+            Text.msg(sender, "&7Solid mode creates a small tracked barrier footprint; ghost mode is visual only.");
             return true;
         }
         if (sub.equals("clear")) {
@@ -113,17 +144,22 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
             Text.msg(player, "&aAttached Archfiend visual to nearby entity.");
             return true;
         }
-        if (sub.equals("test")) {
+        if (sub.equals("test") || sub.equals("place")) {
             if (!(sender instanceof Player player)) {
                 Text.msg(sender, "&cPlayers only.");
                 return true;
             }
-            ArmorStand stand = createVisualStand(player.getLocation(), null);
+            String model = sub.equals("place") && args.length > 1 ? safeModelId(args[1]) : ARCHFIEND_MODEL;
+            boolean solid = sub.equals("place") && args.length > 2 && args[2].equalsIgnoreCase("solid");
+            ArmorStand stand = createVisualStand(player.getLocation(), null, model);
+            if (solid) {
+                createSolidFootprint(stand.getUniqueId(), stand.getLocation());
+            }
             visuals.put(stand.getUniqueId(), new VisualLink(stand.getUniqueId(), stand.getUniqueId(), true));
-            Text.msg(player, "&aSpawned standalone Archfiend visual. Use &f/custommob clear&a to remove.");
+            Text.msg(player, "&aSpawned standalone &f" + model + " &avisual in &f" + (solid ? "solid" : "ghost") + " &amode. Use &f/custommob clear&a to remove.");
             return true;
         }
-        Text.msg(sender, "&cUsage: /custommob <status|reload|attach|test|clear>");
+        Text.msg(sender, "&cUsage: /custommob <status|reload|models|animations|uploadinfo|attach|test|place|clear>");
         return true;
     }
 
@@ -133,7 +169,13 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
             return List.of();
         }
         if (args.length == 1) {
-            return Tab.complete(args[0], "status", "reload", "attach", "test", "clear");
+            return Tab.complete(args[0], "status", "reload", "models", "animations", "uploadinfo", "attach", "test", "place", "clear");
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("place")) {
+            return Tab.complete(args[1], ARCHFIEND_MODEL);
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("place")) {
+            return Tab.complete(args[2], "ghost", "solid");
         }
         return List.of();
     }
@@ -143,7 +185,7 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
             return;
         }
         removeVisual(visuals.remove(boss.getUniqueId()));
-        ArmorStand stand = createVisualStand(boss.getLocation(), boss);
+        ArmorStand stand = createVisualStand(boss.getLocation(), boss, ARCHFIEND_MODEL);
         visuals.put(boss.getUniqueId(), new VisualLink(boss.getUniqueId(), stand.getUniqueId(), false));
     }
 
@@ -197,7 +239,7 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
         }
     }
 
-    private ArmorStand createVisualStand(Location location, Entity owner) {
+    private ArmorStand createVisualStand(Location location, Entity owner, String modelId) {
         World world = location.getWorld();
         ArmorStand stand = (ArmorStand) world.spawnEntity(location, EntityType.ARMOR_STAND);
         stand.setVisible(false);
@@ -205,10 +247,11 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
         stand.setBasePlate(false);
         stand.setArms(false);
         stand.setCustomNameVisible(false);
-        setHelmet(stand, archfiendItem());
-        reflectFlag(stand, "setMarker", true);
+        setHelmet(stand, archfiendItem(modelId));
+        reflectFlag(stand, "setMarker", configBool("visual.marker", false));
         reflectFlag(stand, "setInvulnerable", true);
         reflectFlag(stand, "setPersistent", false);
+        reflectFlag(stand, "setCollidable", false);
         if (owner != null) {
             addScoreboardTag(stand, "bloodbound_archfiend_visual");
             addScoreboardTag(stand, "owner_" + owner.getUniqueId());
@@ -216,12 +259,12 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
         return stand;
     }
 
-    private ItemStack archfiendItem() {
+    private ItemStack archfiendItem(String modelId) {
         ItemStack item = new ItemStack(Material.NETHER_STAR);
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
-            meta.setDisplayName(Text.color("&4Bloodbound Archfiend Model"));
-            meta.setItemModel(new NamespacedKey("bloodbound", ARCHFIEND_MODEL));
+            meta.setDisplayName(Text.color("&4Bloodbound Model: &f" + modelId));
+            meta.setItemModel(new NamespacedKey("bloodbound", modelId));
             meta.setCustomModelData(910100);
             item.setItemMeta(meta);
         }
@@ -265,6 +308,7 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
         if (visual != null) {
             visual.remove();
         }
+        removeSolidFootprint(link.visualId());
     }
 
     private void defaults() {
@@ -272,6 +316,8 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
         changed |= setDefault("archfiend.offset_y", -0.25D);
         changed |= setDefault("archfiend.tick_ticks", 5);
         changed |= setDefault("archfiend.crimson_particles", true);
+        changed |= setDefault("visual.marker", false);
+        changed |= setDefault("solid.footprint_radius", 1);
         if (changed) {
             config.save();
         }
@@ -291,16 +337,13 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
 
     private void saveBundledModel() {
         Path target = getDataFolder().toPath().resolve(ARCHFIEND_SOURCE);
-        if (Files.exists(target)) {
-            return;
-        }
         try {
             Files.createDirectories(target.getParent());
             try (InputStream input = getClass().getClassLoader().getResourceAsStream(ARCHFIEND_SOURCE)) {
                 if (input == null) {
                     throw new IOException("resource not found");
                 }
-                Files.copy(input, target);
+                Files.copy(input, target, StandardCopyOption.REPLACE_EXISTING);
             }
         } catch (RuntimeException | IOException exception) {
             getLogger().warning("Could not copy bundled Archfiend model: " + exception.getMessage());
@@ -314,10 +357,27 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
             int textures = countObjectsAfterArray(text, TEXTURE_PATTERN);
             String name = first(text, "\"name\"\\s*:\\s*\"([^\"]+)\"", "unknown");
             String resolution = first(text, "\"resolution\"\\s*:\\s*\\{\\s*\"width\"\\s*:\\s*(\\d+)\\s*,\\s*\"height\"\\s*:\\s*(\\d+)", "?x?");
-            return new ModelReport(name, elements, textures, resolution);
+            return new ModelReport(name, elements, textures, resolution, animationNames(text));
         } catch (IOException exception) {
-            return new ModelReport("missing", 0, 0, "unknown");
+            return new ModelReport("missing", 0, 0, "unknown", List.of());
         }
+    }
+
+    private List<String> animationNames(String text) {
+        int index = text.indexOf("\"animations\"");
+        if (index < 0) {
+            return List.of();
+        }
+        String tail = text.substring(index);
+        Matcher matcher = ANIMATION_NAME_PATTERN.matcher(tail);
+        List<String> names = new ArrayList<>();
+        while (matcher.find() && names.size() < 20) {
+            String value = matcher.group(1);
+            if (!value.isBlank() && !names.contains(value)) {
+                names.add(value);
+            }
+        }
+        return names;
     }
 
     private int countObjectsAfterArray(String text, Pattern pattern) {
@@ -431,13 +491,55 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
     private record VisualLink(UUID bossId, UUID visualId, boolean standalone) {
     }
 
-    private record ModelReport(String name, int elements, int textures, String resolution) {
+    private String safeModelId(String input) {
+        String value = input == null ? ARCHFIEND_MODEL : input.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_./-]", "");
+        return value.isBlank() ? ARCHFIEND_MODEL : value;
+    }
+
+    private void createSolidFootprint(UUID visualId, Location location) {
+        if (location == null || location.getWorld() == null) {
+            return;
+        }
+        int radius = Math.max(0, config.getInt("solid.footprint_radius", 1));
+        List<Location> placed = new ArrayList<>();
+        int y = location.getBlockY() - 1;
+        for (int dx = -radius; dx <= radius; dx++) {
+            for (int dz = -radius; dz <= radius; dz++) {
+                Block block = location.getWorld().getBlockAt(location.getBlockX() + dx, y, location.getBlockZ() + dz);
+                if (isAir(block.getType())) {
+                    block.setType(Material.BARRIER, false);
+                    placed.add(block.getLocation());
+                }
+            }
+        }
+        if (!placed.isEmpty()) {
+            solidFootprints.put(visualId, placed);
+        }
+    }
+
+    private void removeSolidFootprint(UUID visualId) {
+        List<Location> locations = solidFootprints.remove(visualId);
+        if (locations == null) {
+            return;
+        }
+        for (Location location : locations) {
+            if (location.getWorld() != null && location.getBlock().getType() == Material.BARRIER) {
+                location.getBlock().setType(Material.AIR, false);
+            }
+        }
+    }
+
+    private boolean isAir(Material material) {
+        return material != null && material.name().endsWith("AIR");
+    }
+
+    private record ModelReport(String name, int elements, int textures, String resolution, List<String> animations) {
         static ModelReport empty() {
-            return new ModelReport("missing", 0, 0, "unknown");
+            return new ModelReport("missing", 0, 0, "unknown", List.of());
         }
 
         String summary() {
-            return name + " | elements=" + elements + " | textures=" + textures + " | " + resolution;
+            return name + " | elements=" + elements + " | textures=" + textures + " | " + resolution + " | animations=" + animations.size();
         }
     }
 }

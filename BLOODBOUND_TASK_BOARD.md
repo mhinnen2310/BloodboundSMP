@@ -3,15 +3,10 @@
 This file records active work in a simple visible format. New requests should be added under `Te doen`; finished items move to `Afgerond`.
 
 ## Te Doen
-
 - Manual in-game validation of the stable broad Bloodbound Archfiend EndBoss visual after deploying the `v1.0.14` resourcepack.
-- Manually replace the hosted server's updater jar with `v1.0.8` once so future `/updates` commands can self-stage, self-apply and clean old versioned jars on restart.
-- Manual in-game validation of the EndBoss physical ritual with real Boss Shards and Corrupted Hearts.
-- Manual in-game validation that sandbox AuctionHouse listings are invisible from the SMP AuctionHouse.
-- Manual in-game validation that sandbox QuickSell uses sandbox balance and does not affect EconomyWatch.
 - Manual in-game validation of EndBoss spectator mode, four wave timing, arena fall safety and Hall of Fame victory section.
 - Run the adminmode lag isolation test matrix: survival sand, adminmode sand, adminmode no vanish/model, adminmode with vanish/model, limiter off, HUD cached.
-- Run launch smoke QA after the maintenance/adminmode fixes and record the final READY verdict.
+- Manual in-game validation of the EndBoss physical ritual with real Boss Shards and Corrupted Hearts.
 - Verify the Ritual Chest accepts the live Corrupted Heart item stack requirement.
 - Verify performance alerts stay quiet during normal solo mining/building.
 - Make a pre-launch host backup of `plugins/`, worlds, configs, and plugin data before `/maintenance off`.
@@ -73,7 +68,19 @@ This file records active work in a simple visible format. New requests should be
 - Rebuilt Archfiend as a broad no-rotation vanilla cuboid model to avoid missing-model fallback cubes.
 - Added `custom_model_data=910100` Archfiend fallback mappings to `nether_star` item definitions.
 - Fixed Archfiend purple/black missing textures by moving the model to named item-scoped texture references.
-- Improved Archfiend textures with darker atlas-aware materials, recessed red eyes and less repeated neon noise.
+- Added fully automated sandbox-only `/qa auto smoke` command simulation for safe launch QA without needing real second players.
+- Hardened UpdateOrchestrator so `/updates` is owner-rank/console gated at startup/runtime and added downgrade staging support.
+- Fixed God's Drill mining classification so the 3x3 ability covers mixed stone/ore/deepslate/netherrack/end/obsidian-like mineable blocks instead of only plain stone.
+- Replaced the bundled Archfiend source with the supplied V3 FULLHD Blockbench model and rebuilt the resourcepack item model/HD texture paths.
+- Prepared CustomMobs for more uploaded models with model listing, animation info, ghost/solid placement, and cleanup support.
+- Added sandbox-only `/spawnmob` and `/killall` commands for safe staff testing of mobs, minibosses and EndBoss visuals without targeting players.
+- Manual in-game validation that sandbox AuctionHouse listings are invisible from the SMP AuctionHouse.
+- Manual in-game validation that sandbox QuickSell uses sandbox balance and does not affect EconomyWatch.
+- Run launch smoke QA after the maintenance/adminmode fixes and record the final READY verdict.
+- Validate UpdateOrchestrator 1.0.8 on the hosted server after manually uploading the fixed updater jar once.
+- Validate launch hotpath performance patch in-game: fast block break, inventory clicks, QuickSell, AH buy/list/cancel, contracts, adminmode block break/place.
+- Validate adminmode/HUD performance fixes and EndBoss party spectator flow in-game.
+
 
 ## Niet Gedaan / Onzeker
 

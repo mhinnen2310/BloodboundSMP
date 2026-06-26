@@ -131,6 +131,14 @@ commands:
     aliases: [clearlag]
     description: Remove dropped items for server cleanup.
     usage: /lagclear
+  spawnmob:
+    aliases: [mobspawn, testmob]
+    description: Spawn test mobs in sandbox worlds only.
+    usage: /spawnmob <mob|miniboss|endboss> [amount]
+  killall:
+    aliases: [kilall, clearmobs]
+    description: Remove non-player mobs in the current sandbox world only.
+    usage: /killall
   testworld:
     aliases: [tworld, sandbox]
     description: Create, join and reset isolated staff test worlds.

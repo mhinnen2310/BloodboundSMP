@@ -19,4 +19,4 @@ commands:
     usage: /maintenance <on|off|status>
   qa:
     description: Run guided Bloodbound launch QA while maintenance is active.
-    usage: /qa <start smoke|pass|warn|fail|next|status|stop|recent>
+    usage: /qa <start smoke|auto smoke|pass|warn|fail|next|status|stop|recent>

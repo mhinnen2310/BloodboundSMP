@@ -60,6 +60,7 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
     private KeyValueStore systemState;
     private BoundedRecordStore qaLog;
     private final Map<UUID, QaSession> qaSessions = new HashMap<>();
+    private final Set<UUID> autoQaRunning = new HashSet<>();
     private long lastErrorAlertAt;
 
     @Override
@@ -255,9 +256,12 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
                 return List.of();
             }
             if (args.length == 1) {
-                return nl.mitchsmp.core.util.Tab.complete(args[0], "start", "next", "pass", "warn", "fail", "status", "stop", "recent");
+                return nl.mitchsmp.core.util.Tab.complete(args[0], "start", "auto", "next", "pass", "warn", "fail", "status", "stop", "recent");
             }
             if (args.length == 2 && args[0].equalsIgnoreCase("start")) {
+                return nl.mitchsmp.core.util.Tab.complete(args[1], "smoke");
+            }
+            if (args.length == 2 && args[0].equalsIgnoreCase("auto")) {
                 return nl.mitchsmp.core.util.Tab.complete(args[1], "smoke");
             }
             return List.of();
@@ -409,6 +413,14 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
             showQaStep(player, session);
             return true;
         }
+        if (args[0].equalsIgnoreCase("auto")) {
+            if (args.length < 2 || !args[1].equalsIgnoreCase("smoke")) {
+                Text.msg(player, "&cUsage: /qa auto smoke");
+                return true;
+            }
+            startAutomaticSmokeQa(player);
+            return true;
+        }
         if (args[0].equalsIgnoreCase("recent")) {
             Text.msg(player, "&6Recent QA records:");
             qaLog.recent(10).forEach(line -> Text.msg(player, "&7- &f" + line));
@@ -451,7 +463,7 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
             showQaStep(player, session);
             return true;
         }
-        Text.msg(player, "&cUsage: /qa <start smoke|pass|warn <note>|fail <note>|next|status|stop|recent>");
+        Text.msg(player, "&cUsage: /qa <start smoke|auto smoke|pass|warn <note>|fail <note>|next|status|stop|recent>");
         return true;
     }
 
@@ -495,6 +507,149 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
         Text.msg(player, "&6QA step &f" + (session.index + 1) + "&7/&f" + session.steps.size() + "&6:");
         Text.msg(player, "&f" + session.current());
         Text.msg(player, "&7Use &a/qa pass&7, &e/qa warn <note>&7, &c/qa fail <note>&7, or &f/qa next&7.");
+    }
+
+    private void startAutomaticSmokeQa(Player player) {
+        if (!maintenanceEnabled()) {
+            Text.msg(player, "&cEnable maintenance first with &f/maintenance on&c. Automated QA must run while players are locked out.");
+            return;
+        }
+        if (!isSafeQaWorld(player)) {
+            Text.msg(player, "&cAutomated QA only runs in a sandbox/test world. Move to &fmitchtest_*&c, &fbloodbound_test*&c, or &fsandbox*&c first.");
+            return;
+        }
+        if (!autoQaRunning.add(player.getUniqueId())) {
+            Text.msg(player, "&cAn automated QA run is already active for you.");
+            return;
+        }
+
+        List<String> commands = automaticSmokeCommands(player);
+        qaLog.append("AUTO_START", player.getName() + " started automated smoke QA in " + player.getWorld().getName() + " commands=" + commands.size());
+        Text.msg(player, "&6Automated smoke QA started. &7Commands: &f" + commands.size() + "&7. The runner will close GUIs between checks.");
+        alertStaff("&6[QA] &f" + player.getName() + " &7started automated smoke QA in &f" + player.getWorld().getName() + "&7.");
+
+        UUID playerId = player.getUniqueId();
+        final int[] index = {0};
+        final int[] warnings = {0};
+        final int[] failures = {0};
+        final org.bukkit.scheduler.BukkitTask[] taskRef = new org.bukkit.scheduler.BukkitTask[1];
+        taskRef[0] = Bukkit.getScheduler().runTaskTimer(this, () -> {
+            if (Bukkit.getPlayer(playerId) == null) {
+                autoQaRunning.remove(playerId);
+                qaLog.append("AUTO_ABORT", player.getName() + " went offline during automated smoke QA");
+                taskRef[0].cancel();
+                return;
+            }
+            if (!isSafeQaWorld(player)) {
+                autoQaRunning.remove(playerId);
+                failures[0]++;
+                qaLog.append("AUTO_FAIL", player.getName() + " left the sandbox during automated smoke QA");
+                Text.msg(player, "&cAutomated QA stopped because you left the sandbox world.");
+                taskRef[0].cancel();
+                return;
+            }
+            if (index[0] >= commands.size()) {
+                autoQaRunning.remove(playerId);
+                String verdict = failures[0] > 0 ? "NOT_READY" : warnings[0] > 0 ? "READY_WITH_WARNINGS" : "READY";
+                qaLog.append("AUTO_VERDICT", player.getName() + " | " + verdict + " | warnings=" + warnings[0] + " failures=" + failures[0]);
+                Text.msg(player, "&6Automated smoke QA finished: &f" + verdict + "&7. Warnings: &e" + warnings[0] + "&7, failures: &c" + failures[0] + "&7.");
+                alertStaff("&6[QA] &f" + player.getName() + " &7finished automated smoke QA: &f" + verdict);
+                taskRef[0].cancel();
+                return;
+            }
+
+            String command = commands.get(index[0]++);
+            try {
+                boolean accepted = Bukkit.dispatchCommand(player, command);
+                if (accepted) {
+                    qaLog.append("AUTO_PASS", player.getName() + " | /" + command);
+                } else {
+                    warnings[0]++;
+                    qaLog.append("AUTO_WARN", player.getName() + " | /" + command + " returned false");
+                }
+            } catch (Throwable throwable) {
+                failures[0]++;
+                String summary = throwable.getClass().getSimpleName() + ": " + String.valueOf(throwable.getMessage());
+                qaLog.append("AUTO_FAIL", player.getName() + " | /" + command + " | " + summary);
+                Text.msg(player, "&c[QA auto] /" + command + " failed: &f" + summary);
+            } finally {
+                Bukkit.getScheduler().runTaskLater(this, player::closeInventory, 1L);
+            }
+        }, 1L, 4L);
+    }
+
+    private boolean isSafeQaWorld(Player player) {
+        if (player == null || player.getWorld() == null) {
+            return false;
+        }
+        String world = player.getWorld().getName().toLowerCase(Locale.ROOT);
+        return world.startsWith("mitchtest_")
+            || world.startsWith("bloodbound_test")
+            || world.startsWith("testworld")
+            || world.startsWith("sandbox");
+    }
+
+    private List<String> automaticSmokeCommands(Player player) {
+        LinkedHashSet<String> commands = new LinkedHashSet<>();
+        commands.add("mitchcore");
+        commands.add("features list");
+        commands.add("errors recent 5");
+        commands.add("maintenance status");
+        commands.add("qa status");
+        commands.add("qa recent");
+        commands.add("menu");
+        commands.add("commands");
+        commands.add("help");
+        commands.add("balance");
+        commands.add("pay QaVirtualTarget 1");
+        commands.add("bounty");
+        commands.add("bounty QaVirtualTarget 1");
+        commands.add("ah");
+        commands.add("ah listings");
+        commands.add("ah mine");
+        commands.add("ah sell abc");
+        commands.add("shop");
+        commands.add("sell");
+        commands.add("contracts");
+        commands.add("orders");
+        commands.add("collection");
+        commands.add("clog");
+        commands.add("legacy");
+        commands.add("daily");
+        commands.add("explorer");
+        commands.add("goals");
+        commands.add("rookie");
+        commands.add("reports open");
+        commands.add("staffprofile QaVirtualTarget");
+        commands.add("skills");
+        commands.add("mechanics");
+        commands.add("abilities");
+        commands.add("hud");
+        commands.add("hud status");
+        commands.add("homes");
+        commands.add("tpa QaVirtualTarget");
+        commands.add("tpdeny");
+        commands.add("tpaccept");
+        commands.add("perf");
+        commands.add("performance");
+        commands.add("lagclear");
+        commands.add("custommob status");
+        commands.add("custommob models");
+        commands.add("custommob animations");
+        commands.add("custommob uploadinfo");
+        commands.add("custommob test");
+        commands.add("custommob clear");
+        commands.add("spawnmob zombie 1");
+        commands.add("spawnmob miniboss 1");
+        commands.add("killall");
+        commands.add("fakeores cancel");
+        commands.add("adminui");
+        commands.add("model status");
+        commands.add("updates status");
+        commands.add("updates list");
+        commands.add("updates history");
+        commands.add("updates manifest");
+        return new ArrayList<>(commands);
     }
 
     private void applyAutomaticSmokeChecks(Player player, QaSession session) {
