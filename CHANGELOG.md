@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.11 Stable Broad Archfiend Model
+
+- Rebuilt the Archfiend as a broad, heavy vanilla cuboid model with no fragile rotated parts.
+- Increased boss presence with wider torso, thick shoulders, heavy arms, large wings, horns, crown, claws, back spines, scythe and heart core.
+- Updated resourcepack metadata so the client clearly shows the BloodboundSMP Archfiend pack version.
+
 ## 1.0.10 Archfiend Visual Quality Pass
 
 - Reworked Archfiend textures toward a darker Bloodbound endgame style: obsidian black, crimson cracks, bone accents, gold highlights and hotter wing/glow details.
