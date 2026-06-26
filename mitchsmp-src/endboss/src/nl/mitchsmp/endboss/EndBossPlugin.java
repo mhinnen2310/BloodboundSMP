@@ -391,11 +391,8 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
         }
         boss.setHealth(bossHealth());
         boss.setCustomName(Text.color("&4Bloodbound Archfiend"));
-        boss.setCustomNameVisible(true);
-        setEntityFlag(boss, "setInvisible", true);
-        setEntityFlag(boss, "setSilent", true);
-        setEntityFlag(boss, "setAI", false);
-        setEntityFlag(boss, "setGlowing", false);
+        boss.setCustomNameVisible(false);
+        hideControllerEntity(boss);
         setEntityFlag(boss, "setRemoveWhenFarAway", false);
         boss.setFireTicks(0);
         boss.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION, 20 * 60 * 60, 0, false, true, true));
@@ -406,12 +403,37 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
     private void attachCustomArchfiendVisual(LivingEntity boss) {
         Plugin plugin = Bukkit.getPluginManager().getPlugin("MitchSMP-CustomMobs");
         if (plugin == null || !plugin.isEnabled()) {
+            getLogger().warning("MitchSMP-CustomMobs is not enabled; Archfiend controller will stay hidden but no visual can be attached.");
             return;
         }
         try {
             plugin.getClass().getMethod("attachArchfiend", Entity.class).invoke(plugin, boss);
         } catch (ReflectiveOperationException | RuntimeException exception) {
             getLogger().warning("Could not attach Archfiend visual: " + exception.getMessage());
+        }
+    }
+
+    private void hideControllerEntity(LivingEntity boss) {
+        setEntityFlag(boss, "setInvisible", true);
+        setEntityFlag(boss, "setSilent", true);
+        setEntityFlag(boss, "setAI", false);
+        setEntityFlag(boss, "setGlowing", false);
+        try {
+            Object invisibility = Class.forName("org.bukkit.potion.PotionEffectType").getField("INVISIBILITY").get(null);
+            if (invisibility instanceof PotionEffectType type) {
+                boss.addPotionEffect(new PotionEffect(type, 20 * 60 * 60, 0, false, false, false));
+            }
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+        }
+        try {
+            if (boss.getEquipment() != null) {
+                boss.getEquipment().setHelmet(null);
+                boss.getEquipment().setChestplate(null);
+                boss.getEquipment().setLeggings(null);
+                boss.getEquipment().setBoots(null);
+                boss.getEquipment().setItemInMainHand(null);
+            }
+        } catch (RuntimeException ignored) {
         }
     }
 

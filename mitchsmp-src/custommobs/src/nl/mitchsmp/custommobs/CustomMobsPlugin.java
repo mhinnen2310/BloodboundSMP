@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -38,7 +39,9 @@ import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
 import org.bukkit.event.entity.EntityDeathEvent;
+import org.bukkit.event.entity.EntityDamageByEntityEvent;
 import org.bukkit.event.entity.EntitySpawnEvent;
+import org.bukkit.event.player.PlayerInteractAtEntityEvent;
 import org.bukkit.inventory.ItemStack;
 import org.bukkit.inventory.meta.ItemMeta;
 import org.bukkit.plugin.java.JavaPlugin;
@@ -52,6 +55,8 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
     private final Map<UUID, VisualLink> visuals = new HashMap<>();
     private final Map<UUID, List<Location>> solidFootprints = new HashMap<>();
     private final Map<UUID, AnimationPulse> animationPulses = new HashMap<>();
+    private final Map<String, PersistentVisual> persistentVisuals = new LinkedHashMap<>();
+    private final Map<UUID, String> persistentByVisualId = new HashMap<>();
     private PropertiesFile config;
     private ModelReport archfiendReport = ModelReport.empty();
 
@@ -61,21 +66,27 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
         defaults();
         saveBundledModel();
         archfiendReport = inspectModel(getDataFolder().toPath().resolve(ARCHFIEND_SOURCE));
+        loadPersistentVisuals();
         Bukkit.getPluginManager().registerEvents(this, this);
         if (getCommand("custommob") != null) {
             getCommand("custommob").setExecutor(this);
             getCommand("custommob").setTabCompleter(this);
         }
         Bukkit.getScheduler().runTaskTimer(this, this::tickVisuals, 20L, Math.max(1L, config.getInt("archfiend.tick_ticks", 5)));
+        Bukkit.getScheduler().runTaskLater(this, this::spawnPersistentVisuals, 20L);
         getLogger().info("Bloodbound Archfiend model loaded: " + archfiendReport.summary());
     }
 
     @Override
     public void onDisable() {
+        for (PersistentVisual visual : new ArrayList<>(persistentVisuals.values())) {
+            removePersistentRuntime(visual);
+        }
         for (VisualLink link : new ArrayList<>(visuals.values())) {
             removeVisual(link);
         }
         visuals.clear();
+        persistentByVisualId.clear();
     }
 
     @Override
@@ -125,10 +136,14 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
             return true;
         }
         if (sub.equals("clear")) {
+            for (PersistentVisual visual : new ArrayList<>(persistentVisuals.values())) {
+                removePersistentRuntime(visual);
+            }
             for (VisualLink link : new ArrayList<>(visuals.values())) {
                 removeVisual(link);
             }
             visuals.clear();
+            persistentByVisualId.clear();
             Text.msg(sender, "&aRemoved all custom mob visuals.");
             return true;
         }
@@ -155,6 +170,118 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
             String displayName = args.length > 2 ? String.join(" ", java.util.Arrays.copyOfRange(args, 2, args.length)) : "&6Hall of Fame &f" + targetName;
             spawnPlayerClone(player.getLocation(), targetName, displayName);
             Text.msg(player, "&aSpawned Bloodbound clone for &f" + targetName + "&a.");
+            return true;
+        }
+        if (sub.equals("save") || sub.equals("persist")) {
+            if (!(sender instanceof Player player)) {
+                Text.msg(sender, "&cPlayers only.");
+                return true;
+            }
+            if (args.length < 2) {
+                Text.msg(player, "&cUsage: /custommob save <id> [model|clone] [model/player]");
+                return true;
+            }
+            String id = safeId(args[1]);
+            String type = args.length > 2 ? args[2].toLowerCase(Locale.ROOT) : "model";
+            if (!type.equals("model") && !type.equals("clone")) {
+                Text.msg(player, "&cType must be model or clone.");
+                return true;
+            }
+            String value = args.length > 3 ? args[3] : (type.equals("clone") ? player.getName() : ARCHFIEND_MODEL);
+            PersistentVisual visual = new PersistentVisual(id, type, value, player.getLocation(), false, "&4Bloodbound &f" + id);
+            persistentVisuals.put(id, visual);
+            savePersistentVisual(visual);
+            spawnPersistentVisual(visual);
+            Text.msg(player, "&aSaved persistent Bloodbound " + type + " &f" + id + "&a.");
+            return true;
+        }
+        if (sub.equals("list")) {
+            if (persistentVisuals.isEmpty()) {
+                Text.msg(sender, "&7No persistent Bloodbound visuals saved.");
+                return true;
+            }
+            Text.msg(sender, "&4Persistent Bloodbound visuals:");
+            for (PersistentVisual visual : persistentVisuals.values()) {
+                Text.msg(sender, "&7- &f" + visual.id + " &8(" + visual.type + ":" + visual.value + ") &7world=&f" + visual.worldName);
+            }
+            return true;
+        }
+        if (sub.equals("tp")) {
+            if (!(sender instanceof Player player)) {
+                Text.msg(sender, "&cPlayers only.");
+                return true;
+            }
+            PersistentVisual visual = args.length > 1 ? persistentVisuals.get(safeId(args[1])) : persistentFromNearest(player, 12.0D);
+            if (visual == null) {
+                Text.msg(player, "&cUnknown or nearby persistent visual not found.");
+                return true;
+            }
+            Location location = visual.location();
+            if (location != null) {
+                player.teleport(location);
+            }
+            return true;
+        }
+        if (sub.equals("movehere")) {
+            if (!(sender instanceof Player player)) {
+                Text.msg(sender, "&cPlayers only.");
+                return true;
+            }
+            PersistentVisual visual = args.length > 1 ? persistentVisuals.get(safeId(args[1])) : persistentFromNearest(player, 12.0D);
+            if (visual == null) {
+                Text.msg(player, "&cUnknown or nearby persistent visual not found.");
+                return true;
+            }
+            visual.setLocation(player.getLocation());
+            savePersistentVisual(visual);
+            spawnPersistentVisual(visual);
+            Text.msg(player, "&aMoved persistent visual &f" + visual.id + "&a.");
+            return true;
+        }
+        if (sub.equals("action")) {
+            if (args.length < 3) {
+                Text.msg(sender, "&cUsage: /custommob action <id> <none|message:text|command:cmd|playercmd:cmd>");
+                return true;
+            }
+            PersistentVisual visual = persistentVisuals.get(safeId(args[1]));
+            if (visual == null) {
+                Text.msg(sender, "&cUnknown persistent visual.");
+                return true;
+            }
+            visual.action = String.join(" ", java.util.Arrays.copyOfRange(args, 2, args.length));
+            savePersistentVisual(visual);
+            Text.msg(sender, "&aUpdated action for &f" + visual.id + "&a.");
+            return true;
+        }
+        if (sub.equals("path")) {
+            return pathCommand(sender, args);
+        }
+        if (sub.equals("follow")) {
+            if (args.length < 3) {
+                Text.msg(sender, "&cUsage: /custommob follow <id> <player|off>");
+                return true;
+            }
+            PersistentVisual visual = persistentVisuals.get(safeId(args[1]));
+            if (visual == null) {
+                Text.msg(sender, "&cUnknown persistent visual.");
+                return true;
+            }
+            visual.followTarget = args[2].equalsIgnoreCase("off") ? "" : args[2];
+            savePersistentVisual(visual);
+            Text.msg(sender, "&aUpdated follow target for &f" + visual.id + "&a.");
+            return true;
+        }
+        if (sub.equals("play")) {
+            if (!(sender instanceof Player player)) {
+                Text.msg(sender, "&cPlayers only.");
+                return true;
+            }
+            PersistentVisual visual = args.length > 1 ? persistentVisuals.get(safeId(args[1])) : persistentFromNearest(player, 12.0D);
+            if (visual == null || visual.visualId == null) {
+                Text.msg(player, "&cPersistent visual not found.");
+                return true;
+            }
+            animationPulses.put(visual.visualId, new AnimationPulse(args.length > 2 ? args[2] : "pulse", System.currentTimeMillis() + 1400L));
             return true;
         }
         if (sub.equals("rename") || sub.equals("name")) {
@@ -187,6 +314,13 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
                 return true;
             }
             removeSolidFootprint(stand.getUniqueId());
+            String persistentId = persistentByVisualId.remove(stand.getUniqueId());
+            if (persistentId != null) {
+                PersistentVisual visual = persistentVisuals.remove(persistentId);
+                if (visual != null) {
+                    clearPersistentVisual(visual.id);
+                }
+            }
             visuals.entrySet().removeIf(entry -> entry.getValue().visualId().equals(stand.getUniqueId()) || entry.getKey().equals(stand.getUniqueId()));
             stand.remove();
             Text.msg(player, "&aRemoved nearest Bloodbound visual.");
@@ -221,7 +355,7 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
             Text.msg(player, "&aSpawned standalone &f" + model + " &avisual in &f" + (solid ? "solid" : "ghost") + " &amode. Use &f/custommob clear&a to remove.");
             return true;
         }
-        Text.msg(sender, "&cUsage: /custommob <status|reload|models|animations|uploadinfo|attach|clone|rename|info|remove|test|place|clear>");
+        Text.msg(sender, "&cUsage: /custommob <status|reload|models|animations|uploadinfo|attach|clone|save|list|tp|movehere|action|path|follow|play|rename|info|remove|test|place|clear>");
         return true;
     }
 
@@ -231,13 +365,22 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
             return List.of();
         }
         if (args.length == 1) {
-            return Tab.complete(args[0], "status", "reload", "models", "animations", "uploadinfo", "attach", "clone", "rename", "info", "remove", "test", "place", "clear");
+            return Tab.complete(args[0], "status", "reload", "models", "animations", "uploadinfo", "attach", "clone", "save", "list", "tp", "movehere", "action", "path", "follow", "play", "rename", "info", "remove", "test", "place", "clear");
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("clone")) {
             return Tab.onlinePlayers(args[1]);
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("place")) {
             return Tab.complete(args[1], ARCHFIEND_MODEL);
+        }
+        if (args.length == 2 && List.of("tp", "movehere", "action", "path", "follow", "play").contains(args[0].toLowerCase(Locale.ROOT))) {
+            return Tab.complete(args[1], persistentVisuals.keySet().toArray(String[]::new));
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("save")) {
+            return Tab.complete(args[2], "model", "clone");
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("path")) {
+            return Tab.complete(args[2], "add", "clear", "start", "stop");
         }
         if (args.length == 3 && args[0].equalsIgnoreCase("place")) {
             return Tab.complete(args[2], "ghost", "solid");
@@ -286,6 +429,10 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
                 continue;
             }
             if (link.standalone()) {
+                PersistentVisual persistent = persistentByVisualId.containsKey(stand.getUniqueId()) ? persistentVisuals.get(persistentByVisualId.get(stand.getUniqueId())) : null;
+                if (persistent != null) {
+                    tickPersistentVisual(persistent, stand);
+                }
                 stand.getWorld().spawnParticle(Particle.FLAME, stand.getLocation().add(0.0D, 1.3D, 0.0D), 1, 0.15D, 0.2D, 0.15D, 0.0D);
                 tickAnimation(stand);
                 continue;
@@ -309,6 +456,84 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
             }
             tickAnimation(stand);
         }
+    }
+
+    private boolean pathCommand(CommandSender sender, String[] args) {
+        if (args.length < 3) {
+            Text.msg(sender, "&cUsage: /custommob path <id> <add|clear|start|stop>");
+            return true;
+        }
+        PersistentVisual visual = persistentVisuals.get(safeId(args[1]));
+        if (visual == null) {
+            Text.msg(sender, "&cUnknown persistent visual.");
+            return true;
+        }
+        String action = args[2].toLowerCase(Locale.ROOT);
+        if (action.equals("add")) {
+            if (!(sender instanceof Player player)) {
+                Text.msg(sender, "&cPlayers only.");
+                return true;
+            }
+            visual.path.add(player.getLocation());
+            savePersistentVisual(visual);
+            Text.msg(player, "&aAdded waypoint &f" + visual.path.size() + " &ato &f" + visual.id + "&a.");
+            return true;
+        }
+        if (action.equals("clear")) {
+            visual.path.clear();
+            visual.pathIndex = 0;
+            savePersistentVisual(visual);
+            Text.msg(sender, "&aCleared path for &f" + visual.id + "&a.");
+            return true;
+        }
+        if (action.equals("start")) {
+            visual.pathActive = true;
+            savePersistentVisual(visual);
+            Text.msg(sender, "&aPath started for &f" + visual.id + "&a.");
+            return true;
+        }
+        if (action.equals("stop")) {
+            visual.pathActive = false;
+            savePersistentVisual(visual);
+            Text.msg(sender, "&aPath stopped for &f" + visual.id + "&a.");
+            return true;
+        }
+        Text.msg(sender, "&cUsage: /custommob path <id> <add|clear|start|stop>");
+        return true;
+    }
+
+    private void tickPersistentVisual(PersistentVisual visual, ArmorStand stand) {
+        Player follow = visual.followTarget == null || visual.followTarget.isBlank() ? null : Bukkit.getPlayerExact(visual.followTarget);
+        if (follow != null && follow.getWorld() != null && follow.getWorld().equals(stand.getWorld())) {
+            moveStandToward(stand, follow.getLocation(), 0.45D, 2.5D);
+            return;
+        }
+        if (!visual.pathActive || visual.path.isEmpty()) {
+            return;
+        }
+        Location target = visual.path.get(Math.max(0, Math.min(visual.pathIndex, visual.path.size() - 1)));
+        if (target.getWorld() == null || !target.getWorld().equals(stand.getWorld())) {
+            return;
+        }
+        if (stand.getLocation().distanceSquared(target) < 0.6D) {
+            visual.pathIndex = (visual.pathIndex + 1) % visual.path.size();
+            savePersistentVisual(visual);
+            return;
+        }
+        moveStandToward(stand, target, 0.35D, 0.0D);
+    }
+
+    private void moveStandToward(ArmorStand stand, Location target, double step, double stopDistance) {
+        Location origin = stand.getLocation();
+        double dx = target.getX() - origin.getX();
+        double dz = target.getZ() - origin.getZ();
+        double distance = Math.sqrt(dx * dx + dz * dz);
+        if (distance <= stopDistance) {
+            return;
+        }
+        double length = Math.max(0.01D, distance);
+        float yaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
+        stand.teleport(new Location(origin.getWorld(), origin.getX() + dx / length * step, origin.getY(), origin.getZ() + dz / length * step, yaw, origin.getPitch()));
     }
 
     public void playArchfiendAnimation(Entity boss, String animation) {
@@ -406,6 +631,47 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
         }
         addScoreboardTag(stand, "bloodbound_player_clone");
         return stand;
+    }
+
+    @EventHandler
+    public void onVisualClick(PlayerInteractAtEntityEvent event) {
+        if (!(event.getRightClicked() instanceof ArmorStand stand)) {
+            return;
+        }
+        PersistentVisual visual = persistentByVisualId.containsKey(stand.getUniqueId()) ? persistentVisuals.get(persistentByVisualId.get(stand.getUniqueId())) : null;
+        if (visual == null) {
+            return;
+        }
+        runVisualAction(event.getPlayer(), visual);
+    }
+
+    @EventHandler
+    public void onVisualDamage(EntityDamageByEntityEvent event) {
+        if (!(event.getEntity() instanceof ArmorStand stand) || !persistentByVisualId.containsKey(stand.getUniqueId())) {
+            return;
+        }
+        event.setCancelled(true);
+        if (event.getDamager() instanceof Player player && MitchSMP.permissions().has(player, "mitchsmp.custommobs.admin")) {
+            Text.msg(player, "&7Bloodbound visual: &f" + persistentByVisualId.get(stand.getUniqueId()) + "&7. Use &f/custommob remove &7to delete.");
+        }
+    }
+
+    private void runVisualAction(Player player, PersistentVisual visual) {
+        if (player == null || visual == null || visual.action == null || visual.action.isBlank() || visual.action.equalsIgnoreCase("none")) {
+            return;
+        }
+        String action = visual.action;
+        if (action.toLowerCase(Locale.ROOT).startsWith("message:")) {
+            Text.msg(player, action.substring("message:".length()).replace("{player}", player.getName()));
+            return;
+        }
+        if (action.toLowerCase(Locale.ROOT).startsWith("command:")) {
+            Bukkit.dispatchCommand(Bukkit.getConsoleSender(), action.substring("command:".length()).replace("{player}", player.getName()));
+            return;
+        }
+        if (action.toLowerCase(Locale.ROOT).startsWith("playercmd:")) {
+            Bukkit.dispatchCommand(player, action.substring("playercmd:".length()).replace("{player}", player.getName()));
+        }
     }
 
     private ArmorStand nearestManagedStand(Player player, double radius) {
@@ -516,6 +782,177 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
         if (changed) {
             config.save();
         }
+    }
+
+    private void loadPersistentVisuals() {
+        persistentVisuals.clear();
+        for (String key : config.keys()) {
+            if (!key.startsWith("persistent.") || !key.endsWith(".type")) {
+                continue;
+            }
+            String id = key.substring("persistent.".length(), key.length() - ".type".length());
+            String type = config.getString("persistent." + id + ".type", "model");
+            String value = config.getString("persistent." + id + ".value", ARCHFIEND_MODEL);
+            Location location = decodeLocation(config.getString("persistent." + id + ".location", ""));
+            if (location == null) {
+                continue;
+            }
+            boolean solid = Boolean.parseBoolean(config.getString("persistent." + id + ".solid", "false"));
+            String name = config.getString("persistent." + id + ".name", "&4Bloodbound &f" + id);
+            PersistentVisual visual = new PersistentVisual(id, type, value, location, solid, name);
+            visual.action = config.getString("persistent." + id + ".action", "");
+            visual.followTarget = config.getString("persistent." + id + ".follow", "");
+            visual.pathActive = Boolean.parseBoolean(config.getString("persistent." + id + ".path_active", "false"));
+            visual.pathIndex = config.getInt("persistent." + id + ".path_index", 0);
+            visual.path.addAll(decodePath(config.getString("persistent." + id + ".path", "")));
+            persistentVisuals.put(id, visual);
+        }
+    }
+
+    private void spawnPersistentVisuals() {
+        for (PersistentVisual visual : persistentVisuals.values()) {
+            spawnPersistentVisual(visual);
+        }
+    }
+
+    private void spawnPersistentVisual(PersistentVisual visual) {
+        if (visual == null) {
+            return;
+        }
+        removePersistentRuntime(visual);
+        Location location = visual.location();
+        if (location == null || location.getWorld() == null) {
+            return;
+        }
+        Entity entity;
+        if (visual.type.equals("clone")) {
+            entity = spawnPlayerClone(location, visual.value, visual.name);
+        } else {
+            ArmorStand stand = createVisualStand(location, null, visual.value);
+            stand.setCustomName(Text.color(visual.name));
+            stand.setCustomNameVisible(visual.name != null && !visual.name.isBlank());
+            entity = stand;
+            visuals.put(stand.getUniqueId(), new VisualLink(stand.getUniqueId(), stand.getUniqueId(), true));
+            if (visual.solid) {
+                createSolidFootprint(stand.getUniqueId(), stand.getLocation());
+            }
+        }
+        if (entity != null) {
+            visual.visualId = entity.getUniqueId();
+            persistentByVisualId.put(entity.getUniqueId(), visual.id);
+            if (entity instanceof ArmorStand) {
+                visuals.put(entity.getUniqueId(), new VisualLink(entity.getUniqueId(), entity.getUniqueId(), true));
+            }
+            addScoreboardTag(entity, "bloodbound_persistent_visual");
+            addScoreboardTag(entity, "bbmodel_" + visual.id);
+        }
+    }
+
+    private void removePersistentRuntime(PersistentVisual visual) {
+        if (visual.visualId == null) {
+            return;
+        }
+        Entity entity = findEntity(visual.visualId);
+        if (entity != null) {
+            entity.remove();
+        }
+        persistentByVisualId.remove(visual.visualId);
+        visuals.entrySet().removeIf(entry -> entry.getValue().visualId().equals(visual.visualId) || entry.getKey().equals(visual.visualId));
+        removeSolidFootprint(visual.visualId);
+        visual.visualId = null;
+    }
+
+    private void savePersistentVisual(PersistentVisual visual) {
+        String prefix = "persistent." + visual.id + ".";
+        config.set(prefix + "type", visual.type);
+        config.set(prefix + "value", visual.value);
+        config.set(prefix + "location", encodeLocation(visual.location()));
+        config.set(prefix + "solid", visual.solid);
+        config.set(prefix + "name", visual.name);
+        config.set(prefix + "action", visual.action == null ? "" : visual.action);
+        config.set(prefix + "follow", visual.followTarget == null ? "" : visual.followTarget);
+        config.set(prefix + "path_active", visual.pathActive);
+        config.set(prefix + "path_index", visual.pathIndex);
+        config.set(prefix + "path", encodePath(visual.path));
+        config.saveSoon(this, 40L);
+    }
+
+    private void clearPersistentVisual(String id) {
+        String prefix = "persistent." + id + ".";
+        for (String suffix : List.of("type", "value", "location", "solid", "name", "action", "follow", "path_active", "path_index", "path")) {
+            config.set(prefix + suffix, null);
+        }
+        config.saveSoon(this, 20L);
+    }
+
+    private PersistentVisual persistentFromNearest(Player player, double radius) {
+        ArmorStand stand = nearestManagedStand(player, radius);
+        if (stand == null) {
+            return null;
+        }
+        String id = persistentByVisualId.get(stand.getUniqueId());
+        return id == null ? null : persistentVisuals.get(id);
+    }
+
+    private String encodeLocation(Location location) {
+        if (location == null || location.getWorld() == null) {
+            return "";
+        }
+        return location.getWorld().getName() + "," + location.getX() + "," + location.getY() + "," + location.getZ() + "," + location.getYaw() + "," + location.getPitch();
+    }
+
+    private Location decodeLocation(String value) {
+        if (value == null || value.isBlank()) {
+            return null;
+        }
+        String[] parts = value.split(",");
+        if (parts.length < 4) {
+            return null;
+        }
+        World world = Bukkit.getWorld(parts[0]);
+        if (world == null) {
+            return null;
+        }
+        double x = parseDouble(parts[1], 0.0D);
+        double y = parseDouble(parts[2], 0.0D);
+        double z = parseDouble(parts[3], 0.0D);
+        float yaw = parts.length > 4 ? (float) parseDouble(parts[4], 0.0D) : 0.0F;
+        float pitch = parts.length > 5 ? (float) parseDouble(parts[5], 0.0D) : 0.0F;
+        return new Location(world, x, y, z, yaw, pitch);
+    }
+
+    private String encodePath(List<Location> path) {
+        if (path == null || path.isEmpty()) {
+            return "";
+        }
+        return path.stream().map(this::encodeLocation).filter(value -> !value.isBlank()).reduce((a, b) -> a + ";" + b).orElse("");
+    }
+
+    private List<Location> decodePath(String value) {
+        if (value == null || value.isBlank()) {
+            return new ArrayList<>();
+        }
+        List<Location> result = new ArrayList<>();
+        for (String part : value.split(";")) {
+            Location location = decodeLocation(part);
+            if (location != null) {
+                result.add(location);
+            }
+        }
+        return result;
+    }
+
+    private double parseDouble(String value, double fallback) {
+        try {
+            return Double.parseDouble(value);
+        } catch (NumberFormatException exception) {
+            return fallback;
+        }
+    }
+
+    private String safeId(String input) {
+        String value = input == null ? "" : input.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_-]", "");
+        return value.isBlank() ? "model_" + System.currentTimeMillis() : value;
     }
 
     private boolean setDefault(String key, Object value) {
@@ -737,6 +1174,52 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
 
     private boolean isAir(Material material) {
         return material != null && material.name().endsWith("AIR");
+    }
+
+    private static final class PersistentVisual {
+        private final String id;
+        private final String type;
+        private final String value;
+        private String worldName;
+        private double x;
+        private double y;
+        private double z;
+        private float yaw;
+        private float pitch;
+        private final boolean solid;
+        private String name;
+        private String action = "";
+        private String followTarget = "";
+        private boolean pathActive;
+        private int pathIndex;
+        private UUID visualId;
+        private final List<Location> path = new ArrayList<>();
+
+        private PersistentVisual(String id, String type, String value, Location location, boolean solid, String name) {
+            this.id = id;
+            this.type = type == null ? "model" : type;
+            this.value = value == null ? ARCHFIEND_MODEL : value;
+            this.solid = solid;
+            this.name = name == null ? "" : name;
+            setLocation(location);
+        }
+
+        private Location location() {
+            World world = Bukkit.getWorld(worldName);
+            return world == null ? null : new Location(world, x, y, z, yaw, pitch);
+        }
+
+        private void setLocation(Location location) {
+            if (location == null || location.getWorld() == null) {
+                return;
+            }
+            this.worldName = location.getWorld().getName();
+            this.x = location.getX();
+            this.y = location.getY();
+            this.z = location.getZ();
+            this.yaw = location.getYaw();
+            this.pitch = location.getPitch();
+        }
     }
 
     private record ModelReport(String name, int elements, int textures, String resolution, List<String> animations) {

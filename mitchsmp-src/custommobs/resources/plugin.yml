@@ -10,4 +10,4 @@ commands:
   custommob:
     aliases: [custommobs, mobmodel]
     description: Manage Bloodbound custom mob visuals.
-    usage: /custommob <status|reload|models|animations|uploadinfo|attach|clone|rename|info|remove|test|place|clear>
+    usage: /custommob <status|reload|models|animations|uploadinfo|attach|clone|save|list|tp|movehere|action|path|follow|play|rename|info|remove|test|place|clear>

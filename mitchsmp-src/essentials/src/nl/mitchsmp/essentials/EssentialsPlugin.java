@@ -3096,14 +3096,36 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
                 boss.getAttribute(Attribute.MAX_HEALTH).setBaseValue(5000.0D);
             }
             boss.setHealth(5000.0D);
-            entityFlag(boss, "setInvisible", true);
-            entityFlag(boss, "setSilent", true);
-            entityFlag(boss, "setAI", false);
-            entityFlag(boss, "setGlowing", false);
+            boss.setCustomNameVisible(false);
+            hideTestController(boss);
             entityFlag(boss, "setRemoveWhenFarAway", false);
             attachArchfiendVisual(boss);
         }
         return entity;
+    }
+
+    private void hideTestController(LivingEntity boss) {
+        entityFlag(boss, "setInvisible", true);
+        entityFlag(boss, "setSilent", true);
+        entityFlag(boss, "setAI", false);
+        entityFlag(boss, "setGlowing", false);
+        try {
+            Object invisibility = Class.forName("org.bukkit.potion.PotionEffectType").getField("INVISIBILITY").get(null);
+            if (invisibility instanceof org.bukkit.potion.PotionEffectType type) {
+                boss.addPotionEffect(new org.bukkit.potion.PotionEffect(type, 20 * 60 * 60, 0, false, false, false));
+            }
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+        }
+        try {
+            if (boss.getEquipment() != null) {
+                boss.getEquipment().setHelmet(null);
+                boss.getEquipment().setChestplate(null);
+                boss.getEquipment().setLeggings(null);
+                boss.getEquipment().setBoots(null);
+                boss.getEquipment().setItemInMainHand(null);
+            }
+        } catch (RuntimeException ignored) {
+        }
     }
 
     private Entity spawnTestMiniBoss(Location location) {
