@@ -4,7 +4,7 @@ This file records active work in a simple visible format. New requests should be
 
 ## Te Doen
 
-- Manual in-game validation of the stable broad Bloodbound Archfiend EndBoss visual after deploying the `v1.0.13` resourcepack.
+- Manual in-game validation of the stable broad Bloodbound Archfiend EndBoss visual after deploying the `v1.0.14` resourcepack.
 - Manually replace the hosted server's updater jar with `v1.0.8` once so future `/updates` commands can self-stage, self-apply and clean old versioned jars on restart.
 - Manual in-game validation of the EndBoss physical ritual with real Boss Shards and Corrupted Hearts.
 - Manual in-game validation that sandbox AuctionHouse listings are invisible from the SMP AuctionHouse.
@@ -73,6 +73,7 @@ This file records active work in a simple visible format. New requests should be
 - Rebuilt Archfiend as a broad no-rotation vanilla cuboid model to avoid missing-model fallback cubes.
 - Added `custom_model_data=910100` Archfiend fallback mappings to `nether_star` item definitions.
 - Fixed Archfiend purple/black missing textures by moving the model to named item-scoped texture references.
+- Improved Archfiend textures with darker atlas-aware materials, recessed red eyes and less repeated neon noise.
 
 ## Niet Gedaan / Onzeker
 

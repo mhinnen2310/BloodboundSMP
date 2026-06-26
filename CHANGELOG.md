@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.14 Archfiend HD Texture Pass
+
+- Reworked the Archfiend texture atlas to reduce repeated neon surfaces and improve the dark fantasy boss look.
+- Added atlas-aware obsidian armor, ancient gold trim, tattered wing membranes and controlled crimson cracks.
+- Changed the faceplate to recessed red eye slits with glow-layer support instead of protruding bright eyes.
+
 ## 1.0.13 Archfiend Texture Path Compatibility
 
 - Replaced numeric Archfiend texture keys with named texture keys for better Minecraft 26.x item model compatibility.
