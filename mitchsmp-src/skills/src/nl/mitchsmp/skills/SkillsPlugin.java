@@ -48,6 +48,7 @@ import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityBreedEvent;
 import org.bukkit.event.entity.ProjectileHitEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.PrepareAnvilEvent;
 import org.bukkit.event.player.PlayerDropItemEvent;
 import org.bukkit.event.player.PlayerSwapHandItemsEvent;
 import org.bukkit.event.player.PlayerInteractEvent;
@@ -71,6 +72,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
     private static final int CATEGORY_COUNT = 6;
     private final Set<UUID> abilityBreaking = new HashSet<>();
     private final Map<UUID, Long> abilityToggleCooldowns = new HashMap<>();
+    private final Map<String, Long> activeSkillCooldowns = new HashMap<>();
     private final Map<UUID, Long> bountyXpCooldowns = new HashMap<>();
     private final Map<UUID, Long> kingslayerWarnings = new HashMap<>();
     private final Set<UUID> kingslayerGlowing = new HashSet<>();
@@ -86,15 +88,40 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         data = new PropertiesFile(getDataFolder().toPath().resolve("skills.properties"));
         guideKey = new NamespacedKey(this, "mechanics_guide");
         recoveryPreviewExpiryKey = new NamespacedKey(this, "recovery_preview_expiry");
+        wipeLegacySkillProgressOnce();
         MitchSMP.registerService(SkillService.class, this);
         Bukkit.getPluginManager().registerEvents(this, this);
         command("skills");
         command("abilities");
         command("mechanics");
+        command("scout");
+        command("markvein");
+        command("bloodrush");
+        command("brewboost");
+        command("contractboost");
         Bukkit.getScheduler().runTaskTimer(this, this::mechanicsTip, 20L * 60L * 15L, 20L * 60L * 15L);
         Bukkit.getScheduler().runTaskTimer(this, this::updateKingslayerTargets, 100L, 100L);
         Bukkit.getScheduler().runTaskTimer(this, this::flushSkillData, 100L, 100L);
         Bukkit.getScheduler().runTaskTimer(this, this::applyPassiveSkillEffects, 100L, 100L);
+    }
+
+    private void wipeLegacySkillProgressOnce() {
+        String marker = "migration.v1_0_17_lane_reset_done";
+        if (Boolean.parseBoolean(data.getString(marker, "false"))) {
+            return;
+        }
+        int removed = 0;
+        for (String key : new ArrayList<>(data.keys())) {
+            if (key.startsWith("xp.") || key.startsWith("points.") || key.startsWith("perk.")) {
+                data.set(key, null);
+                removed++;
+            }
+        }
+        data.set(marker, true);
+        data.save();
+        if (removed > 0) {
+            getLogger().info("Bloodbound skilltree lane migration wiped " + removed + " test skill-progress entries. Item abilities and other player data were not touched.");
+        }
     }
 
     @Override
@@ -119,6 +146,21 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         }
         if (name.equals("mechanics")) {
             return mechanics(sender);
+        }
+        if (name.equals("scout")) {
+            return activeScout(sender);
+        }
+        if (name.equals("markvein")) {
+            return activeMarkVein(sender);
+        }
+        if (name.equals("bloodrush")) {
+            return activeBloodrush(sender);
+        }
+        if (name.equals("brewboost")) {
+            return activeBrewBoost(sender);
+        }
+        if (name.equals("contractboost")) {
+            return activeContractBoost(sender);
         }
         return false;
     }
@@ -266,6 +308,175 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             getLogger().warning("/mechanics could not create a book for " + player.getName() + ": " + exception.getMessage());
             Text.msg(player, "&cCould not create the mechanics book. Temporarily use &f/commands &cand &f/skills&c.");
         }
+        return true;
+    }
+
+    private boolean activeScout(CommandSender sender) {
+        Player player = activePlayer(sender);
+        if (player == null) {
+            return true;
+        }
+        int hunter = Math.max(perk(player, Perk.KINGSLAYER_FOCUS), perk(player, Perk.BOUNTY_FOCUS));
+        if (hunter <= 0) {
+            Text.msg(player, "&cScout requires the Hunter combat path.");
+            return true;
+        }
+        if (!activeCooldown(player, "scout", Math.max(30, 180 - hunter * 8))) {
+            return true;
+        }
+        double range = Math.min(192.0D, 64.0D + hunter * 12.0D);
+        int threats = 0;
+        int highValue = 0;
+        Player nearest = null;
+        double nearestDistance = Double.MAX_VALUE;
+        for (Player target : Bukkit.getOnlinePlayers()) {
+            if (target.equals(player) || restricted(target) || target.getWorld() == null || player.getWorld() == null || !target.getWorld().equals(player.getWorld())) {
+                continue;
+            }
+            double distance = target.getLocation().distance(player.getLocation());
+            if (distance > range) {
+                continue;
+            }
+            threats++;
+            boolean valuable = MitchSMP.hearts() != null && MitchSMP.hearts().getHearts(target.getUniqueId()) >= 20
+                || MitchSMP.bounties() != null && MitchSMP.bounties().getBounty(target.getUniqueId()) > 0.0D;
+            if (valuable) {
+                highValue++;
+            }
+            if (distance < nearestDistance) {
+                nearestDistance = distance;
+                nearest = target;
+            }
+        }
+        String nearestText = nearest == null ? "none" : nearest.getName() + " ~" + Math.round(nearestDistance) + "m";
+        player.sendActionBar(Text.color("&4Scout &8| &f" + threats + " &7nearby, &6" + highValue + " &7high-value &8| &7nearest: &f" + nearestText));
+        player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.35F, 1.7F);
+        return true;
+    }
+
+    private boolean activeMarkVein(CommandSender sender) {
+        Player player = activePlayer(sender);
+        if (player == null) {
+            return true;
+        }
+        int prospector = Math.max(perk(player, Perk.ORE_SURVEYOR), perk(player, Perk.VEIN_DISCIPLINE));
+        if (prospector <= 0) {
+            Text.msg(player, "&cMark Vein requires the Prospector mining path.");
+            return true;
+        }
+        if (!activeCooldown(player, "markvein", Math.max(20, 140 - prospector * 7))) {
+            return true;
+        }
+        int radius = Math.min(14, 5 + prospector / 2);
+        int ores = 0;
+        int valuable = 0;
+        Location origin = player.getLocation();
+        for (int x = -radius; x <= radius; x++) {
+            for (int y = -Math.min(5, radius); y <= Math.min(5, radius); y++) {
+                for (int z = -radius; z <= radius; z++) {
+                    Block block = origin.getWorld().getBlockAt(origin.getBlockX() + x, origin.getBlockY() + y, origin.getBlockZ() + z);
+                    String name = block.getType().name();
+                    if (!name.contains("ORE") && !name.equals("ANCIENT_DEBRIS")) {
+                        continue;
+                    }
+                    ores++;
+                    if (name.contains("DIAMOND") || name.contains("EMERALD") || name.contains("ANCIENT")) {
+                        valuable++;
+                        origin.getWorld().spawnParticle(org.bukkit.Particle.NOTE, block.getLocation().add(0.5D, 0.5D, 0.5D), 1, 0.0D, 0.0D, 0.0D, 0.0D);
+                    }
+                }
+            }
+        }
+        player.sendActionBar(Text.color("&bMark Vein &8| &f" + ores + " &7ores found, &b" + valuable + " &7high-value nearby"));
+        player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.35F, 1.4F);
+        return true;
+    }
+
+    private boolean activeBloodrush(CommandSender sender) {
+        Player player = activePlayer(sender);
+        if (player == null) {
+            return true;
+        }
+        int duelist = Math.max(perk(player, Perk.DUELIST), perk(player, Perk.COMBAT_MASTERY));
+        if (duelist <= 0) {
+            Text.msg(player, "&cBloodrush requires the Duelist combat path.");
+            return true;
+        }
+        if (!activeCooldown(player, "bloodrush", Math.max(60, 240 - duelist * 10))) {
+            return true;
+        }
+        int duration = 80 + duelist * 6;
+        player.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION, duration, duelist >= 8 ? 1 : 0, false, false, true));
+        player.sendActionBar(Text.color("&4Bloodrush &8| &c" + Math.round(duration / 20.0D) + "s sustain window"));
+        player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.35F, 0.8F);
+        return true;
+    }
+
+    private boolean activeBrewBoost(CommandSender sender) {
+        Player player = activePlayer(sender);
+        if (player == null) {
+            return true;
+        }
+        int brewer = perk(player, Perk.BREWING_FOCUS);
+        if (brewer <= 0) {
+            Text.msg(player, "&cBrewboost requires the Brewer alchemy path.");
+            return true;
+        }
+        if (!activeCooldown(player, "brewboost", Math.max(45, 180 - brewer * 10))) {
+            return true;
+        }
+        data.set("active.brewboost.until." + profileKey(player.getUniqueId()), System.currentTimeMillis() + (60_000L + brewer * 5_000L));
+        saveSkillDataSoon();
+        player.sendActionBar(Text.color("&5Brewboost &8| &aNext brewing actions are accelerated"));
+        player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.35F, 1.25F);
+        return true;
+    }
+
+    private boolean activeContractBoost(CommandSender sender) {
+        Player player = activePlayer(sender);
+        if (player == null) {
+            return true;
+        }
+        int broker = perk(player, Perk.CONTRACT_BROKER);
+        if (broker <= 0) {
+            Text.msg(player, "&cContractboost requires the Contractor economy path.");
+            return true;
+        }
+        if (!activeCooldown(player, "contractboost", Math.max(120, 600 - broker * 25))) {
+            return true;
+        }
+        data.set("active.contractboost.until." + profileKey(player.getUniqueId()), System.currentTimeMillis() + (10L * 60L * 1000L));
+        saveSkillDataSoon();
+        player.sendActionBar(Text.color("&6Contractboost &8| &aYour next contract payout hook is primed"));
+        player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.35F, 1.2F);
+        return true;
+    }
+
+    private Player activePlayer(CommandSender sender) {
+        if (!(sender instanceof Player player)) {
+            Text.msg(sender, "&cPlayers only.");
+            return null;
+        }
+        if (!MitchSMP.permissions().has(player, "mitchsmp.skills.use")) {
+            Text.msg(player, "&cYou do not have permission.");
+            return null;
+        }
+        if (restricted(player)) {
+            Text.msg(player, "&cSkill actions are disabled in this mode.");
+            return null;
+        }
+        return player;
+    }
+
+    private boolean activeCooldown(Player player, String key, int seconds) {
+        String mapKey = profileKey(player.getUniqueId()) + "." + key;
+        long now = System.currentTimeMillis();
+        long until = activeSkillCooldowns.getOrDefault(mapKey, 0L);
+        if (until > now) {
+            player.sendActionBar(Text.color("&c" + key + " cooldown &8| &f" + Math.max(1L, (until - now + 999L) / 1000L) + "s"));
+            return false;
+        }
+        activeSkillCooldowns.put(mapKey, now + Math.max(1, seconds) * 1000L);
         return true;
     }
 
@@ -659,6 +870,59 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             return;
         }
         Bukkit.getScheduler().runTask(this, () -> grantAbilityEnchant(player, item, ability, "&dYour enchantment resonates: &f" + ability.display() + " &dwas added."));
+    }
+
+    @EventHandler
+    public void onPrepareAnvil(PrepareAnvilEvent event) {
+        if (event == null || event.getInventory() == null) {
+            return;
+        }
+        ItemStack left = event.getInventory().getItem(0);
+        ItemStack right = event.getInventory().getItem(1);
+        applyAbilityBookResult(event, left, right);
+        if (event.getResult() == null) {
+            applyAbilityBookResult(event, right, left);
+        }
+    }
+
+    private void applyAbilityBookResult(PrepareAnvilEvent event, ItemStack target, ItemStack book) {
+        Ability bookAbility = abilityBookAbility(book);
+        Ability targetAbility = baseAbilityFor(target);
+        if (bookAbility == null || targetAbility == null || bookAbility != targetAbility || hasAwakenedAbility(target, targetAbility)) {
+            return;
+        }
+        ItemStack result = event.getResult() == null || event.getResult().getType() == Material.AIR ? target.clone() : event.getResult().clone();
+        writeLore(result, targetAbility, new AbilityState(0, false, true));
+        event.setResult(result);
+    }
+
+    private Ability abilityBookAbility(ItemStack item) {
+        if (item == null || item.getType() != Material.ENCHANTED_BOOK || !item.hasItemMeta()) {
+            return null;
+        }
+        for (Ability ability : Ability.values()) {
+            if (hasAwakenedAbility(item, ability)) {
+                return ability;
+            }
+        }
+        ItemMeta meta = item.getItemMeta();
+        if (meta == null || meta.getLore() == null) {
+            return null;
+        }
+        for (String line : meta.getLore()) {
+            String stripped = ChatColor.stripColor(line == null ? "" : line);
+            if (stripped == null) {
+                continue;
+            }
+            for (Ability ability : Ability.values()) {
+                if (stripped.equalsIgnoreCase("BloodboundSMP Enchant: " + ability.display())
+                    || stripped.equalsIgnoreCase("Bloodbound Enchant: " + ability.display())
+                    || stripped.equalsIgnoreCase("Awakened Ability: " + ability.display())) {
+                    return ability;
+                }
+            }
+        }
+        return null;
     }
 
     @EventHandler
@@ -1186,11 +1450,52 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             Text.msg(player, "&cYou need level &f" + perk.requiredLevel() + " &cin " + perk.category().display() + "&c.");
             return;
         }
+        SkillLane lane = lane(perk);
+        SkillLane chosen = chosenLane(player, perk.category());
+        if (lane.exclusive() && chosen != null && chosen != lane) {
+            Text.msg(player, "&cYou already chose the &f" + chosen.display() + " &cpath in " + perk.category().display() + "&c.");
+            Text.msg(player, "&7Reset this skilltree if you want to rebuild into &f" + lane.display() + "&7.");
+            return;
+        }
         data.set("perk." + profileKey(player.getUniqueId()) + "." + perk.key(), current + 1);
         data.set("points." + profileKey(player.getUniqueId()), points(player) - 1);
         saveSkillDataSoon();
-        Text.msg(player, "&aPerk purchased: &f" + perk.display() + " " + (current + 1) + "/" + perk.max());
+        Text.msg(player, "&aPerk purchased: &f" + perk.display() + " " + (current + 1) + "/" + perk.max() + " &8[" + lane.display() + "]");
         player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.8F, 1.5F);
+    }
+
+    private SkillLane chosenLane(Player player, Category category) {
+        for (Perk perk : perksFor(category)) {
+            SkillLane lane = lane(perk);
+            if (lane.exclusive() && perk(player, perk) > 0) {
+                return lane;
+            }
+        }
+        return null;
+    }
+
+    private SkillLane lane(Perk perk) {
+        return switch (perk) {
+            case MINING_SPEED, VEIN_DISCIPLINE -> SkillLane.TUNNEL_RAT;
+            case MINING_YIELD, ORE_SURVEYOR -> SkillLane.PROSPECTOR;
+            case DEEP_MINER -> SkillLane.DEEP_MINER;
+            case FARMING_YIELD, REPLANTER, HARVEST_FLOW -> SkillLane.CULTIVATOR;
+            case FORESTER -> SkillLane.FORESTER;
+            case SUPPLY_GARDENER -> SkillLane.HOMESTEADER;
+            case DUELIST -> SkillLane.DUELIST;
+            case BOUNTY_FOCUS, KINGSLAYER_FOCUS -> SkillLane.HUNTER;
+            case COMBAT_SUSTAIN, ESCAPE_DISCIPLINE -> SkillLane.SURVIVOR;
+            case BREWING_FOCUS, ALCHEMY_MASTERY -> SkillLane.BREWER;
+            case APPLE_LORE, RELIC_ALCHEMY -> SkillLane.RELICIST;
+            case INFERNAL_RESOLVE -> SkillLane.INFERNALIST;
+            case RUNE_SENSE, TABLE_ATTUNEMENT -> SkillLane.RUNEWRIGHT;
+            case BOOKSMITH, ANVIL_CARE -> SkillLane.BOOKSMITH;
+            case ENCHANTING_MASTERY -> SkillLane.ARCANIST;
+            case ECONOMY_QUICKSELL_EFFICIENCY -> SkillLane.MERCHANT;
+            case ORDER_RUNNER -> SkillLane.LOGISTICIAN;
+            case CONTRACT_BROKER -> SkillLane.CONTRACTOR;
+            default -> SkillLane.MASTERY;
+        };
     }
 
     private void resetPlayer(Player player) {
@@ -1419,7 +1724,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
 
     private void runBlockAbility(Player player, Block origin, Material originType, ItemStack tool, Ability ability) {
         if (ability == Ability.GODS_DRILL) {
-            breakOrientedArea(player, origin, tool, 1, this::isMiningBlock, 9);
+            breakOrientedArea(player, origin, tool, 1, this::isDrillBlock, 9);
         } else if (ability == Ability.ANCIENT_TIMBER) {
             breakTimber(player, origin, originType, tool);
         } else if (ability == Ability.EARTHSHAPER) {
@@ -2229,6 +2534,24 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             || material == Material.ANCIENT_DEBRIS;
     }
 
+    private boolean isDrillBlock(Material material) {
+        if (material == null) {
+            return false;
+        }
+        String name = material.name();
+        return isMiningBlock(material)
+            || name.equals("GRANITE")
+            || name.equals("DIORITE")
+            || name.equals("ANDESITE")
+            || name.equals("COBBLESTONE")
+            || name.equals("COBBLED_DEEPSLATE")
+            || name.equals("POLISHED_DEEPSLATE")
+            || name.equals("SMOOTH_BASALT")
+            || name.equals("DRIPSTONE_BLOCK")
+            || name.equals("MAGMA_BLOCK")
+            || name.equals("END_STONE");
+    }
+
     private boolean isShovelBlock(Material material) {
         if (material == null) {
             return false;
@@ -2405,23 +2728,32 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
     private ItemStack perkIcon(Player player, Perk perk) {
         int current = perk(player, perk);
         boolean locked = level(player, perk.category()) < perk.requiredLevel();
+        SkillLane lane = lane(perk);
+        SkillLane chosen = chosenLane(player, perk.category());
+        boolean laneLocked = lane.exclusive() && chosen != null && chosen != lane && current <= 0;
         boolean maxed = current >= perk.max();
-        String color = maxed ? "&a" : locked ? "&c" : points(player) > 0 ? "&e" : "&7";
+        String color = maxed ? "&a" : locked || laneLocked ? "&c" : points(player) > 0 ? "&e" : "&7";
         List<String> lore = new ArrayList<>(List.of(
             "&7Category: &f" + perk.category().display(),
+            "&7Path: &f" + lane.display() + (lane.exclusive() ? " &8(exclusive)" : ""),
             "&7Required level: &f" + perk.requiredLevel(),
             "&7Current: &f" + current + "/" + perk.max(),
             "&7Cost: &f1 skillpoint"
         ));
+        if (chosen != null && lane.exclusive()) {
+            lore.add("&7Chosen path: &f" + chosen.display());
+        }
         lore.addAll(perk.descriptionLines());
         if (maxed) {
             lore.add("&aMaxed.");
+        } else if (laneLocked) {
+            lore.add("&cLocked by your " + chosen.display() + " path.");
         } else if (locked) {
             lore.add("&cLocked. Grind " + perk.category().display() + " level " + perk.requiredLevel() + ".");
         } else if (points(player) <= 0) {
             lore.add("&cNo skillpoints available.");
         } else {
-            lore.add("&eClick to buy.");
+            lore.add(lane.exclusive() && chosen == null ? "&eClick to choose this path." : "&eClick to buy.");
         }
         return icon(perk.icon(), color + perk.display() + " &f" + current + "/" + perk.max(), lore);
     }
@@ -2462,12 +2794,12 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
 
     private List<String> categoryGuide(Category category) {
         return switch (category) {
-            case MINING -> List.of("&7XP: ores, stone, deepslate, debris.", "&7Focus: speed and extra drops.");
-            case FARMING -> List.of("&7XP: crops and logs.", "&7Focus: yields, replanting, and area harvest.");
-            case COMBAT -> List.of("&7XP: damage and kills.", "&7Focus: PvP sustain, target pressure, and escape tools.");
-            case ALCHEMY -> List.of("&7XP: potions, apples, and bottles.", "&7Focus: utility and late-game consumables.");
-            case ENCHANTING -> List.of("&7XP: enchanting and ability item use.", "&7Focus: stronger enchanting flow and faster item challenges.");
-            case ECONOMY -> List.of("&7XP: QuickSell, AH, orders, and contracts.", "&7Focus: better active economy rewards.", "&7No hearts or gear are sold here.");
+            case MINING -> List.of("&7XP: ores, stone, deepslate, debris.", "&7Choose one path:", "&bProspector &7finds ore value.", "&8Tunnel Rat &7moves and mines faster underground.", "&9Deep Miner &7specializes below Y0.", "&7Active: &f/markvein");
+            case FARMING -> List.of("&7XP: crops and logs.", "&7Choose one path:", "&aCultivator &7controls fields and replanting.", "&2Forester &7owns tree/log economy.", "&6Homesteader &7keeps rebuild supplies flowing.");
+            case COMBAT -> List.of("&7XP: damage and kills.", "&7Choose one path:", "&cDuelist &7wins direct fights.", "&6Hunter &7tracks bounties and kings.", "&5Survivor &7escapes and outlasts.", "&7Actives: &f/scout&7, &f/bloodrush");
+            case ALCHEMY -> List.of("&7XP: potions, apples, and bottles.", "&7Choose one path:", "&dBrewer &7controls potion tempo.", "&5Relicist &7leans into rare Bloodbound materials.", "&cInfernalist &7prepares for hell/endboss content.", "&7Active: &f/brewboost");
+            case ENCHANTING -> List.of("&7XP: enchanting and ability item use.", "&7Choose one path:", "&dRunewright &7hunts rare ability rolls.", "&eBooksmith &7moves power through books/anvils.", "&5Arcanist &7pushes item challenge mastery.");
+            case ECONOMY -> List.of("&7XP: QuickSell, AH, orders, and contracts.", "&7Choose one path:", "&aMerchant &7profits from selling.", "&6Contractor &7takes high-risk jobs.", "&bLogistician &7feeds server orders.", "&7Active: &f/contractboost");
         };
     }
 
@@ -2627,6 +2959,44 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         @Override
         public Inventory getInventory() {
             return inventory;
+        }
+    }
+
+    private enum SkillLane {
+        MASTERY("Mastery", false),
+        DEEP_MINER("Deep Miner", true),
+        PROSPECTOR("Prospector", true),
+        TUNNEL_RAT("Tunnel Rat", true),
+        CULTIVATOR("Cultivator", true),
+        FORESTER("Forester", true),
+        HOMESTEADER("Homesteader", true),
+        DUELIST("Duelist", true),
+        HUNTER("Hunter", true),
+        SURVIVOR("Survivor", true),
+        BREWER("Brewer", true),
+        RELICIST("Relicist", true),
+        INFERNALIST("Infernalist", true),
+        RUNEWRIGHT("Runewright", true),
+        BOOKSMITH("Booksmith", true),
+        ARCANIST("Arcanist", true),
+        MERCHANT("Merchant", true),
+        CONTRACTOR("Contractor", true),
+        LOGISTICIAN("Logistician", true);
+
+        private final String display;
+        private final boolean exclusive;
+
+        SkillLane(String display, boolean exclusive) {
+            this.display = display;
+            this.exclusive = exclusive;
+        }
+
+        String display() {
+            return display;
+        }
+
+        boolean exclusive() {
+            return exclusive;
         }
     }
 

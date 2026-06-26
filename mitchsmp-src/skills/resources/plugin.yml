@@ -19,3 +19,18 @@ commands:
     aliases: [guide, mguide]
     description: Get the MitchSMP mechanics guide.
     usage: /mechanics
+  scout:
+    description: Active combat scouting ability.
+    usage: /scout
+  markvein:
+    description: Active mining prospector ability.
+    usage: /markvein
+  bloodrush:
+    description: Active duelist combat ability.
+    usage: /bloodrush
+  brewboost:
+    description: Active alchemy brewing ability.
+    usage: /brewboost
+  contractboost:
+    description: Active economy contract ability.
+    usage: /contractboost

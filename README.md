@@ -9,9 +9,9 @@ Internal jar/plugin names still use `MitchSMP-*` for Paper compatibility. Player
 
 ## Release Status
 
-- Current release: `1.0.15`
+- Current release: `1.0.17`
 - Release branch: `release/1.0`
-- Stable tag: `v1.0.15`
+- Stable tag: `v1.0.17`
 - Runtime: **Java 25**
 - Server: **Paper 26.1.2**
 - Build target: **Java 25**

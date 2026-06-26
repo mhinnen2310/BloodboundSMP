@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.17 Skill Lanes, Ability Books and Archfiend Boss Controller
+
+- Reworked the skilltree into path-based identity lanes with active Bloodbound abilities like `/scout`, `/markvein`, `/bloodrush`, `/brewboost` and `/contractboost`.
+- Added a one-time skill progression wipe for the test-launch data so the redesigned lanes start clean.
+- Added anvil support for Bloodbound ability books so books can transfer their matching ability onto the correct weapon/tool type.
+- Fixed God's Drill classification so mixed stone variants such as granite, diorite, andesite and deepslate-like blocks are included in the 3x3 drill pass.
+- Connected the Bloodbound Archfiend visual to the EndBoss controller with movement, melee attacks, special attacks and animation pulses.
+- Routed damage dealt to the Archfiend visual into the real boss health so players can fight the custom visual instead of a visible Warden.
+- Added CustomMobs player clone support for Hall of Fame use and EndBoss victory group displays.
+- Suppressed the enchant glint override on custom model carrier items where the Paper item meta supports it.
+
 ## 1.0.16 Resourcepack Repair, Updater Checks and Skill Tuning
 
 - Repaired legacy Boss Shard and Corrupted Heart detection so older/generated items regain their hidden marker and correct Bloodbound item model.

@@ -82,6 +82,7 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
     private static final int ARENA_Y = 80;
     private static final int ARENA_RADIUS = 31;
     private static final int MAX_WAVES = 4;
+    private static final EntityType ARCHFIEND_CONTROLLER_TYPE = EntityType.ZOMBIE;
     private static final int BOSS_SHARD_MODEL = 910001;
     private static final int CORRUPTED_HEART_MODEL = 910002;
     private final Random random = new Random();
@@ -368,12 +369,12 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
         }
         LivingEntity boss = spawnBoss(world);
         session.bossId = boss == null ? null : boss.getUniqueId();
-        session.task = Bukkit.getScheduler().runTaskTimer(this, this::tickFight, 40L, 40L);
+        session.task = Bukkit.getScheduler().runTaskTimer(this, this::tickFight, 20L, 20L);
         Bukkit.broadcastMessage(Text.color("&8[&4EndBoss&8] &cThe Infernal Sovereign has awakened in a temporary hell world."));
     }
 
     private LivingEntity spawnBoss(World world) {
-        Entity entity = world.spawnEntity(new Location(world, 0.5D, 84.0D, 0.5D), EntityType.WARDEN);
+        Entity entity = world.spawnEntity(new Location(world, 0.5D, 84.0D, 0.5D), ARCHFIEND_CONTROLLER_TYPE);
         if (!(entity instanceof LivingEntity boss)) {
             return null;
         }
@@ -381,9 +382,12 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
             boss.getAttribute(Attribute.MAX_HEALTH).setBaseValue(bossHealth());
         }
         boss.setHealth(bossHealth());
-        boss.setCustomName(Text.color("&4Infernal Sovereign"));
+        boss.setCustomName(Text.color("&4Bloodbound Archfiend"));
         boss.setCustomNameVisible(true);
-        setEntityFlag(boss, "setGlowing", true);
+        setEntityFlag(boss, "setInvisible", true);
+        setEntityFlag(boss, "setSilent", true);
+        setEntityFlag(boss, "setAI", false);
+        setEntityFlag(boss, "setGlowing", false);
         setEntityFlag(boss, "setRemoveWhenFarAway", false);
         boss.setFireTicks(0);
         boss.addPotionEffect(new PotionEffect(PotionEffectType.REGENERATION, 20 * 60 * 60, 0, false, true, true));
@@ -414,7 +418,7 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
         }
         purgeLooseEntities(world);
         enforceArenaBounds(world);
-        session.ticks += 40;
+        session.ticks += 20;
         for (Player player : onlineParticipants()) {
             if (sameWorld(player.getLocation(), new Location(world, 0, 80, 0))) {
                 world.spawnParticle(Particle.ASH, player.getLocation(), 12, 0.5D, 0.8D, 0.5D, 0.02D);
@@ -424,6 +428,7 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
         if (boss != null) {
             boss.setFireTicks(0);
             world.spawnParticle(particle("CRIMSON_SPORE", Particle.FLAME), boss.getLocation().add(0.0D, 1.0D, 0.0D), 35, 1.1D, 1.4D, 1.1D, 0.02D);
+            driveArchfiend(world, boss);
         }
         maybeSpawnWave(world);
         if (session.ticks % 200 == 0) {
@@ -578,6 +583,119 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
         }, 35L);
     }
 
+    private void driveArchfiend(World world, LivingEntity boss) {
+        List<Player> targets = onlineParticipantsInWorld(world);
+        if (targets.isEmpty() || session == null) {
+            return;
+        }
+        Player target = nearestParticipant(boss.getLocation(), targets);
+        if (target == null) {
+            return;
+        }
+        double distance = boss.getLocation().distance(target.getLocation());
+        if (distance > 3.2D) {
+            moveBossToward(boss, target.getLocation(), distance);
+        } else if (session.ticks - session.lastMeleeTick >= 40) {
+            session.lastMeleeTick = session.ticks;
+            archfiendClaw(world, boss, target);
+        }
+        if (session.ticks - session.lastSpecialTick >= 160) {
+            session.lastSpecialTick = session.ticks;
+            int attack = session.specialCycle++ % 3;
+            if (attack == 0) {
+                bloodNova(world, boss);
+            } else if (attack == 1) {
+                soulChains(world, boss, targets);
+            } else {
+                heartRend(world, boss, target);
+            }
+        }
+    }
+
+    private Player nearestParticipant(Location origin, List<Player> targets) {
+        Player nearest = null;
+        double best = Double.MAX_VALUE;
+        for (Player player : targets) {
+            double distance = origin.distanceSquared(player.getLocation());
+            if (distance < best) {
+                best = distance;
+                nearest = player;
+            }
+        }
+        return nearest;
+    }
+
+    private void moveBossToward(LivingEntity boss, Location target, double distance) {
+        Location origin = boss.getLocation();
+        double dx = target.getX() - origin.getX();
+        double dz = target.getZ() - origin.getZ();
+        double length = Math.max(0.01D, Math.sqrt(dx * dx + dz * dz));
+        double step = Math.min(1.15D, Math.max(0.45D, distance / 8.0D));
+        float yaw = (float) Math.toDegrees(Math.atan2(-dx, dz));
+        boss.teleport(new Location(origin.getWorld(), origin.getX() + dx / length * step, origin.getY(), origin.getZ() + dz / length * step, yaw, origin.getPitch()));
+    }
+
+    private void archfiendClaw(World world, LivingEntity boss, Player target) {
+        boolean warded = hasInfernalWard(target);
+        double damage = warded ? 6.0D : 14.0D;
+        target.setHealth(Math.max(warded ? 7.0D : 2.0D, target.getHealth() - damage));
+        target.setFireTicks(warded ? 20 : 80);
+        target.addPotionEffect(new PotionEffect(PotionEffectType.WEAKNESS, warded ? 30 : 70, 0, false, true, true));
+        target.playSound(target.getLocation(), sound("ENTITY_WITHER_HURT", Sound.ENTITY_ENDER_DRAGON_GROWL), 0.8F, 0.55F);
+        world.spawnParticle(Particle.CRIT, target.getLocation().add(0.0D, 1.0D, 0.0D), 18, 0.45D, 0.5D, 0.45D, 0.08D);
+        signalArchfiendAnimation(boss, "claw");
+    }
+
+    private void bloodNova(World world, LivingEntity boss) {
+        signalArchfiendAnimation(boss, "blood_nova");
+        world.createExplosion(boss.getLocation(), 0.0F, false, false);
+        world.spawnParticle(Particle.DRAGON_BREATH, boss.getLocation().add(0.0D, 1.0D, 0.0D), 140, 4.5D, 1.4D, 4.5D, 0.05D, Float.valueOf(1.0F));
+        for (Player player : onlineParticipantsInWorld(world)) {
+            if (player.getLocation().distanceSquared(boss.getLocation()) > 14.0D * 14.0D) {
+                continue;
+            }
+            boolean warded = hasInfernalWard(player);
+            player.setHealth(Math.max(warded ? 8.0D : 2.0D, player.getHealth() - (warded ? 5.0D : 12.0D)));
+            player.addPotionEffect(new PotionEffect(PotionEffectType.DARKNESS, warded ? 40 : 90, 0, false, true, true));
+            player.playSound(player.getLocation(), Sound.ENTITY_DRAGON_FIREBALL_EXPLODE, 1.0F, 0.65F);
+        }
+    }
+
+    private void soulChains(World world, LivingEntity boss, List<Player> targets) {
+        signalArchfiendAnimation(boss, "soul_chains");
+        world.spawnParticle(Particle.SMOKE, boss.getLocation().add(0.0D, 1.2D, 0.0D), 80, 3.5D, 1.2D, 3.5D, 0.03D);
+        for (Player player : targets) {
+            if (player.getLocation().distanceSquared(boss.getLocation()) > 22.0D * 22.0D) {
+                continue;
+            }
+            player.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, 90, hasInfernalWard(player) ? 0 : 1, false, true, true));
+            player.addPotionEffect(new PotionEffect(PotionEffectType.DARKNESS, 60, 0, false, true, true));
+            player.sendTitle(Text.color("&4Soul Chains"), Text.color("&7Keep moving or be consumed."), 5, 28, 8);
+        }
+    }
+
+    private void heartRend(World world, LivingEntity boss, Player target) {
+        signalArchfiendAnimation(boss, "heart_rend");
+        boolean warded = hasInfernalWard(target);
+        target.setHealth(Math.max(warded ? 8.0D : 3.0D, target.getHealth() - (warded ? 8.0D : 16.0D)));
+        target.addPotionEffect(new PotionEffect(PotionEffectType.BLINDNESS, warded ? 35 : 70, 0, false, true, true));
+        double heal = bossHealth() * 0.015D;
+        boss.setHealth(Math.min(bossHealth(), boss.getHealth() + heal));
+        world.spawnParticle(Particle.HEART, target.getLocation().add(0.0D, 1.2D, 0.0D), 9, 0.5D, 0.5D, 0.5D, 0.02D);
+        target.playSound(target.getLocation(), sound("ENTITY_WITHER_DEATH", Sound.ENTITY_ENDER_DRAGON_DEATH), 0.45F, 1.65F);
+    }
+
+    private void signalArchfiendAnimation(Entity boss, String animation) {
+        Plugin plugin = Bukkit.getPluginManager().getPlugin("MitchSMP-CustomMobs");
+        if (plugin == null || !plugin.isEnabled()) {
+            return;
+        }
+        try {
+            plugin.getClass().getMethod("playArchfiendAnimation", Entity.class, String.class).invoke(plugin, boss, animation);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+        }
+    }
+
     private void resolveChargedHit(Player player) {
         boolean warded = hasInfernalWard(player);
         double damage = warded ? 8.0D : 18.0D;
@@ -595,6 +713,18 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
         if (session == null || session.state != State.RUNNING || session.bossId == null) {
             return;
         }
+        if (isArchfiendVisual(event.getEntity())) {
+            event.setCancelled(true);
+            LivingEntity boss = activeBoss(event.getEntity().getWorld());
+            if (boss == null) {
+                return;
+            }
+            double damage = eventDamage(event);
+            double next = Math.max(0.0D, boss.getHealth() - damage);
+            boss.setHealth(next);
+            signalArchfiendAnimation(boss, "hit");
+            return;
+        }
         if (event.getEntity() instanceof Player player && event.getDamager() != null && session.bossId.equals(event.getDamager().getUniqueId())) {
             event.setCancelled(true);
             boolean warded = hasInfernalWard(player);
@@ -604,6 +734,17 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
             player.setFireTicks(warded ? 20 : 80);
             player.addPotionEffect(new PotionEffect(PotionEffectType.WEAKNESS, warded ? 30 : 70, 0, false, true, true));
         }
+    }
+
+    private double eventDamage(EntityDamageByEntityEvent event) {
+        try {
+            Object value = event.getClass().getMethod("getDamage").invoke(event);
+            if (value instanceof Number number) {
+                return Math.max(0.5D, number.doubleValue());
+            }
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+        }
+        return 4.0D;
     }
 
     @EventHandler
@@ -1275,21 +1416,44 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
             Player player = players.get(i);
             int x = startX + i * 8;
             set(world, x, 102, baseZ + 4, Material.GOLD_BLOCK);
-            ArmorStand stand = (ArmorStand) world.spawnEntity(new Location(world, x + 0.5D, 103.0D, baseZ + 4.5D), EntityType.ARMOR_STAND);
-            stand.setCustomName(Text.color("&4Boss Slayer &f" + player.getName()));
-            stand.setCustomNameVisible(true);
-            stand.setArms(true);
-            stand.setBasePlate(false);
-            stand.setGravity(false);
-            if (stand.getEquipment() != null) {
-                stand.getEquipment().setHelmet(new ItemStack(Material.NETHERITE_HELMET));
-                stand.getEquipment().setChestplate(new ItemStack(Material.NETHERITE_CHESTPLATE));
-                stand.getEquipment().setLeggings(new ItemStack(Material.NETHERITE_LEGGINGS));
-                stand.getEquipment().setBoots(new ItemStack(Material.NETHERITE_BOOTS));
-                stand.getEquipment().setItemInMainHand(new ItemStack(i == 0 ? Material.NETHERITE_SWORD : Material.NETHER_STAR));
-            }
+            spawnHallClone(world, new Location(world, x + 0.5D, 103.0D, baseZ + 4.5D), player.getName(), i == 0);
         }
         return new Location(world, 0.5D, 102.0D, baseZ - 5.5D, 0.0F, 0.0F);
+    }
+
+    private void spawnHallClone(World world, Location location, String playerName, boolean leader) {
+        Plugin plugin = Bukkit.getPluginManager().getPlugin("MitchSMP-CustomMobs");
+        if (plugin != null && plugin.isEnabled()) {
+            try {
+                Object clone = plugin.getClass().getMethod("spawnPlayerClone", Location.class, String.class).invoke(plugin, location, playerName);
+                if (clone instanceof Entity entity) {
+                    setEntityCustomName(entity, Text.color((leader ? "&6Party Leader &f" : "&4Boss Slayer &f") + playerName));
+                    return;
+                }
+            } catch (ReflectiveOperationException | RuntimeException ignored) {
+            }
+        }
+        ArmorStand stand = (ArmorStand) world.spawnEntity(location, EntityType.ARMOR_STAND);
+        stand.setCustomName(Text.color((leader ? "&6Party Leader &f" : "&4Boss Slayer &f") + playerName));
+        stand.setCustomNameVisible(true);
+        stand.setArms(true);
+        stand.setBasePlate(false);
+        stand.setGravity(false);
+        if (stand.getEquipment() != null) {
+            stand.getEquipment().setHelmet(new ItemStack(Material.NETHERITE_HELMET));
+            stand.getEquipment().setChestplate(new ItemStack(Material.NETHERITE_CHESTPLATE));
+            stand.getEquipment().setLeggings(new ItemStack(Material.NETHERITE_LEGGINGS));
+            stand.getEquipment().setBoots(new ItemStack(Material.NETHERITE_BOOTS));
+            stand.getEquipment().setItemInMainHand(new ItemStack(leader ? Material.NETHERITE_SWORD : Material.NETHER_STAR));
+        }
+    }
+
+    private void setEntityCustomName(Entity entity, String name) {
+        try {
+            entity.getClass().getMethod("setCustomName", String.class).invoke(entity, name);
+            entity.getClass().getMethod("setCustomNameVisible", boolean.class).invoke(entity, true);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+        }
     }
 
     private void spawnHallLabel(World world, double x, double y, double z, String text) {
@@ -1835,9 +1999,24 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
             if (session != null && session.bossId != null && session.bossId.equals(entity.getUniqueId())) {
                 continue;
             }
+            if (isArchfiendVisual(entity)) {
+                continue;
+            }
             if (entity.getType() == EntityType.ARMOR_STAND) {
                 entity.remove();
             }
+        }
+    }
+
+    private boolean isArchfiendVisual(Entity entity) {
+        if (entity == null) {
+            return false;
+        }
+        try {
+            Object tags = entity.getClass().getMethod("getScoreboardTags").invoke(entity);
+            return tags instanceof Set<?> set && set.contains("bloodbound_archfiend_visual");
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return false;
         }
     }
 
@@ -1996,6 +2175,9 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
         private BukkitTask task;
         private int ticks;
         private int wave;
+        private int lastMeleeTick;
+        private int lastSpecialTick;
+        private int specialCycle;
         private long startedAtMillis;
 
         private Session(UUID leader) {

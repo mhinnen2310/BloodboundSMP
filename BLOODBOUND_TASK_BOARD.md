@@ -19,6 +19,14 @@ This file records active work in a simple visible format. New requests should be
 
 ## Afgerond
 
+- Reworked the skilltree into exclusive Bloodbound path lanes with active abilities instead of mostly repeated percentage perks.
+- Added a one-time wipe for test-launch skill data so the redesigned skilltree starts clean.
+- Added Bloodbound ability books that can transfer the matching ability to the correct weapon/tool through an anvil.
+- Connected the Archfiend custom visual to the EndBoss fight controller with movement, attacks and animation pulses.
+- Routed damage on the Archfiend visual into the real boss health so the custom visual can be fought directly.
+- Fixed God's Drill to include mixed stone variants such as granite, diorite, andesite and deepslate-like blocks in the 3x3 pass.
+- Added CustomMobs player clone support for Hall of Fame use and EndBoss victory group displays.
+- Suppressed enchant glint overrides on custom model carrier items where supported.
 - Repaired legacy Boss Shards and Corrupted Hearts so existing items regain their Bloodbound item model.
 - Rebuilt the Bloodbound resourcepack with verified 26.1.2 Boss Shard, Corrupted Heart and Archfiend item model entries.
 - Added UpdateOrchestrator startup release checks and staff join update-status messages.

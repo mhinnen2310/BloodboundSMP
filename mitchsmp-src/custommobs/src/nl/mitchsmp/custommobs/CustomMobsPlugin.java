@@ -23,6 +23,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
+import org.bukkit.OfflinePlayer;
 import org.bukkit.Particle;
 import org.bukkit.World;
 import org.bukkit.block.Block;
@@ -50,6 +51,7 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
     private static final Pattern ANIMATION_NAME_PATTERN = Pattern.compile("\"name\"\\s*:\\s*\"([^\"]+)\"");
     private final Map<UUID, VisualLink> visuals = new HashMap<>();
     private final Map<UUID, List<Location>> solidFootprints = new HashMap<>();
+    private final Map<UUID, AnimationPulse> animationPulses = new HashMap<>();
     private PropertiesFile config;
     private ModelReport archfiendReport = ModelReport.empty();
 
@@ -144,6 +146,16 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
             Text.msg(player, "&aAttached Archfiend visual to nearby entity.");
             return true;
         }
+        if (sub.equals("clone")) {
+            if (!(sender instanceof Player player)) {
+                Text.msg(sender, "&cPlayers only.");
+                return true;
+            }
+            String targetName = args.length > 1 ? args[1] : player.getName();
+            spawnPlayerClone(player.getLocation(), targetName);
+            Text.msg(player, "&aSpawned Bloodbound clone for &f" + targetName + "&a.");
+            return true;
+        }
         if (sub.equals("test") || sub.equals("place")) {
             if (!(sender instanceof Player player)) {
                 Text.msg(sender, "&cPlayers only.");
@@ -159,7 +171,7 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
             Text.msg(player, "&aSpawned standalone &f" + model + " &avisual in &f" + (solid ? "solid" : "ghost") + " &amode. Use &f/custommob clear&a to remove.");
             return true;
         }
-        Text.msg(sender, "&cUsage: /custommob <status|reload|models|animations|uploadinfo|attach|test|place|clear>");
+        Text.msg(sender, "&cUsage: /custommob <status|reload|models|animations|uploadinfo|attach|clone|test|place|clear>");
         return true;
     }
 
@@ -169,7 +181,10 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
             return List.of();
         }
         if (args.length == 1) {
-            return Tab.complete(args[0], "status", "reload", "models", "animations", "uploadinfo", "attach", "test", "place", "clear");
+            return Tab.complete(args[0], "status", "reload", "models", "animations", "uploadinfo", "attach", "clone", "test", "place", "clear");
+        }
+        if (args.length == 2 && args[0].equalsIgnoreCase("clone")) {
+            return Tab.onlinePlayers(args[1]);
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("place")) {
             return Tab.complete(args[1], ARCHFIEND_MODEL);
@@ -200,7 +215,8 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
                 return;
             }
             String name = customName(entity);
-            if (name.toLowerCase(Locale.ROOT).contains("infernal sovereign")) {
+            String normalized = name.toLowerCase(Locale.ROOT);
+            if (normalized.contains("infernal sovereign") || normalized.contains("bloodbound archfiend")) {
                 attachArchfiend(entity);
             }
         }, 5L);
@@ -221,6 +237,7 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
             }
             if (link.standalone()) {
                 stand.getWorld().spawnParticle(Particle.FLAME, stand.getLocation().add(0.0D, 1.3D, 0.0D), 1, 0.15D, 0.2D, 0.15D, 0.0D);
+                tickAnimation(stand);
                 continue;
             }
             Entity boss = findEntity(link.bossId());
@@ -231,12 +248,55 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
             }
             Location location = boss.getLocation();
             Location target = new Location(location.getWorld(), location.getX(), location.getY() + config.getDouble("archfiend.offset_y", -0.25D), location.getZ(), location.getYaw(), location.getPitch());
+            AnimationPulse pulse = animationPulses.get(stand.getUniqueId());
+            if (pulse != null) {
+                target.add(0.0D, animationBob(pulse), 0.0D);
+            }
             stand.teleport(target);
             stand.setFireTicks(0);
             if (configBool("archfiend.crimson_particles", true)) {
                 boss.getWorld().spawnParticle(Particle.FLAME, boss.getLocation().add(0.0D, 1.8D, 0.0D), 2, 0.5D, 0.7D, 0.5D, 0.01D);
             }
+            tickAnimation(stand);
         }
+    }
+
+    public void playArchfiendAnimation(Entity boss, String animation) {
+        if (boss == null) {
+            return;
+        }
+        VisualLink link = visuals.get(boss.getUniqueId());
+        if (link == null) {
+            return;
+        }
+        animationPulses.put(link.visualId(), new AnimationPulse(animation == null ? "pulse" : animation, System.currentTimeMillis() + 1400L));
+    }
+
+    private void tickAnimation(ArmorStand stand) {
+        AnimationPulse pulse = animationPulses.get(stand.getUniqueId());
+        if (pulse == null) {
+            return;
+        }
+        pulse.ticks++;
+        if (pulse.untilMillis < System.currentTimeMillis()) {
+            animationPulses.remove(stand.getUniqueId());
+            return;
+        }
+        Location center = stand.getLocation().add(0.0D, 1.2D, 0.0D);
+        String animation = pulse.name.toLowerCase(Locale.ROOT);
+        if (animation.contains("nova")) {
+            stand.getWorld().spawnParticle(Particle.DRAGON_BREATH, center, 8, 0.7D, 0.5D, 0.7D, 0.02D);
+        } else if (animation.contains("chain")) {
+            stand.getWorld().spawnParticle(Particle.SMOKE, center, 8, 0.5D, 0.55D, 0.5D, 0.01D);
+        } else if (animation.contains("rend")) {
+            stand.getWorld().spawnParticle(Particle.HEART, center, 2, 0.35D, 0.45D, 0.35D, 0.01D);
+        } else {
+            stand.getWorld().spawnParticle(Particle.CRIT, center, 5, 0.45D, 0.45D, 0.45D, 0.03D);
+        }
+    }
+
+    private double animationBob(AnimationPulse pulse) {
+        return Math.sin(pulse.ticks * 0.55D) * 0.16D;
     }
 
     private ArmorStand createVisualStand(Location location, Entity owner, String modelId) {
@@ -266,9 +326,56 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
             meta.setDisplayName(Text.color("&4Bloodbound Model: &f" + modelId));
             meta.setItemModel(new NamespacedKey("bloodbound", modelId));
             meta.setCustomModelData(910100);
+            suppressGlint(meta);
             item.setItemMeta(meta);
         }
         return item;
+    }
+
+    public Entity spawnPlayerClone(Location location, String playerName) {
+        if (location == null || location.getWorld() == null) {
+            return null;
+        }
+        ArmorStand stand = (ArmorStand) location.getWorld().spawnEntity(location, EntityType.ARMOR_STAND);
+        stand.setVisible(true);
+        stand.setGravity(false);
+        stand.setBasePlate(false);
+        stand.setArms(true);
+        stand.setCustomName(Text.color("&6Hall of Fame &f" + playerName));
+        stand.setCustomNameVisible(true);
+        if (stand.getEquipment() != null) {
+            stand.getEquipment().setHelmet(playerHead(playerName));
+            stand.getEquipment().setChestplate(new ItemStack(Material.NETHERITE_CHESTPLATE));
+            stand.getEquipment().setLeggings(new ItemStack(Material.NETHERITE_LEGGINGS));
+            stand.getEquipment().setBoots(new ItemStack(Material.NETHERITE_BOOTS));
+            stand.getEquipment().setItemInMainHand(new ItemStack(Material.NETHERITE_SWORD));
+        }
+        addScoreboardTag(stand, "bloodbound_player_clone");
+        return stand;
+    }
+
+    private ItemStack playerHead(String playerName) {
+        ItemStack head = new ItemStack(Material.PLAYER_HEAD);
+        ItemMeta meta = head.getItemMeta();
+        if (meta != null) {
+            try {
+                OfflinePlayer offline = Bukkit.getOfflinePlayerIfCached(playerName);
+                if (offline != null) {
+                    meta.getClass().getMethod("setOwningPlayer", OfflinePlayer.class).invoke(meta, offline);
+                }
+            } catch (ReflectiveOperationException | RuntimeException ignored) {
+            }
+            meta.setDisplayName(Text.color("&6" + playerName));
+            head.setItemMeta(meta);
+        }
+        return head;
+    }
+
+    private void suppressGlint(ItemMeta meta) {
+        try {
+            meta.getClass().getMethod("setEnchantmentGlintOverride", Boolean.class).invoke(meta, Boolean.FALSE);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+        }
     }
 
     private LivingEntity nearestLiving(Player player, double radius) {
@@ -308,6 +415,7 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
         if (visual != null) {
             visual.remove();
         }
+        animationPulses.remove(link.visualId());
         removeSolidFootprint(link.visualId());
     }
 
@@ -489,6 +597,17 @@ public final class CustomMobsPlugin extends JavaPlugin implements Listener, TabC
     }
 
     private record VisualLink(UUID bossId, UUID visualId, boolean standalone) {
+    }
+
+    private static final class AnimationPulse {
+        private final String name;
+        private final long untilMillis;
+        private int ticks;
+
+        private AnimationPulse(String name, long untilMillis) {
+            this.name = name;
+            this.untilMillis = untilMillis;
+        }
     }
 
     private String safeModelId(String input) {
