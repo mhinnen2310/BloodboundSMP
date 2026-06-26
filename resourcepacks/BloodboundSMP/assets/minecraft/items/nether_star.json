@@ -10,6 +10,13 @@
           "type": "minecraft:model",
           "model": "bloodbound:item/boss_shard"
         }
+      },
+      {
+        "threshold": 910100,
+        "model": {
+          "type": "minecraft:model",
+          "model": "bloodbound:item/archfiend"
+        }
       }
     ],
     "fallback": {

@@ -9,6 +9,12 @@
         "custom_model_data": 910001
       },
       "model": "bloodbound:item/boss_shard"
+    },
+    {
+      "predicate": {
+        "custom_model_data": 910100
+      },
+      "model": "bloodbound:item/archfiend"
     }
   ]
 }

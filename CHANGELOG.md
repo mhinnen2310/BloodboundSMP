@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.12 Archfiend CustomModelData Fallback
+
+- Added Archfiend `custom_model_data` fallback mapping to `nether_star` item definitions.
+- This makes the Archfiend visual render even if the `item_model` component is not applied reliably on armorstand helmet items.
+- Kept the broad stable Archfiend model from 1.0.11.
+
 ## 1.0.11 Stable Broad Archfiend Model
 
 - Rebuilt the Archfiend as a broad, heavy vanilla cuboid model with no fragile rotated parts.
