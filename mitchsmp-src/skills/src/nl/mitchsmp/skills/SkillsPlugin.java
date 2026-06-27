@@ -72,12 +72,12 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
     private static final String LORE_MARKER = "[MSAbility]";
     private static final int CATEGORY_COUNT = 6;
     private static final Set<Perk> ACTIVE_PERKS = EnumSet.of(
-        Perk.DEEP_MINER, Perk.ORE_SURVEYOR, Perk.VEIN_DISCIPLINE, Perk.MINING_MASTERY,
+        Perk.MINING_SPEED, Perk.MINING_YIELD, Perk.DEEP_MINER, Perk.ORE_SURVEYOR, Perk.VEIN_DISCIPLINE, Perk.MINING_MASTERY,
         Perk.FORESTER, Perk.REPLANTER, Perk.HARVEST_FLOW, Perk.FARMING_MASTERY,
         Perk.DUELIST, Perk.COMBAT_SUSTAIN, Perk.BOUNTY_FOCUS, Perk.ESCAPE_DISCIPLINE, Perk.KINGSLAYER_FOCUS,
         Perk.BREWING_FOCUS, Perk.RELIC_ALCHEMY, Perk.INFERNAL_RESOLVE, Perk.ALCHEMY_GRANDMASTER,
         Perk.RUNE_SENSE, Perk.TABLE_ATTUNEMENT, Perk.BOOKSMITH, Perk.ENCHANTING_GRANDMASTER,
-        Perk.ECONOMY_QUICKSELL_EFFICIENCY, Perk.ORDER_RUNNER, Perk.CONTRACT_BROKER
+        Perk.ECONOMY_QUICKSELL_EFFICIENCY, Perk.ORDER_RUNNER, Perk.CONTRACT_BROKER, Perk.AUCTION_APPRAISER
     );
     private final Set<UUID> abilityBreaking = new HashSet<>();
     private final Map<UUID, Long> abilityToggleCooldowns = new HashMap<>();
@@ -104,6 +104,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         MitchSMP.registerService(SkillService.class, this);
         Bukkit.getPluginManager().registerEvents(this, this);
         command("skills");
+        command("skillsadmin");
         command("abilities");
         command("mechanics");
         command("scout");
@@ -153,6 +154,12 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         if (name.equals("skills")) {
             return skills(sender, args);
         }
+        if (name.equals("skillsadmin")) {
+            String[] forwarded = new String[args.length + 1];
+            forwarded[0] = "admin";
+            System.arraycopy(args, 0, forwarded, 1, args.length);
+            return skillsAdmin(sender, forwarded);
+        }
         if (name.equals("abilities")) {
             return abilities(sender, args);
         }
@@ -183,7 +190,14 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         if (name.equals("skills")) {
             boolean admin = MitchSMP.permissions().has(sender, "mitchsmp.skills.admin");
             if (args.length == 1) {
-                return admin ? Tab.complete(args[0], "enchant", "anvil", "reset", "reload", "admin") : Tab.complete(args[0], "enchant", "anvil", "reset");
+                List<String> options = new ArrayList<>(List.of("enchant", "anvil", "reset"));
+                for (BloodboundLane lane : BloodboundLane.values()) {
+                    options.add(lane.key());
+                }
+                if (admin) {
+                    options.addAll(List.of("reload", "admin"));
+                }
+                return Tab.complete(args[0], options);
             }
             if (!admin) {
                 return List.of();
@@ -196,6 +210,20 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             }
             if (args.length == 4 && args[1].equalsIgnoreCase("addxp")) {
                 return Tab.complete(args[3], Category.keys());
+            }
+        }
+        if (name.equals("skillsadmin")) {
+            if (!MitchSMP.permissions().has(sender, "mitchsmp.skills.admin")) {
+                return List.of();
+            }
+            if (args.length == 1) {
+                return Tab.complete(args[0], "addxp", "points", "reset", "reload");
+            }
+            if (args.length == 2 && !args[0].equalsIgnoreCase("reload")) {
+                return Tab.onlinePlayers(args[1]);
+            }
+            if (args.length == 3 && args[0].equalsIgnoreCase("addxp")) {
+                return Tab.complete(args[2], Category.keys());
             }
         }
         if (name.equals("abilities")) {
@@ -273,6 +301,13 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         if (!MitchSMP.permissions().has(player, "mitchsmp.skills.use")) {
             Text.msg(player, "&cYou do not have permission.");
             return true;
+        }
+        if (args.length > 0) {
+            BloodboundLane lane = BloodboundLane.from(args[0]);
+            if (lane != null) {
+                openLane(player, lane);
+                return true;
+            }
         }
         openSkills(player);
         return true;
@@ -577,11 +612,11 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             page("&aHUD",
                 "/hud opens your HUD settings.\n\n/hud mode seasonal or overall switches K/D/KDR between season and all-time stats.\n\nYou can add or remove HUD components."),
             page("&2Skills",
-                "/skills opens the skill tree.\n\nCategories: Mining, Farming, Combat, Alchemy, Enchanting and Economy.\n\nEach category has 100 levels and grants skill points for perks."),
+                "/skills opens the Bloodbound progression tree.\n\nLanes: Rookie, Bloodbound, Combat, Economy, Relic/Legacy and EndBoss.\n\nXP tracks still come from real gameplay such as mining, combat, contracts and enchanting."),
             page("&2Skill XP",
                 "Mining XP: blocks and ores.\nFarming XP: crops and logs.\nCombat XP: kills and damage.\nEnchanting XP: using enchanted tools.\nEconomy XP: selling, buying and trading."),
             page("&bSkill Perks",
-                "Perks are earned gameplay power and convenience.\n\nExpect mining speed, bonus yields, farming efficiency, better economy flow and strong utility bonuses."),
+                "Nodes are connected progression choices, not free hearts.\n\nThey tie rookie goals, bounties, contracts, relics, events and EndBoss preparation into one long-term build."),
             page("&dTool Abilities",
                 "/abilities works on the item in your hand.\n\nAn item only gets an ability when the enchanting table rolls a rare Bloodbound enchant.\n\nThe challenge appears after that enchant is on the item."),
             page("&dExamples",
@@ -997,11 +1032,35 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
                 openAbilities(player);
                 return;
             }
-            Category category = categorySlot(event.getRawSlot());
-            if (category != null) {
+            BloodboundLane lane = bloodboundLaneSlot(event.getRawSlot());
+            if (lane != null) {
                 player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.5F, 1.2F);
-                openCategory(player, category, 0);
+                openLane(player, lane);
                 return;
+            }
+            return;
+        }
+        if (menu.type().startsWith("lane:")) {
+            BloodboundLane lane = BloodboundLane.valueOf(menu.type().split(":")[1]);
+            if (event.getRawSlot() == 45) {
+                player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.5F, 0.9F);
+                openSkills(player);
+                return;
+            }
+            if (event.getRawSlot() == 49) {
+                player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.5F, 1.1F);
+                openLaneInfo(player, lane);
+                return;
+            }
+            if (event.getRawSlot() == 53) {
+                player.playSound(player.getLocation(), Sound.BLOCK_BELL_USE, 0.45F, 1.5F);
+                openAbilities(player);
+                return;
+            }
+            Perk perk = perkSlot(lane, event.getRawSlot());
+            if (perk != null) {
+                buyPerk(player, perk);
+                openLane(player, lane);
             }
             return;
         }
@@ -1047,30 +1106,58 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
 
     private void openSkills(Player player) {
         SkillsMenu holder = new SkillsMenu("skills");
-        Inventory inventory = Bukkit.createInventory(holder, 54, Text.color("&8Skilltree"));
+        Inventory inventory = Bukkit.createInventory(holder, 54, Text.color("&4Bloodbound Skilltree"));
         holder.inventory(inventory);
-        inventory.setItem(4, icon(Material.NETHER_STAR, "&aSkillpoints: &f" + points(player), List.of(
-            "&7Each category levels to 100.",
-            "&7Every level-up grants 1 skillpoint.",
-            "&7Click a category to inspect perks."
+        fillTreeFrame(inventory);
+        inventory.setItem(4, icon(Material.NETHER_STAR, "&6Skillpoints: &f" + points(player), List.of(
+            "&7Choose a Bloodbound progression lane.",
+            "&7Every XP level grants 1 skillpoint.",
+            "&7Nodes connect SMP systems instead of",
+            "&7replacing item-bound abilities."
         )));
         inventory.setItem(22, icon(Material.PAPER, "&eHow this works", List.of(
-            "&7Main menu: category overview.",
-            "&7Category menu: buy real perks.",
-            "&7Perks cost 1 skillpoint per click.",
-            "&7Item abilities are separate: &f/abilities&7."
+            "&7Each lane has locked, available,",
+            "&7unlocked and maxed nodes.",
+            "&7Some choices lock rival paths.",
+            "&7No skill grants free hearts.",
+            "&8Inspired by a real RPG tree layout."
         )));
-        for (Category category : Category.values()) {
-            inventory.setItem(category.slot(), categoryIcon(player, category));
+        for (BloodboundLane lane : BloodboundLane.values()) {
+            inventory.setItem(lane.slot(), bloodboundLaneIcon(player, lane));
         }
-        inventory.setItem(45, icon(Material.WRITTEN_BOOK, "&aMechanics Guide", List.of("&7Klik for het geschreven guide boek.")));
-        inventory.setItem(49, icon(Material.EXPERIENCE_BOTTLE, "&bTotale progressie", List.of(
-            "&7Gemiddeld level: &f" + averageSkillLevel(player) + "/100",
-            "&7Categorieen: &f" + Category.values().length,
+        inventory.setItem(45, icon(Material.WRITTEN_BOOK, "&aMechanics Guide", List.of("&7Click for the written Bloodbound guide.")));
+        inventory.setItem(49, icon(Material.EXPERIENCE_BOTTLE, "&bProgression Overview", List.of(
+            "&7Average XP level: &f" + averageSkillLevel(player) + "/100",
+            "&7Visible lanes: &f" + BloodboundLane.values().length,
             "&7Skillpoints: &f" + points(player)
         )));
         inventory.setItem(53, icon(Material.ANVIL, "&dTool Abilities", List.of("&7Click to inspect your held item ability.", "&7Abilities unlock through rare Bloodbound enchants.")));
         player.openInventory(inventory);
+    }
+
+    private void openLane(Player player, BloodboundLane lane) {
+        SkillsMenu holder = new SkillsMenu("lane:" + lane.name());
+        Inventory inventory = Bukkit.createInventory(holder, 54, Text.color("&4" + lane.display()));
+        holder.inventory(inventory);
+        fillTreeFrame(inventory);
+        drawLaneConnectors(inventory, lane);
+        inventory.setItem(4, bloodboundLaneIcon(player, lane));
+        inventory.setItem(13, icon(Material.EXPERIENCE_BOTTLE, "&bXP Sources", laneSources(player, lane)));
+        List<Perk> perks = perksFor(lane);
+        if (perks.isEmpty()) {
+            inventory.setItem(22, icon(Material.BARRIER, "&7No active nodes", List.of("&7This lane is disabled in config.")));
+        }
+        for (Perk perk : perks) {
+            inventory.setItem(perkSlotConfig(perk), perkIcon(player, perk));
+        }
+        inventory.setItem(45, icon(Material.ARROW, "&aBack", List.of("&7Return to the Bloodbound skilltree.")));
+        inventory.setItem(49, icon(Material.PAPER, "&eLane Info", laneInfoLore(lane)));
+        inventory.setItem(53, icon(Material.ANVIL, "&dTool Abilities", List.of("&7Item-bound abilities are separate.", "&7Use &f/abilities &7for your held item.")));
+        player.openInventory(inventory);
+    }
+
+    private void openLaneInfo(Player player, BloodboundLane lane) {
+        player.sendActionBar(Text.color("&4" + lane.display() + " &8| &7" + lane.shortGoal()));
     }
 
     private void openCategory(Player player, Category category, int page) {
@@ -1143,7 +1230,13 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             return true;
         }
         if (args.length < 2) {
-            Text.msg(sender, "&cUsage: /skills admin <addxp|points|reset> ...");
+            Text.msg(sender, "&cUsage: /skills admin <addxp|points|reset|reload> ...");
+            return true;
+        }
+        if (args[1].equalsIgnoreCase("reload")) {
+            skillConfig.load();
+            writeDefaultSkilltreeConfig();
+            Text.msg(sender, "&aBloodbound skilltree config reloaded.");
             return true;
         }
         Player target = args.length >= 3 ? Bukkit.getPlayerExact(args[2]) : null;
@@ -1481,6 +1574,13 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         }
         if (level(player, perk.category()) < perkRequiredLevel(perk)) {
             Text.msg(player, "&cYou need level &f" + perkRequiredLevel(perk) + " &cin " + perk.category().display() + "&c.");
+            return;
+        }
+        if (!requirementsMet(player, perk)) {
+            Text.msg(player, "&cThis node needs an earlier skill first.");
+            for (String line : requirementLore(player, perk)) {
+                Text.msg(player, line);
+            }
             return;
         }
         SkillLane lane = lane(perk);
@@ -2764,37 +2864,153 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         ));
     }
 
+    private ItemStack bloodboundLaneIcon(Player player, BloodboundLane lane) {
+        int unlocked = 0;
+        int maxed = 0;
+        int available = 0;
+        for (Perk perk : perksFor(lane)) {
+            NodeState state = nodeState(player, perk);
+            if (state == NodeState.UNLOCKED || state == NodeState.MAXED) {
+                unlocked++;
+            }
+            if (state == NodeState.MAXED) {
+                maxed++;
+            }
+            if (state == NodeState.AVAILABLE) {
+                available++;
+            }
+        }
+        return icon(lane.icon(), lane.color() + lane.display(), List.of(
+            "&7" + lane.shortGoal(),
+            "&8",
+            "&7Nodes unlocked: &f" + unlocked + "&7/" + perksFor(lane).size(),
+            "&7Nodes maxed: &f" + maxed,
+            "&7Available upgrades: &f" + available,
+            "&7Skillpoints: &f" + points(player),
+            "&8",
+            "&7Systems: &f" + lane.systems(),
+            "&eClick to open this path."
+        ));
+    }
+
     private ItemStack perkIcon(Player player, Perk perk) {
         int current = perk(player, perk);
-        boolean locked = level(player, perk.category()) < perkRequiredLevel(perk);
+        boolean locked = level(player, perk.category()) < perkRequiredLevel(perk) || !requirementsMet(player, perk);
         SkillLane lane = lane(perk);
         SkillLane chosen = chosenLane(player, perk.category());
         boolean laneLocked = lane.exclusive() && chosen != null && chosen != lane && current <= 0;
         boolean maxed = current >= perkMax(perk);
-        String color = maxed ? "&a" : locked || laneLocked ? "&c" : points(player) > 0 ? "&e" : "&7";
+        NodeState state = nodeState(player, perk);
+        String color = switch (state) {
+            case MAXED -> "&a";
+            case UNLOCKED -> "&2";
+            case AVAILABLE -> "&e";
+            case LOCKED -> "&c";
+        };
         List<String> lore = new ArrayList<>(List.of(
-            "&7Category: &f" + perk.category().display(),
-            "&7Path: &f" + lane.display() + (lane.exclusive() ? " &8(exclusive)" : ""),
-            "&7Required level: &f" + perkRequiredLevel(perk),
+            "&7Lane: &f" + bloodboundLane(perk).display(),
+            "&7XP track: &f" + perk.category().display(),
+            "&7Choice path: &f" + lane.display() + (lane.exclusive() ? " &8(exclusive)" : ""),
+            "&7Status: " + state.label(),
             "&7Current: &f" + current + "/" + perkMax(perk),
-            "&7Cost: &f1 skillpoint"
+            "&7Cost: &f1 skillpoint",
+            "&7Required XP level: &f" + perkRequiredLevel(perk),
+            "&7Gameplay: &f" + linkedSystems(perk)
         ));
         if (chosen != null && lane.exclusive()) {
             lore.add("&7Chosen path: &f" + chosen.display());
         }
+        lore.addAll(requirementLore(player, perk));
+        lore.add("&8");
         lore.addAll(perkDescriptionLines(perk));
         if (maxed) {
             lore.add("&aMaxed.");
         } else if (laneLocked) {
             lore.add("&cLocked by your " + chosen.display() + " path.");
         } else if (locked) {
-            lore.add("&cLocked. Grind " + perk.category().display() + " level " + perkRequiredLevel(perk) + ".");
+            lore.add("&cLocked. Check requirements above.");
         } else if (points(player) <= 0) {
             lore.add("&cNo skillpoints available.");
         } else {
             lore.add(lane.exclusive() && chosen == null ? "&eClick to choose this path." : "&eClick to buy.");
         }
         return icon(perkIcon(perk), color + perkDisplay(perk) + " &f" + current + "/" + perkMax(perk), lore);
+    }
+
+    private NodeState nodeState(Player player, Perk perk) {
+        int current = perk(player, perk);
+        if (current >= perkMax(perk)) {
+            return NodeState.MAXED;
+        }
+        if (current > 0) {
+            return NodeState.UNLOCKED;
+        }
+        SkillLane lane = lane(perk);
+        SkillLane chosen = chosenLane(player, perk.category());
+        boolean laneLocked = lane.exclusive() && chosen != null && chosen != lane;
+        if (laneLocked || level(player, perk.category()) < perkRequiredLevel(perk) || !requirementsMet(player, perk) || points(player) <= 0) {
+            return NodeState.LOCKED;
+        }
+        return NodeState.AVAILABLE;
+    }
+
+    private boolean requirementsMet(Player player, Perk perk) {
+        for (Perk required : requiredPerks(perk)) {
+            if (perk(player, required) <= 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    private List<String> requirementLore(Player player, Perk perk) {
+        List<String> lore = new ArrayList<>();
+        List<Perk> required = requiredPerks(perk);
+        if (required.isEmpty()) {
+            lore.add("&7Requires: &aNo previous node");
+            return lore;
+        }
+        for (Perk req : required) {
+            lore.add((perk(player, req) > 0 ? "&aRequires: " : "&cRequires: ") + perkDisplay(req) + " 1/" + perkMax(req));
+        }
+        return lore;
+    }
+
+    private List<Perk> requiredPerks(Perk perk) {
+        String configured = skillConfig.getString("node." + perk.key() + ".requires", "");
+        if (!configured.isBlank()) {
+            List<Perk> parsed = new ArrayList<>();
+            for (String part : configured.split(",")) {
+                Perk required = Perk.from(part.trim());
+                if (required != null && required != perk) {
+                    parsed.add(required);
+                }
+            }
+            return parsed;
+        }
+        return switch (perk) {
+            case ORE_SURVEYOR -> List.of(Perk.MINING_YIELD);
+            case VEIN_DISCIPLINE -> List.of(Perk.MINING_SPEED);
+            case MINING_MASTERY -> List.of(Perk.DEEP_MINER);
+            case REPLANTER -> List.of(Perk.FARMING_YIELD);
+            case HARVEST_FLOW -> List.of(Perk.REPLANTER);
+            case FARMING_MASTERY -> List.of(Perk.FORESTER);
+            case BOUNTY_FOCUS -> List.of(Perk.COMBAT_SUSTAIN);
+            case DUELIST -> List.of(Perk.COMBAT_SUSTAIN);
+            case ESCAPE_DISCIPLINE -> List.of(Perk.DUELIST);
+            case KINGSLAYER_FOCUS -> List.of(Perk.BOUNTY_FOCUS);
+            case BREWING_FOCUS -> List.of(Perk.ALCHEMY_MASTERY);
+            case RELIC_ALCHEMY -> List.of(Perk.BREWING_FOCUS);
+            case INFERNAL_RESOLVE -> List.of(Perk.RELIC_ALCHEMY);
+            case ALCHEMY_GRANDMASTER -> List.of(Perk.INFERNAL_RESOLVE);
+            case TABLE_ATTUNEMENT -> List.of(Perk.RUNE_SENSE);
+            case BOOKSMITH -> List.of(Perk.TABLE_ATTUNEMENT);
+            case ENCHANTING_GRANDMASTER -> List.of(Perk.BOOKSMITH);
+            case ORDER_RUNNER -> List.of(Perk.ECONOMY_QUICKSELL_EFFICIENCY);
+            case CONTRACT_BROKER -> List.of(Perk.ORDER_RUNNER);
+            case AUCTION_APPRAISER -> List.of(Perk.CONTRACT_BROKER);
+            default -> List.of();
+        };
     }
 
     private ItemStack icon(Material material, String name, List<String> lore) {
@@ -2824,6 +3040,118 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             .toList();
     }
 
+    private List<Perk> perksFor(BloodboundLane lane) {
+        return java.util.Arrays.stream(Perk.values())
+            .filter(perk -> bloodboundLane(perk) == lane)
+            .filter(this::perkEnabled)
+            .sorted(Comparator.comparingInt(this::perkRequiredLevel).thenComparing(this::perkSlotConfig))
+            .toList();
+    }
+
+    private Perk perkSlot(BloodboundLane lane, int slot) {
+        for (Perk perk : perksFor(lane)) {
+            if (perkSlotConfig(perk) == slot) {
+                return perk;
+            }
+        }
+        return null;
+    }
+
+    private BloodboundLane bloodboundLaneSlot(int slot) {
+        for (BloodboundLane lane : BloodboundLane.values()) {
+            if (lane.slot() == slot) {
+                return lane;
+            }
+        }
+        return null;
+    }
+
+    private void fillTreeFrame(Inventory inventory) {
+        ItemStack filler = icon(Material.GLASS_PANE, "&8", List.of());
+        for (int slot : new int[] {0, 1, 2, 3, 5, 6, 7, 8, 9, 17, 18, 26, 27, 35, 36, 44, 46, 47, 48, 50, 51, 52}) {
+            inventory.setItem(slot, filler);
+        }
+    }
+
+    private void drawLaneConnectors(Inventory inventory, BloodboundLane lane) {
+        ItemStack unlocked = icon(Material.GREEN_STAINED_GLASS_PANE, "&bPath link", List.of("&7Follow the linked nodes upward."));
+        ItemStack locked = icon(Material.RED_STAINED_GLASS_PANE, "&8Locked branch", List.of("&7Unlock earlier nodes first."));
+        int[] line = switch (lane) {
+            case ROOKIE -> new int[] {30, 31, 32, 22, 13};
+            case BLOODBOUND -> new int[] {19, 20, 21, 22, 23, 24, 25};
+            case COMBAT -> new int[] {29, 30, 31, 32, 33};
+            case ECONOMY -> new int[] {20, 21, 22, 23, 24};
+            case RELIC -> new int[] {29, 30, 31, 22, 13};
+            case ENDBOSS -> new int[] {28, 29, 30, 31, 32, 33, 34};
+        };
+        for (int slot : line) {
+            if (inventory.getItem(slot) == null) {
+                inventory.setItem(slot, unlocked);
+            }
+        }
+        for (int slot : new int[] {10, 16, 37, 43}) {
+            if (inventory.getItem(slot) == null) {
+                inventory.setItem(slot, locked);
+            }
+        }
+    }
+
+    private List<String> laneSources(Player player, BloodboundLane lane) {
+        List<String> lore = new ArrayList<>();
+        lore.add("&7Primary sources:");
+        for (Category category : lane.categories()) {
+            int level = level(player, category);
+            int totalXp = xp(player, category);
+            lore.add("&8- &f" + category.display() + " &7level &f" + level + "&7/100 &8(" + totalXp + " XP)");
+        }
+        lore.add("&8");
+        lore.add("&7Earn XP through the connected SMP loop,");
+        lore.add("&7then spend points on this lane's nodes.");
+        return lore;
+    }
+
+    private List<String> laneInfoLore(BloodboundLane lane) {
+        List<String> lore = new ArrayList<>();
+        lore.add("&7" + lane.shortGoal());
+        lore.add("&8");
+        lore.add("&7Connected systems:");
+        for (String system : lane.systems().split(", ")) {
+            lore.add("&8- &f" + system);
+        }
+        lore.add("&8");
+        lore.add("&7Design rule: strong identity,");
+        lore.add("&7no free hearts, no money printer.");
+        return lore;
+    }
+
+    private BloodboundLane bloodboundLane(Perk perk) {
+        String configured = skillConfig.getString("node." + perk.key() + ".tree_lane", "");
+        BloodboundLane override = BloodboundLane.from(configured);
+        if (override != null) {
+            return override;
+        }
+        return switch (perk) {
+            case MINING_SPEED, MINING_YIELD, FARMING_YIELD, SUPPLY_GARDENER, COMBAT_SUSTAIN -> BloodboundLane.ROOKIE;
+            case DEEP_MINER, ORE_SURVEYOR, BOUNTY_FOCUS, KINGSLAYER_FOCUS, ESCAPE_DISCIPLINE -> BloodboundLane.BLOODBOUND;
+            case DUELIST, VEIN_DISCIPLINE -> BloodboundLane.COMBAT;
+            case ECONOMY_QUICKSELL_EFFICIENCY, ORDER_RUNNER, CONTRACT_BROKER, AUCTION_APPRAISER -> BloodboundLane.ECONOMY;
+            case FORESTER, REPLANTER, HARVEST_FLOW, FARMING_MASTERY, APPLE_LORE, RELIC_ALCHEMY -> BloodboundLane.RELIC;
+            case BREWING_FOCUS, INFERNAL_RESOLVE, ALCHEMY_GRANDMASTER, RUNE_SENSE, TABLE_ATTUNEMENT, BOOKSMITH, ANVIL_CARE, ENCHANTING_MASTERY, ENCHANTING_GRANDMASTER -> BloodboundLane.ENDBOSS;
+            default -> BloodboundLane.ROOKIE;
+        };
+    }
+
+    private String linkedSystems(Perk perk) {
+        return switch (bloodboundLane(perk)) {
+            case ROOKIE -> "rookie, goals, skirmish";
+            case BLOODBOUND -> "lifesteal, bounties, recovery";
+            case COMBAT -> "CombatTag, assists, PvP";
+            case ECONOMY -> "EconomyWatch, orders, contracts, AH";
+            case RELIC -> "collections, relics, seasons";
+            case ENDBOSS -> "artifacts, ritual, EndBoss";
+        };
+    }
+
     private void writeDefaultSkilltreeConfig() {
         boolean changed = false;
         if (!skillConfig.contains("meta.version")) {
@@ -2836,11 +3164,14 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             changed |= setDefault(prefix + "enabled", ACTIVE_PERKS.contains(perk));
             changed |= setDefault(prefix + "display", perk.display());
             changed |= setDefault(prefix + "category", perk.category().key());
+            changed |= setDefault(prefix + "tree_lane", bloodboundLane(perk).key());
             changed |= setDefault(prefix + "lane", laneDefault(perk).name().toLowerCase(Locale.ROOT));
             changed |= setDefault(prefix + "icon", perk.icon().name());
             changed |= setDefault(prefix + "slot", perk.slot());
             changed |= setDefault(prefix + "required_level", perk.requiredLevel());
             changed |= setDefault(prefix + "max_level", perk.max());
+            changed |= setDefault(prefix + "requires", defaultRequirementString(perk));
+            changed |= setDefault(prefix + "linked_systems", linkedSystems(perk));
             changed |= setDefault(prefix + "description", perk.description());
         }
         if (changed) {
@@ -2854,6 +3185,31 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         }
         skillConfig.set(key, value);
         return true;
+    }
+
+    private String defaultRequirementString(Perk perk) {
+        return switch (perk) {
+            case ORE_SURVEYOR -> "mining_yield";
+            case VEIN_DISCIPLINE -> "mining_speed";
+            case MINING_MASTERY -> "deep_miner";
+            case REPLANTER -> "farming_yield";
+            case HARVEST_FLOW -> "replanter";
+            case FARMING_MASTERY -> "forester";
+            case BOUNTY_FOCUS, DUELIST -> "combat_sustain";
+            case ESCAPE_DISCIPLINE -> "duelist";
+            case KINGSLAYER_FOCUS -> "bounty_focus";
+            case BREWING_FOCUS -> "alchemy_mastery";
+            case RELIC_ALCHEMY -> "brewing_focus";
+            case INFERNAL_RESOLVE -> "relic_alchemy";
+            case ALCHEMY_GRANDMASTER -> "infernal_resolve";
+            case TABLE_ATTUNEMENT -> "rune_sense";
+            case BOOKSMITH -> "table_attunement";
+            case ENCHANTING_GRANDMASTER -> "booksmith";
+            case ORDER_RUNNER -> "economy_quicksell_efficiency";
+            case CONTRACT_BROKER -> "order_runner";
+            case AUCTION_APPRAISER -> "contract_broker";
+            default -> "";
+        };
     }
 
     private boolean perkEnabled(Perk perk) {
@@ -3089,6 +3445,73 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         }
     }
 
+    private enum NodeState {
+        LOCKED("&cLocked"),
+        AVAILABLE("&eAvailable"),
+        UNLOCKED("&2Unlocked"),
+        MAXED("&aMaxed");
+
+        private final String label;
+
+        NodeState(String label) {
+            this.label = label;
+        }
+
+        String label() {
+            return label;
+        }
+    }
+
+    private enum BloodboundLane {
+        ROOKIE("rookie", "Rookie Path", Material.LEATHER_BOOTS, 10, "&a", "Learn the server loop without free hearts.", "rookie, goals, skirmish", Category.MINING, Category.FARMING, Category.COMBAT),
+        BLOODBOUND("bloodbound", "Bloodbound Path", Material.REDSTONE, 12, "&4", "Turn hearts, bounties and recovery into identity.", "lifesteal, bounties, corrupted hearts", Category.COMBAT, Category.ALCHEMY),
+        COMBAT("combat", "Combat Path", Material.DIAMOND_SWORD, 14, "&c", "Build a PvP style through awareness, assists and risk.", "CombatTag, skirmish, assists", Category.COMBAT, Category.MINING),
+        ECONOMY("economy", "Economy Path", Material.EMERALD, 16, "&6", "Read markets, run orders and broker contracts.", "EconomyWatch, orders, contracts, AH", Category.ECONOMY),
+        RELIC("relic", "Relic & Legacy Path", Material.ECHO_SHARD, 30, "&5", "Collect, archive and build season prestige.", "collections, relics, seasons, legacy", Category.FARMING, Category.ALCHEMY),
+        ENDBOSS("endboss", "Event & EndBoss Path", Material.NETHER_STAR, 32, "&d", "Prepare for rituals, artifacts and the Archfiend.", "events, artifacts, boss shards, EndBoss", Category.ENCHANTING, Category.ALCHEMY);
+
+        private final String key;
+        private final String display;
+        private final Material icon;
+        private final int slot;
+        private final String color;
+        private final String shortGoal;
+        private final String systems;
+        private final List<Category> categories;
+
+        BloodboundLane(String key, String display, Material icon, int slot, String color, String shortGoal, String systems, Category... categories) {
+            this.key = key;
+            this.display = display;
+            this.icon = icon;
+            this.slot = slot;
+            this.color = color;
+            this.shortGoal = shortGoal;
+            this.systems = systems;
+            this.categories = List.of(categories);
+        }
+
+        String key() { return key; }
+        String display() { return display; }
+        Material icon() { return icon; }
+        int slot() { return slot; }
+        String color() { return color; }
+        String shortGoal() { return shortGoal; }
+        String systems() { return systems; }
+        List<Category> categories() { return categories; }
+
+        static BloodboundLane from(String input) {
+            if (input == null || input.isBlank()) {
+                return null;
+            }
+            for (BloodboundLane lane : values()) {
+                if (lane.key.equalsIgnoreCase(input) || lane.name().equalsIgnoreCase(input) || lane.display.equalsIgnoreCase(input)) {
+                    return lane;
+                }
+            }
+            return null;
+        }
+    }
+
     private enum SkillLane {
         MASTERY("Mastery", false),
         DEEP_MINER("Deep Miner", true),
@@ -3271,6 +3694,18 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             return java.util.Arrays.stream(description.split("\\|"))
                 .map(line -> "&7" + line)
                 .toList();
+        }
+
+        static Perk from(String input) {
+            if (input == null || input.isBlank()) {
+                return null;
+            }
+            for (Perk perk : values()) {
+                if (perk.key.equalsIgnoreCase(input) || perk.name().equalsIgnoreCase(input) || perk.display.equalsIgnoreCase(input)) {
+                    return perk;
+                }
+            }
+            return null;
         }
     }
 

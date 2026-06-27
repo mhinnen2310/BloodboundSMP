@@ -11,6 +11,10 @@ commands:
     aliases: [skilltree, sk]
     description: Open the MitchSMP skilltree.
     usage: /skills [admin]
+  skillsadmin:
+    aliases: [skilladmin, skadmin]
+    description: Admin tooling for the Bloodbound skilltree.
+    usage: /skillsadmin <addxp|points|reset|reload> ...
   abilities:
     aliases: [ability, enchants]
     description: Open tool-bound endgame ability menu.

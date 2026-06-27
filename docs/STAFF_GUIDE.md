@@ -17,6 +17,15 @@ Staff members play as normal players outside staff mode. Administrative powers, 
 
 Player chat is not stored by the report or staff-audit implementation. Commands and relevant administrative actions are audit targets.
 
+## Skilltree Admin
+
+- `/skillsadmin reload`: reload `plugins/MitchSMP-Skills/skilltree.properties`.
+- `/skillsadmin addxp <player> <track> <amount>`: grant XP to a gameplay track such as `mining`, `combat` or `economy`.
+- `/skillsadmin points <player> <amount>`: set available skillpoints.
+- `/skillsadmin reset <player>`: reset that player's Bloodbound skilltree choices and skill XP profile.
+
+Use this tooling mainly in test/sandbox while tuning progression lanes. Skilltree nodes do not grant free hearts, and item-bound weapon/tool abilities stay under `/abilities`.
+
 ## Incident Response
 
 1. Preserve context: inspect `/staffprofile`, reports and snapshots before changing inventory or location.

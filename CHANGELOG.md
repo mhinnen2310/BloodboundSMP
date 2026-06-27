@@ -4,7 +4,10 @@
 
 - Added `MitchSMP-Safezones`, a dedicated staff-managed safezone plugin with cuboid claims, wand/pos selection and configurable flags for PvP, mob spawning, hunger, build protection, explosions, fall damage and hostile damage.
 - Rebuilt the visible skilltree into a tighter Bloodbound identity selection: fewer filler nodes, exclusive paths, `/skills reset confirm`, and a one-time wipe of test-launch skill progress.
+- Upgraded `/skills` into a Bloodbound progression hub with visual lane menus for Rookie, Bloodbound, Combat, Economy, Relic/Legacy and Event/EndBoss progression.
+- Added locked/available/unlocked/maxed node states, hover requirements, connected-system lore and config-driven previous-node requirements through `node.<id>.requires`.
 - Made the skilltree config-driven through `plugins/MitchSMP-Skills/skilltree.properties`; node visibility, display names, icon material, slot, lane, required level, max level and lore can be edited and reloaded with `/skills reload`.
+- Reworked the Archfiend fight into four health-based stages at 100/80/60/40 percent health, with config-driven stage mobs, damage scaling, speed scaling and special attack timing.
 - Prepared the build script to select the newest locally available Paper API jar, making the codebase friendlier for Paper 26.1.2 build 72 while still falling back to the currently installed local API.
 
 ## 1.0.19 Archfiend Hitbox and Persistent Model Hotfix

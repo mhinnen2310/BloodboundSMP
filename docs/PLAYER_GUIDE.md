@@ -35,7 +35,9 @@ Contract selection uses EconomyWatch signals plus randomized variety. This helps
 
 ## Skills And Abilities
 
-Use `/skills` for Mining, Farming, Combat, Alchemy, Enchanting and Economy progression. Skill XP and perks are player-bound. Item abilities are separate and item-bound; their challenge and unlocked state stay on that exact tool or weapon.
+Use `/skills` for the Bloodbound progression tree. The menu is split into Rookie, Bloodbound, Combat, Economy, Relic/Legacy and Event/EndBoss lanes. Nodes show whether they are locked, available, unlocked or maxed, and hover text explains costs, requirements and the systems they connect to.
+
+Skill XP still comes from real gameplay tracks such as mining, farming, combat, alchemy, enchanting and economy actions. Item abilities are separate and item-bound; their challenge and unlocked state stay on that exact tool or weapon.
 
 Ability status appears in the HUD. If both a held ability and Aegis Guard are relevant, both appear as separate lines. Ability interaction uses only a quiet pling at most; it does not spam activation audio.
 

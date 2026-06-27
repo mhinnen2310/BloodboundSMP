@@ -2,54 +2,33 @@
 
 ## Skilltree
 
-Use `/skills` to open the skilltree. Every category levels to 100. Each level grants 1 skillpoint. Perks are bought inside category pages.
+Use `/skills` to open the Bloodbound progression tree. It is now arranged as visual lanes with connected nodes instead of a flat category list. Nodes show four states: locked, available, unlocked and maxed.
 
-Mining:
+The six visible lanes are:
 
-- Mining Speed: grants frequent Haste while mining.
-- Mining Yield: ores can drop extra ore blocks.
-- Deep Miner: bonus Mining XP at Y 0 and below.
-- Ore Surveyor: additional bonus-ore chance.
-- Vein Discipline: longer Haste after mining.
-- Mining Mastery: improves both Haste and bonus ore yield.
+- Rookie Path: onboarding, goals, skirmish participation and early recovery flow.
+- Bloodbound Path: lifesteal risk, bounties, corrupted hearts and comeback progression.
+- Combat Path: CombatTag awareness, assists, skirmish and high-risk PvP identity.
+- Economy Path: EconomyWatch, QuickSell, orders, contracts and AuctionHouse guidance.
+- Relic & Legacy Path: collections, relics, seasonal progress and long-term prestige.
+- Event & EndBoss Path: events, artifacts, boss shards, rituals and Archfiend preparation.
 
-Farming:
+Skill XP still comes from real gameplay tracks:
 
-- Farming Yield: crops and logs can drop extra block loot.
-- Replanter: crop blocks can auto-replant after breaking.
-- Harvest Flow: hoes can harvest nearby crops in one action.
-- Forester: more Farming XP and bonus-log chance.
-- Supply Gardener: more XP from crop harvesting.
-- Farming Mastery: further crop/log yield and animal-farming progression.
+- Mining XP: blocks and ores.
+- Farming XP: crops, logs and breeding.
+- Combat XP: valid PvP/PvE combat hooks.
+- Alchemy XP: potions, apples and rare consumables.
+- Enchanting XP: enchanting and item-ability progression.
+- Economy XP: selling, orders, contracts and market actions.
 
-Combat:
+Important rules:
 
-- Combat Sustain: heals slightly after real kills.
-- Bounty Focus: extra Combat XP when fighting bounty targets, rate limited.
-- Duelist: up to +5% direct PvP damage.
-- Escape Discipline: prevents a critical hit and teleports up to 50 blocks away, with a 60-minute cooldown.
-- Kingslayer Focus: highlights nearby 20-heart or bounty targets up to 128 blocks and warns them.
-- Combat Mastery: combat prestige.
-
-Alchemy:
-
-- Consumed potions, golden apples and honey grant Alchemy XP.
-- Brewing Focus shortens an active brewing timer by up to 50% once per 30 seconds.
-- Infernal Resolve maintains Fire Resistance in the Nether.
-- Alchemy Grandmaster extends consumed potion durations by up to 25%.
-
-Enchanting:
-
-- Enchanting Mastery: speeds item-ability challenge progress.
-- Rune Sense and Table Attunement improve Bloodbound ability-enchant odds.
-- Anvil Care accelerates item-bound ability challenges.
-- Max Booksmith unlocks `/skills anvil`; max Enchanting Grandmaster unlocks `/skills enchant`.
-
-Economy:
-
-- QuickSell Efficiency: increases `/sell` payout by up to +15%.
-- Order Runner: increases resource order payout by up to +15%.
-- Contract Broker: increases contract payout by up to +20%.
+- No skill grants free hearts.
+- Item-bound tool and weapon abilities remain separate under `/abilities`.
+- Some paths are exclusive, so players are pushed toward a build identity instead of maxing every branch quickly.
+- Node settings live in `plugins/MitchSMP-Skills/skilltree.properties` and can be reloaded with `/skills reload`.
+- `node.<id>.requires` controls previous-node requirements as a comma-separated list of node ids.
 
 ## Item Abilities
 
