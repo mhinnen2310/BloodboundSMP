@@ -20,3 +20,6 @@ commands:
   qa:
     description: Run guided Bloodbound launch QA while maintenance is active.
     usage: /qa <start smoke|auto smoke|pass|warn|fail|next|status|stop|recent>
+  motd:
+    description: View or edit the Bloodbound server list MOTD.
+    usage: /motd [show|reload|frames <frames>|set <1|2> <text>]

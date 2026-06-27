@@ -95,6 +95,7 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
     private PropertiesFile config;
     private NamespacedKey wardKey;
     private NamespacedKey relicKey;
+    private NamespacedKey archfiendArrowKey;
     private Session session;
 
     @Override
@@ -103,6 +104,7 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
         ensureConfigDefaults();
         wardKey = new NamespacedKey(this, "infernal_ward");
         relicKey = new NamespacedKey(this, "hell_relic");
+        archfiendArrowKey = new NamespacedKey(this, "archfiend_arrow");
         Bukkit.getPluginManager().registerEvents(this, this);
         if (getCommand("endboss") != null) {
             getCommand("endboss").setExecutor(this);
@@ -321,8 +323,12 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
             return true;
         }
         if (args.length < 3) {
-            Text.msg(sender, "&cGebruik: /endboss config <key> <value>");
-            Text.msg(sender, "&7Keys: " + String.join(", ", configKeys()));
+            Text.msg(sender, "&cUsage: /endboss config <key> <value>");
+            Text.msg(sender, "&6Core: &frequirements.min_players&7, &fboss.health&7, &fbossbar.color&7, &fbossbar.title");
+            Text.msg(sender, "&6Ritual: &frequirements.hearts&7, &frequirements.boss_shards&7, &frequirements.corrupted_hearts&7, &frequirements.enchanted_apples");
+            Text.msg(sender, "&6Arena: &farena.radius&7, &farena.barrier_extra_blocks&7, &farena.boundary_extra_blocks&7, &farena.barrier_height_blocks");
+            Text.msg(sender, "&6Attacks: &fattacks.claw_damage&7, &fattacks.arrow_damage&7, &fattacks.arrow_count&7, &fattacks.blindness_enabled");
+            Text.msg(sender, "&6Stages: &fstage.<1-4>.damage_multiplier&7, &fspeed_multiplier&7, &fattack_interval_ticks&7, &fmobs");
             return true;
         }
         String key = args[1].toLowerCase(Locale.ROOT);
@@ -331,13 +337,15 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
             return true;
         }
         String value = args[2];
-        if (!key.endsWith(".mobs")) {
+        if (isNumericConfigKey(key)) {
             double numeric = parseDouble(value, -1.0D);
             if (numeric < 0.0D) {
                 Text.msg(sender, "&cUse a positive number.");
                 return true;
             }
             value = String.valueOf(numeric);
+        } else if (args.length > 3) {
+            value = String.join(" ", java.util.Arrays.copyOfRange(args, 2, args.length));
         }
         config.set(key, value);
         config.save();
@@ -347,30 +355,55 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
 
     private void ensureConfigDefaults() {
         boolean changed = false;
+        changed |= defaultConfig("readme.1", "Grouped keys are the preferred public config. Legacy flat keys still work as fallback.");
+        changed |= defaultConfig("readme.2", "Use /endboss config <key> <value>. Text keys accept spaces.");
+        changed |= defaultConfig("requirements.min_players", 3);
+        changed |= defaultConfig("requirements.hearts", 20);
+        changed |= defaultConfig("requirements.boss_shards", 64);
+        changed |= defaultConfig("requirements.corrupted_hearts", 8);
+        changed |= defaultConfig("requirements.enchanted_apples", 2);
+        changed |= defaultConfig("boss.health", 5000.0D);
+        changed |= defaultConfig("arena.radius", ARENA_RADIUS);
+        changed |= defaultConfig("arena.barrier_extra_blocks", 2);
+        changed |= defaultConfig("arena.boundary_extra_blocks", 4);
+        changed |= defaultConfig("arena.barrier_height_blocks", 8);
         changed |= defaultConfig("min_players", 3);
         changed |= defaultConfig("boss_health", 5000.0D);
         changed |= defaultConfig("required_hearts", 20);
         changed |= defaultConfig("required_boss_shards", 64);
         changed |= defaultConfig("required_corrupted_hearts", 8);
         changed |= defaultConfig("required_enchanted_apples", 2);
+        changed |= defaultConfig("bossbar.color", "RED");
+        changed |= defaultConfig("bossbar.title", "&4Bloodbound Archfiend");
         changed |= defaultConfig("attacks.player_titles", 0);
+        changed |= defaultConfig("attacks.claw_damage", 10.0D);
+        changed |= defaultConfig("attacks.claw_warded_damage", 4.0D);
+        changed |= defaultConfig("attacks.nova_damage", 8.0D);
+        changed |= defaultConfig("attacks.nova_warded_damage", 3.5D);
+        changed |= defaultConfig("attacks.heart_rend_damage", 10.0D);
+        changed |= defaultConfig("attacks.heart_rend_warded_damage", 5.0D);
+        changed |= defaultConfig("attacks.charged_damage", 12.0D);
+        changed |= defaultConfig("attacks.charged_warded_damage", 5.5D);
+        changed |= defaultConfig("attacks.arrow_damage", 5.0D);
+        changed |= defaultConfig("attacks.arrow_count", 5);
+        changed |= defaultConfig("attacks.blindness_enabled", 0);
         changed |= defaultConfig("stage.1.threshold_percent", 100);
-        changed |= defaultConfig("stage.1.damage_multiplier", 1.00D);
+        changed |= defaultConfig("stage.1.damage_multiplier", 0.85D);
         changed |= defaultConfig("stage.1.speed_multiplier", 1.00D);
         changed |= defaultConfig("stage.1.attack_interval_ticks", 170);
         changed |= defaultConfig("stage.1.mobs", "WITHER_SKELETON,WITHER_SKELETON,BLAZE");
         changed |= defaultConfig("stage.2.threshold_percent", 80);
-        changed |= defaultConfig("stage.2.damage_multiplier", 1.18D);
+        changed |= defaultConfig("stage.2.damage_multiplier", 1.00D);
         changed |= defaultConfig("stage.2.speed_multiplier", 1.10D);
         changed |= defaultConfig("stage.2.attack_interval_ticks", 145);
         changed |= defaultConfig("stage.2.mobs", "PIGLIN_BRUTE,WITHER_SKELETON,BLAZE,BLAZE");
         changed |= defaultConfig("stage.3.threshold_percent", 60);
-        changed |= defaultConfig("stage.3.damage_multiplier", 1.35D);
+        changed |= defaultConfig("stage.3.damage_multiplier", 1.12D);
         changed |= defaultConfig("stage.3.speed_multiplier", 1.22D);
         changed |= defaultConfig("stage.3.attack_interval_ticks", 120);
         changed |= defaultConfig("stage.3.mobs", "PIGLIN_BRUTE,PIGLIN_BRUTE,WITHER_SKELETON,WITHER_SKELETON,BLAZE");
         changed |= defaultConfig("stage.4.threshold_percent", 40);
-        changed |= defaultConfig("stage.4.damage_multiplier", 1.60D);
+        changed |= defaultConfig("stage.4.damage_multiplier", 1.28D);
         changed |= defaultConfig("stage.4.speed_multiplier", 1.38D);
         changed |= defaultConfig("stage.4.attack_interval_ticks", 95);
         changed |= defaultConfig("stage.4.mobs", "PIGLIN_BRUTE,PIGLIN_BRUTE,PIGLIN_BRUTE,WITHER_SKELETON,BLAZE,BLAZE");
@@ -389,13 +422,36 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
 
     private List<String> configKeys() {
         List<String> keys = new ArrayList<>(List.of(
+            "requirements.min_players",
+            "requirements.hearts",
+            "requirements.boss_shards",
+            "requirements.corrupted_hearts",
+            "requirements.enchanted_apples",
+            "boss.health",
+            "arena.radius",
+            "arena.barrier_extra_blocks",
+            "arena.boundary_extra_blocks",
+            "arena.barrier_height_blocks",
             "min_players",
             "boss_health",
             "required_hearts",
             "required_boss_shards",
             "required_corrupted_hearts",
             "required_enchanted_apples",
-            "attacks.player_titles"
+            "bossbar.color",
+            "bossbar.title",
+            "attacks.player_titles",
+            "attacks.claw_damage",
+            "attacks.claw_warded_damage",
+            "attacks.nova_damage",
+            "attacks.nova_warded_damage",
+            "attacks.heart_rend_damage",
+            "attacks.heart_rend_warded_damage",
+            "attacks.charged_damage",
+            "attacks.charged_warded_damage",
+            "attacks.arrow_damage",
+            "attacks.arrow_count",
+            "attacks.blindness_enabled"
         ));
         for (int stage = 1; stage <= MAX_STAGES; stage++) {
             keys.add("stage." + stage + ".threshold_percent");
@@ -412,6 +468,13 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
             return true;
         }
         return key.matches("stage\\.[1-4]\\.(threshold_percent|damage_multiplier|speed_multiplier|attack_interval_ticks|mobs)");
+    }
+
+    private boolean isNumericConfigKey(String key) {
+        return !key.endsWith(".mobs")
+            && !key.endsWith(".color")
+            && !key.endsWith(".title")
+            && !key.startsWith("readme.");
     }
 
     private void tryStartAutomatically() {
@@ -452,6 +515,8 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
         LivingEntity boss = spawnBoss(world);
         session.bossId = boss == null ? null : boss.getUniqueId();
         if (boss != null) {
+            session.bossBar = createBossBar(boss);
+            updateBossBar(world, boss);
             enterStage(world, boss, 1);
         }
         session.task = Bukkit.getScheduler().runTaskTimer(this, this::tickFight, 20L, 20L);
@@ -534,6 +599,7 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
             boss.setFireTicks(0);
             world.spawnParticle(particle("CRIMSON_SPORE", Particle.FLAME), boss.getLocation().add(0.0D, 1.0D, 0.0D), 35, 1.1D, 1.4D, 1.1D, 0.02D);
             updateBossStage(world, boss);
+            updateBossBar(world, boss);
             driveArchfiend(world, boss);
         }
         if (onlineParticipantsInWorld(world).isEmpty()) {
@@ -677,13 +743,13 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
             boolean spectator = session != null && session.deadPlayers.contains(player.getUniqueId());
             Location safe = spectator ? spectatorLocation(world) : new Location(world, center.getX(), center.getY(), center.getZ(), center.getYaw(), center.getPitch());
             Location location = player.getLocation();
-            if (location.getY() < ARENA_Y - 6 || horizontalDistanceSquared(location) > Math.pow(ARENA_RADIUS + 5.0D, 2.0D)) {
+            if (location.getY() < ARENA_Y - 6 || horizontalDistanceSquared(location) > Math.pow(arenaRadius() + arenaBoundaryExtra(), 2.0D)) {
                 player.teleport(safe);
                 player.setFallDistance(0.0F);
             }
         }
         LivingEntity boss = activeBoss(world);
-        if (boss != null && (boss.getLocation().getY() < ARENA_Y - 3 || horizontalDistanceSquared(boss.getLocation()) > Math.pow(ARENA_RADIUS - 2.0D, 2.0D))) {
+        if (boss != null && (boss.getLocation().getY() < ARENA_Y - 3 || horizontalDistanceSquared(boss.getLocation()) > Math.pow(arenaRadius() - 2.0D, 2.0D))) {
             boss.teleport(center);
         }
     }
@@ -772,7 +838,7 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
         int attack = session.specialCycle++;
         if (stage <= 1) {
             if (attack % 2 == 0) {
-                bloodNova(world, boss);
+                archfiendArrowVolley(world, boss, target, stage);
             } else {
                 archfiendClaw(world, boss, target);
             }
@@ -782,7 +848,7 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
             if (attack % 3 == 0) {
                 chargedAttack(world);
             } else if (attack % 3 == 1) {
-                bloodNova(world, boss);
+                archfiendArrowVolley(world, boss, target, stage);
             } else {
                 heartRend(world, boss, target);
             }
@@ -801,7 +867,7 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
         if (attack % 4 == 0) {
             soulChains(world, boss, targets);
         } else if (attack % 4 == 1) {
-            chargedAttack(world);
+            archfiendArrowVolley(world, boss, target, stage);
         } else if (attack % 4 == 2) {
             bloodNova(world, boss);
         } else {
@@ -811,7 +877,7 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
 
     private void archfiendClaw(World world, LivingEntity boss, Player target) {
         boolean warded = hasInfernalWard(target);
-        double damage = scaledDamage(warded ? 6.0D : 14.0D);
+        double damage = scaledDamage(warded ? attackValue("claw_warded_damage", 4.0D) : attackValue("claw_damage", 10.0D));
         target.setHealth(Math.max(warded ? 7.0D : 2.0D, target.getHealth() - damage));
         target.setFireTicks(warded ? 20 : 80);
         target.addPotionEffect(new PotionEffect(PotionEffectType.WEAKNESS, warded ? 30 : 70, 0, false, true, true));
@@ -829,7 +895,7 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
                 continue;
             }
             boolean warded = hasInfernalWard(player);
-            player.setHealth(Math.max(warded ? 8.0D : 2.0D, player.getHealth() - scaledDamage(warded ? 5.0D : 12.0D)));
+            player.setHealth(Math.max(warded ? 8.0D : 2.0D, player.getHealth() - scaledDamage(warded ? attackValue("nova_warded_damage", 3.5D) : attackValue("nova_damage", 8.0D))));
             player.addPotionEffect(new PotionEffect(PotionEffectType.DARKNESS, warded ? 40 : 90, 0, false, true, true));
             player.playSound(player.getLocation(), Sound.ENTITY_DRAGON_FIREBALL_EXPLODE, 1.0F, 0.65F);
         }
@@ -853,12 +919,64 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
     private void heartRend(World world, LivingEntity boss, Player target) {
         signalArchfiendAnimation(boss, "heart_rend");
         boolean warded = hasInfernalWard(target);
-        target.setHealth(Math.max(warded ? 8.0D : 3.0D, target.getHealth() - scaledDamage(warded ? 8.0D : 16.0D)));
-        target.addPotionEffect(new PotionEffect(PotionEffectType.BLINDNESS, warded ? 35 : 70, 0, false, true, true));
+        target.setHealth(Math.max(warded ? 8.0D : 3.0D, target.getHealth() - scaledDamage(warded ? attackValue("heart_rend_warded_damage", 5.0D) : attackValue("heart_rend_damage", 10.0D))));
+        if (config.getInt("attacks.blindness_enabled", 0) > 0) {
+            target.addPotionEffect(new PotionEffect(PotionEffectType.BLINDNESS, warded ? 25 : 45, 0, false, true, true));
+        }
         double heal = bossHealth() * 0.015D;
         boss.setHealth(Math.min(bossHealth(), boss.getHealth() + heal));
         world.spawnParticle(Particle.HEART, target.getLocation().add(0.0D, 1.2D, 0.0D), 9, 0.5D, 0.5D, 0.5D, 0.02D);
         target.playSound(target.getLocation(), sound("ENTITY_WITHER_DEATH", Sound.ENTITY_ENDER_DRAGON_DEATH), 0.45F, 1.65F);
+    }
+
+    private void archfiendArrowVolley(World world, LivingEntity boss, Player target, int stage) {
+        if (target == null || boss == null) {
+            return;
+        }
+        signalArchfiendAnimation(boss, "arrow_volley");
+        int count = Math.max(1, Math.min(12, config.getInt("attacks.arrow_count", 5) + Math.max(0, stage - 2)));
+        Location origin = boss.getLocation().add(0.0D, 1.8D, 0.0D);
+        Location aim = target.getLocation().add(0.0D, 1.0D, 0.0D);
+        for (int index = 0; index < count; index++) {
+            try {
+                EntityType arrowType = EntityType.valueOf("ARROW");
+                Entity arrow = world.spawnEntity(new Location(world, origin.getX(), origin.getY(), origin.getZ()), arrowType);
+                arrow.getPersistentDataContainer().set(archfiendArrowKey, PersistentDataType.BYTE, (byte) 1);
+                Object velocity = projectileVector(origin, aim, index, count, 1.55D + (stage * 0.12D));
+                if (velocity != null) {
+                    arrow.getClass().getMethod("setVelocity", Class.forName("org.bukkit.util.Vector")).invoke(arrow, velocity);
+                }
+                try {
+                    arrow.getClass().getMethod("setShooter", org.bukkit.projectiles.ProjectileSource.class).invoke(arrow, boss);
+                } catch (ReflectiveOperationException | RuntimeException ignored) {
+                }
+                try {
+                    arrow.getClass().getMethod("setDamage", double.class).invoke(arrow, attackValue("arrow_damage", 5.0D));
+                } catch (ReflectiveOperationException | RuntimeException ignored) {
+                }
+            } catch (ReflectiveOperationException | RuntimeException ignored) {
+                world.spawnParticle(Particle.CRIT, aim, 12, 0.6D, 0.6D, 0.6D, 0.06D);
+            }
+        }
+        world.spawnParticle(Particle.CRIT, origin, 22, 0.6D, 0.7D, 0.6D, 0.08D);
+        target.playSound(target.getLocation(), sound("ENTITY_ARROW_SHOOT", Sound.BLOCK_NOTE_BLOCK_PLING), 0.75F, 0.65F);
+    }
+
+    private Object projectileVector(Location origin, Location target, int index, int count, double speed) {
+        try {
+            double dx = target.getX() - origin.getX();
+            double dy = target.getY() - origin.getY();
+            double dz = target.getZ() - origin.getZ();
+            double spread = (index - ((count - 1) / 2.0D)) * 0.085D;
+            double length = Math.max(0.01D, Math.sqrt(dx * dx + dy * dy + dz * dz));
+            Class<?> vectorClass = Class.forName("org.bukkit.util.Vector");
+            Object vector = vectorClass.getConstructor(double.class, double.class, double.class).newInstance(dx / length + spread, dy / length + 0.03D, dz / length - spread);
+            vectorClass.getMethod("normalize").invoke(vector);
+            vectorClass.getMethod("multiply", double.class).invoke(vector, speed);
+            return vector;
+        } catch (ReflectiveOperationException | RuntimeException exception) {
+            return null;
+        }
     }
 
     private void signalArchfiendAnimation(Entity boss, String animation) {
@@ -874,7 +992,7 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
 
     private void resolveChargedHit(Player player) {
         boolean warded = hasInfernalWard(player);
-        double damage = scaledDamage(warded ? 8.0D : 18.0D);
+        double damage = scaledDamage(warded ? attackValue("charged_warded_damage", 5.5D) : attackValue("charged_damage", 12.0D));
         double floor = warded ? 8.0D : 2.0D;
         player.setHealth(Math.max(floor, player.getHealth() - damage));
         player.setFireTicks(warded ? 60 : 140);
@@ -901,10 +1019,20 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
             signalArchfiendAnimation(boss, "hit");
             return;
         }
+        if (event.getEntity() instanceof Player player && event.getDamager() != null && event.getDamager().getPersistentDataContainer().has(archfiendArrowKey, PersistentDataType.BYTE)) {
+            boolean warded = hasInfernalWard(player);
+            double damage = scaledDamage(warded ? attackValue("arrow_damage", 5.0D) * 0.45D : attackValue("arrow_damage", 5.0D));
+            event.setCancelled(true);
+            player.setHealth(Math.max(warded ? 8.0D : 2.0D, player.getHealth() - damage));
+            player.addPotionEffect(new PotionEffect(PotionEffectType.SLOWNESS, warded ? 25 : 55, warded ? 0 : 1, false, true, true));
+            player.addPotionEffect(new PotionEffect(PotionEffectType.WEAKNESS, warded ? 20 : 45, 0, false, true, true));
+            event.getDamager().remove();
+            return;
+        }
         if (event.getEntity() instanceof Player player && event.getDamager() != null && session.bossId.equals(event.getDamager().getUniqueId())) {
             event.setCancelled(true);
             boolean warded = hasInfernalWard(player);
-            double damage = warded ? 5.0D : 12.0D;
+            double damage = warded ? attackValue("claw_warded_damage", 4.0D) : attackValue("claw_damage", 10.0D);
             double floor = warded ? 6.0D : 2.0D;
             player.setHealth(Math.max(floor, player.getHealth() - damage));
             player.setFireTicks(warded ? 20 : 80);
@@ -2000,7 +2128,9 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
 
     private void buildArena(World world) {
         int y = ARENA_Y;
-        int radius = ARENA_RADIUS;
+        int radius = Math.max(12, config.getInt("arena.radius", ARENA_RADIUS));
+        int barrierExtra = Math.max(1, config.getInt("arena.barrier_extra_blocks", 2));
+        int barrierHeight = Math.max(3, config.getInt("arena.barrier_height_blocks", 8));
         for (int x = -radius; x <= radius; x++) {
             for (int z = -radius; z <= radius; z++) {
                 double dist = Math.sqrt(x * x + z * z);
@@ -2017,13 +2147,13 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
                 }
             }
         }
-        for (int x = -(radius + 3); x <= radius + 3; x++) {
-            for (int z = -(radius + 3); z <= radius + 3; z++) {
+        for (int x = -(radius + barrierExtra); x <= radius + barrierExtra; x++) {
+            for (int z = -(radius + barrierExtra); z <= radius + barrierExtra; z++) {
                 double dist = Math.sqrt(x * x + z * z);
-                if (dist < radius + 1 || dist > radius + 3) {
+                if (dist < radius || dist > radius + barrierExtra) {
                     continue;
                 }
-                for (int yy = 1; yy <= 8; yy++) {
+                for (int yy = 1; yy <= barrierHeight; yy++) {
                     set(world, x, y + yy, z, Material.BARRIER);
                 }
             }
@@ -2046,7 +2176,7 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
         for (int x = -40; x <= 40; x++) {
             for (int z = -40; z <= 40; z++) {
                 double dist = Math.sqrt(x * x + z * z);
-                if (dist > radius + 2 && dist < radius + 8) {
+                if (dist > radius + barrierExtra && dist < radius + 8) {
                     set(world, x, y - 1, z, Material.LAVA);
                 }
             }
@@ -2107,6 +2237,7 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
         if (old.task != null) {
             old.task.cancel();
         }
+        removeBossBar(old.bossBar);
         if (teleportOut) {
             for (UUID id : old.participants) {
                 Player player = Bukkit.getPlayer(id);
@@ -2256,11 +2387,19 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
     }
 
     private int minPlayers() {
-        return Math.max(1, config.getInt("min_players", 3));
+        return Math.max(1, configInt("requirements.min_players", "min_players", 3));
     }
 
     private double bossHealth() {
-        return Math.max(500.0D, config.getDouble("boss_health", 5000.0D));
+        return Math.max(500.0D, configDouble("boss.health", "boss_health", 5000.0D));
+    }
+
+    private int arenaRadius() {
+        return Math.max(12, config.getInt("arena.radius", ARENA_RADIUS));
+    }
+
+    private int arenaBoundaryExtra() {
+        return Math.max(2, config.getInt("arena.boundary_extra_blocks", 4));
     }
 
     private double stageThreshold(int stage) {
@@ -2308,24 +2447,89 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
         return baseDamage * stageDamageMultiplier(stage);
     }
 
+    private double attackValue(String key, double fallback) {
+        return Math.max(0.0D, config.getDouble("attacks." + key, fallback));
+    }
+
+    private Object createBossBar(LivingEntity boss) {
+        try {
+            Class<?> barColor = Class.forName("org.bukkit.boss.BarColor");
+            Class<?> barStyle = Class.forName("org.bukkit.boss.BarStyle");
+            Object color = Enum.valueOf((Class<Enum>) barColor.asSubclass(Enum.class), config.getString("bossbar.color", "RED").toUpperCase(Locale.ROOT));
+            Object style = Enum.valueOf((Class<Enum>) barStyle.asSubclass(Enum.class), "SEGMENTED_20");
+            Object bar = Bukkit.class.getMethod("createBossBar", String.class, barColor, barStyle)
+                .invoke(null, Text.color(config.getString("bossbar.title", "&4Bloodbound Archfiend")), color, style);
+            for (Player player : onlineParticipants()) {
+                bar.getClass().getMethod("addPlayer", Player.class).invoke(bar, player);
+            }
+            return bar;
+        } catch (ReflectiveOperationException | RuntimeException exception) {
+            return null;
+        }
+    }
+
+    private void updateBossBar(World world, LivingEntity boss) {
+        if (session == null || session.bossBar == null || boss == null) {
+            return;
+        }
+        try {
+            double progress = Math.max(0.0D, Math.min(1.0D, boss.getHealth() / Math.max(1.0D, bossHealth())));
+            session.bossBar.getClass().getMethod("setProgress", double.class).invoke(session.bossBar, progress);
+            String title = config.getString("bossbar.title", "&4Bloodbound Archfiend") + " &8| &cStage " + Math.max(1, session.stage);
+            session.bossBar.getClass().getMethod("setTitle", String.class).invoke(session.bossBar, Text.color(title));
+            for (Player player : onlineParticipants()) {
+                if (player.getWorld() != null && world.getName().equals(player.getWorld().getName())) {
+                    session.bossBar.getClass().getMethod("addPlayer", Player.class).invoke(session.bossBar, player);
+                } else {
+                    session.bossBar.getClass().getMethod("removePlayer", Player.class).invoke(session.bossBar, player);
+                }
+            }
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+        }
+    }
+
+    private void removeBossBar(Object bossBar) {
+        if (bossBar == null) {
+            return;
+        }
+        try {
+            bossBar.getClass().getMethod("removeAll").invoke(bossBar);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+        }
+    }
+
     private boolean attackTitlesEnabled() {
         return config.getInt("attacks.player_titles", 0) > 0;
     }
 
     private int requiredHearts() {
-        return Math.max(1, config.getInt("required_hearts", 20));
+        return Math.max(1, configInt("requirements.hearts", "required_hearts", 20));
     }
 
     private int requiredBossShards() {
-        return Math.max(1, config.getInt("required_boss_shards", 64));
+        return Math.max(1, configInt("requirements.boss_shards", "required_boss_shards", 64));
     }
 
     private int requiredCorruptedHearts() {
-        return Math.max(1, config.getInt("required_corrupted_hearts", 8));
+        return Math.max(1, configInt("requirements.corrupted_hearts", "required_corrupted_hearts", 8));
     }
 
     private int requiredEnchantedApples() {
-        return Math.max(1, config.getInt("required_enchanted_apples", 2));
+        return Math.max(1, configInt("requirements.enchanted_apples", "required_enchanted_apples", 2));
+    }
+
+    private int configInt(String preferredKey, String legacyKey, int fallback) {
+        if (config.contains(preferredKey)) {
+            return config.getInt(preferredKey, fallback);
+        }
+        return config.getInt(legacyKey, fallback);
+    }
+
+    private double configDouble(String preferredKey, String legacyKey, double fallback) {
+        if (config.contains(preferredKey)) {
+            return config.getDouble(preferredKey, fallback);
+        }
+        return config.getDouble(legacyKey, fallback);
     }
 
     private double parseDouble(String input, double fallback) {
@@ -2398,6 +2602,7 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
         private String worldName;
         private UUID bossId;
         private BukkitTask task;
+        private Object bossBar;
         private int ticks;
         private int stage;
         private int lastMeleeTick;

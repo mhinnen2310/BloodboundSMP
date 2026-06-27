@@ -101,7 +101,7 @@ public final class BossesPlugin extends JavaPlugin implements Listener, TabCompl
             return Tab.onlinePlayers(args[1]);
         }
         if (args.length == 2 && args[0].equalsIgnoreCase("config")) {
-            return Tab.complete(args[1], "chancePercent", "intervalMinutes", "minDistance", "maxDistance", "health", "shardMin", "shardMax", "rareGearChancePercent");
+            return Tab.complete(args[1], "chancePercent", "intervalMinutes", "minDistance", "maxDistance", "health", "shardMin", "shardMax", "rareGearChancePercent", "spawnAttempts", "builtBlockBuffer", "requireNaturalGround");
         }
         if (args.length == 3 && args[0].equalsIgnoreCase("config")) {
             return Tab.complete(args[2], "0.05", "1", "3", "10", "25", "60", "260");
@@ -258,7 +258,10 @@ public final class BossesPlugin extends JavaPlugin implements Listener, TabCompl
     private Location randomSurfaceNear(Player player) {
         int minimum = Math.max(6, (int) Math.round(setting("minDistance", 12.0D)));
         int maximum = Math.max(minimum + 1, (int) Math.round(setting("maxDistance", 32.0D)));
-        for (int attempt = 0; attempt < 24; attempt++) {
+        int attempts = Math.max(8, (int) Math.round(setting("spawnAttempts", 36.0D)));
+        int builtBuffer = Math.max(0, (int) Math.round(setting("builtBlockBuffer", 14.0D)));
+        boolean requireNatural = setting("requireNaturalGround", 1.0D) > 0.0D;
+        for (int attempt = 0; attempt < attempts; attempt++) {
             double angle = random.nextDouble() * Math.PI * 2.0D;
             int distance = minimum + random.nextInt(maximum - minimum + 1);
             int x = player.getLocation().getBlockX() + (int) Math.round(Math.cos(angle) * distance);
@@ -267,9 +270,93 @@ public final class BossesPlugin extends JavaPlugin implements Listener, TabCompl
             if (highest == null || unsafe(highest.getType())) {
                 continue;
             }
-            return highest.getLocation().add(0.5D, 1.0D, 0.5D);
+            Location spawn = highest.getLocation().add(0.5D, 1.0D, 0.5D);
+            if (!safeSpawnAir(spawn) || (requireNatural && !naturalSurface(highest.getType())) || builtAreaNearby(player, spawn, builtBuffer)) {
+                continue;
+            }
+            return spawn;
         }
         return null;
+    }
+
+    private boolean safeSpawnAir(Location spawn) {
+        if (spawn == null || spawn.getWorld() == null) {
+            return false;
+        }
+        String feet = spawn.getWorld().getBlockAt(spawn.getBlockX(), spawn.getBlockY(), spawn.getBlockZ()).getType().name();
+        String head = spawn.getWorld().getBlockAt(spawn.getBlockX(), spawn.getBlockY() + 1, spawn.getBlockZ()).getType().name();
+        return feet.equals("AIR") && head.equals("AIR");
+    }
+
+    private boolean naturalSurface(Material material) {
+        if (material == null) {
+            return false;
+        }
+        String name = material.name();
+        return name.equals("GRASS_BLOCK")
+            || name.equals("DIRT")
+            || name.equals("COARSE_DIRT")
+            || name.equals("PODZOL")
+            || name.equals("MYCELIUM")
+            || name.equals("SAND")
+            || name.equals("RED_SAND")
+            || name.equals("GRAVEL")
+            || name.equals("STONE")
+            || name.equals("DEEPSLATE")
+            || name.equals("SNOW_BLOCK")
+            || name.equals("SNOW")
+            || name.endsWith("_NYLIUM");
+    }
+
+    private boolean builtAreaNearby(Player player, Location center, int radius) {
+        if (radius <= 0 || center == null || center.getWorld() == null) {
+            return false;
+        }
+        int step = radius <= 10 ? 1 : 2;
+        int minY = Math.max(center.getWorld().getMinHeight(), center.getBlockY() - 5);
+        int maxY = center.getBlockY() + 7;
+        for (int x = center.getBlockX() - radius; x <= center.getBlockX() + radius; x += step) {
+            for (int z = center.getBlockZ() - radius; z <= center.getBlockZ() + radius; z += step) {
+                for (int y = minY; y <= maxY; y += step) {
+                    Material material = center.getWorld().getBlockAt(x, y, z).getType();
+                    if (builtLike(material)) {
+                        return true;
+                    }
+                }
+            }
+        }
+        return false;
+    }
+
+    private boolean builtLike(Material material) {
+        if (material == null) {
+            return false;
+        }
+        String name = material.name();
+        return name.contains("CHEST")
+            || name.contains("FURNACE")
+            || name.contains("CRAFTING")
+            || name.contains("ANVIL")
+            || name.contains("BED")
+            || name.contains("DOOR")
+            || name.contains("TRAPDOOR")
+            || name.contains("GLASS")
+            || name.contains("TORCH")
+            || name.contains("LANTERN")
+            || name.contains("SIGN")
+            || name.contains("RAIL")
+            || name.endsWith("_PLANKS")
+            || name.endsWith("_SLAB")
+            || name.endsWith("_STAIRS")
+            || name.endsWith("_FENCE")
+            || name.endsWith("_WALL")
+            || name.equals("COBBLESTONE")
+            || name.equals("STONE_BRICKS")
+            || name.equals("BRICKS")
+            || name.equals("IRON_BLOCK")
+            || name.equals("GOLD_BLOCK")
+            || name.equals("DIAMOND_BLOCK")
+            || name.equals("EMERALD_BLOCK");
     }
 
     private boolean unsafe(Material material) {
@@ -295,7 +382,7 @@ public final class BossesPlugin extends JavaPlugin implements Listener, TabCompl
             return true;
         }
         String key = args[1];
-        if (!List.of("chancePercent", "intervalMinutes", "minDistance", "maxDistance", "health", "shardMin", "shardMax", "rareGearChancePercent").contains(key)) {
+        if (!List.of("chancePercent", "intervalMinutes", "minDistance", "maxDistance", "health", "shardMin", "shardMax", "rareGearChancePercent", "spawnAttempts", "builtBlockBuffer", "requireNaturalGround").contains(key)) {
             Text.msg(sender, "&cUnknown boss setting.");
             return true;
         }

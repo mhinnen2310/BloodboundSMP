@@ -60,6 +60,7 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
     private CommandErrorTracker commandErrorTracker;
     private ServerRuntime runtime;
     private KeyValueStore systemState;
+    private PropertiesFile motdConfig;
     private BoundedRecordStore qaLog;
     private final Map<UUID, QaSession> qaSessions = new HashMap<>();
     private final Set<UUID> autoQaRunning = new HashSet<>();
@@ -74,6 +75,8 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
         rankService = new CoreRankService(new PropertiesFile(dataRoot.resolve("players.properties")));
         permissionService = new CorePermissionService(rankService, new PropertiesFile(dataRoot.resolve("permissions.properties")));
         featureFlagService = new CoreFeatureFlagService(new PropertiesFile(dataRoot.resolve("features.properties")));
+        motdConfig = new PropertiesFile(dataRoot.resolve("motd.properties"));
+        ensureMotdDefaults();
         systemState = new KeyValueStore(dataRoot.resolve("system-state.db"));
         qaLog = new BoundedRecordStore(dataRoot.resolve("qa-runs.db"), 1000);
         commandErrorTracker = new CommandErrorTracker(new BoundedRecordStore(dataRoot.resolve("command-errors.db"), 250));
@@ -88,6 +91,7 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
         command("errors");
         command("maintenance");
         command("qa");
+        command("motd");
 
         Logger.getLogger("").addHandler(commandErrorTracker);
 
@@ -193,9 +197,7 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
 
     @EventHandler
     public void onPing(ServerListPingEvent event) {
-        String[] frames = {"<", "<<", "<<<", "<<"};
-        String frame = frames[(int) ((System.currentTimeMillis() / 700L) % frames.length)];
-        event.setMotd(Text.rawColor("&4&lBloodboundSMP &8" + frame + " &6Steal Hearts. Build Legacy.\n&8No Claims. No Mercy. &7| &cLifesteal &8| &6Hub &8| &bSkyblock &8| &fMinigames"));
+        event.setMotd(Text.rawColor(renderMotd()));
     }
 
     @Override
@@ -211,6 +213,9 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
         }
         if (command.getName().equalsIgnoreCase("qa")) {
             return qaCommand(sender, args);
+        }
+        if (command.getName().equalsIgnoreCase("motd")) {
+            return motdCommand(sender, args);
         }
         if (!command.getName().equalsIgnoreCase("mitchcore")) {
             return true;
@@ -273,6 +278,18 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
             }
             return List.of();
         }
+        if (command.getName().equalsIgnoreCase("motd")) {
+            if (!permissionService.has(sender, "mitchsmp.core.motd")) {
+                return List.of();
+            }
+            if (args.length == 1) {
+                return nl.mitchsmp.core.util.Tab.complete(args[0], "show", "set", "frames", "reload");
+            }
+            if (args.length == 2 && args[0].equalsIgnoreCase("set")) {
+                return nl.mitchsmp.core.util.Tab.complete(args[1], "1", "2");
+            }
+            return List.of();
+        }
         if (args.length == 1) {
             return nl.mitchsmp.core.util.Tab.complete(args[0], "reload");
         }
@@ -294,6 +311,108 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
         }
         names.sort(String::compareToIgnoreCase);
         return String.join("&7, &f", names);
+    }
+
+    private void ensureMotdDefaults() {
+        boolean changed = false;
+        changed |= motdDefault("enabled", true);
+        changed |= motdDefault("frame_interval_ms", 700);
+        changed |= motdDefault("frames", "<,<<,<<<,<<");
+        changed |= motdDefault("line1", "&4&lBloodboundSMP &8{frame} &6Steal Hearts. Build Legacy.");
+        changed |= motdDefault("line2", "&8No Claims. No Mercy. &7| &cLifesteal &8| &6Hub &8| &bSkyblock &8| &fMinigames");
+        changed |= motdDefault("help.1", "Use /motd show, /motd set 1 <text>, /motd set 2 <text>, /motd frames <a,b,c>.");
+        changed |= motdDefault("help.2", "Placeholders: {frame}. Use & color codes.");
+        if (changed) {
+            motdConfig.save();
+        }
+    }
+
+    private boolean motdDefault(String key, Object value) {
+        if (motdConfig.contains(key)) {
+            return false;
+        }
+        motdConfig.set(key, value);
+        return true;
+    }
+
+    private String renderMotd() {
+        if (motdConfig == null || !Boolean.parseBoolean(motdConfig.getString("enabled", "true"))) {
+            return "&4&lBloodboundSMP &8| &6Steal Hearts. Build Legacy.\n&8No Claims. No Mercy.";
+        }
+        String frame = motdFrame();
+        String line1 = motdConfig.getString("line1", "&4&lBloodboundSMP &8{frame} &6Steal Hearts. Build Legacy.");
+        String line2 = motdConfig.getString("line2", "&8No Claims. No Mercy. &7| &cLifesteal &8| &6Hub &8| &bSkyblock &8| &fMinigames");
+        return line1.replace("{frame}", frame) + "\n" + line2.replace("{frame}", frame);
+    }
+
+    private String motdFrame() {
+        String raw = motdConfig.getString("frames", "<,<<,<<<,<<");
+        String[] frames = java.util.Arrays.stream(raw.split(",", -1))
+            .map(String::trim)
+            .filter(value -> !value.isBlank())
+            .toArray(String[]::new);
+        if (frames.length == 0) {
+            return "";
+        }
+        long interval = Math.max(100L, motdConfig.getLong("frame_interval_ms", 700L));
+        return frames[(int) ((System.currentTimeMillis() / interval) % frames.length)];
+    }
+
+    private boolean motdCommand(CommandSender sender, String[] args) {
+        if (!permissionService.has(sender, "mitchsmp.core.motd")) {
+            Text.msg(sender, "&cYou do not have permission to edit the MOTD.");
+            return true;
+        }
+        if (args.length == 0 || args[0].equalsIgnoreCase("show")) {
+            Text.msg(sender, "&6Current Bloodbound MOTD:");
+            Text.msg(sender, "&7Line 1: &f" + motdConfig.getString("line1", ""));
+            Text.msg(sender, "&7Line 2: &f" + motdConfig.getString("line2", ""));
+            Text.msg(sender, "&7Frames: &f" + motdConfig.getString("frames", ""));
+            Text.msg(sender, "&7Preview:");
+            for (String line : renderMotd().split("\\n", -1)) {
+                Text.msg(sender, line);
+            }
+            return true;
+        }
+        if (args[0].equalsIgnoreCase("reload")) {
+            motdConfig.load();
+            ensureMotdDefaults();
+            Text.msg(sender, "&aMOTD config reloaded.");
+            return true;
+        }
+        if (args[0].equalsIgnoreCase("frames")) {
+            if (args.length < 2) {
+                Text.msg(sender, "&cUsage: /motd frames <frame1,frame2,frame3>");
+                return true;
+            }
+            motdConfig.set("frames", joinArgs(args, 1));
+            motdConfig.save();
+            Text.msg(sender, "&aMOTD animation frames updated.");
+            return true;
+        }
+        if (args[0].equalsIgnoreCase("set")) {
+            if (args.length < 3 || (!args[1].equals("1") && !args[1].equals("2"))) {
+                Text.msg(sender, "&cUsage: /motd set <1|2> <text>");
+                return true;
+            }
+            motdConfig.set("line" + args[1], joinArgs(args, 2));
+            motdConfig.save();
+            Text.msg(sender, "&aMOTD line " + args[1] + " updated.");
+            return true;
+        }
+        Text.msg(sender, "&cUsage: /motd [show|reload|frames <frames>|set <1|2> <text>]");
+        return true;
+    }
+
+    private String joinArgs(String[] args, int start) {
+        StringBuilder builder = new StringBuilder();
+        for (int index = start; index < args.length; index++) {
+            if (builder.length() > 0) {
+                builder.append(' ');
+            }
+            builder.append(args[index]);
+        }
+        return builder.toString();
     }
 
     private boolean featureCommand(CommandSender sender, String[] args) {
@@ -1166,6 +1285,7 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
             );
             addDefault(MitchRank.ADMIN,
                 "mitchsmp.core.reload",
+                "mitchsmp.core.motd",
                 "mitchsmp.rank.set",
                 "mitchsmp.permissions.manage",
                 "mitchsmp.lifesteal.admin",

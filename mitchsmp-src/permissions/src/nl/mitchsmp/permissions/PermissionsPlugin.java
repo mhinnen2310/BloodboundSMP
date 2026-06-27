@@ -142,6 +142,7 @@ public final class PermissionsPlugin extends JavaPlugin implements TabCompleter 
             if (args.length == 3 && !args[1].equalsIgnoreCase("list")) {
                 return Tab.complete(args[2],
                     "mitchsmp.core.reload",
+                    "mitchsmp.core.motd",
                     "mitchsmp.staffmode",
                     "mitchsmp.rank.set",
                     "mitchsmp.economy.admin",

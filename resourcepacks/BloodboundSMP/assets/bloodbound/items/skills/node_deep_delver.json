@@ -1,0 +1,6 @@
+{
+  "model": {
+    "type": "minecraft:model",
+    "model": "bloodbound:item/skills/node_deep_delver"
+  }
+}

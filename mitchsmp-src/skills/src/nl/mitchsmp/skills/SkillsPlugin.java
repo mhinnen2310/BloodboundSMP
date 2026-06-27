@@ -1099,12 +1099,15 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             }
             Specialization specialization = specializationSlot(event.getRawSlot());
             if (specialization != null) {
-                openSpecialization(player, specialization);
-                return;
-            }
-            Specialization view = specializationViewSlot(event.getRawSlot());
-            if (view != null) {
-                openSpecialization(player, view);
+                if (event.isShiftClick()) {
+                    openSpecialization(player, specialization);
+                    return;
+                }
+                if (canChooseSpecialization(player, specialization)) {
+                    openSpecializationConfirm(player, specialization);
+                } else {
+                    openSpecialization(player, specialization);
+                }
                 return;
             }
             if (event.getRawSlot() == 45) {
@@ -1226,22 +1229,16 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         holder.inventory(inventory);
         fillSpecializationFrame(inventory);
         drawFoundationConnectors(inventory);
-        inventory.setItem(4, treeNodeIcon(player, Perk.WORKERS_INSTINCT, "&6Root Skill", List.of(
+        inventory.setItem(4, treeNodeIcon(player, Perk.WORKERS_INSTINCT, "&6Root Skill", configLines("ui.root.extra_lore", List.of(
             "&7Everyone starts here.",
             "&7Unlock this before choosing Frontier",
             "&7or Warpath.",
             "&8No free hearts. No money printer."
-        )));
+        ))));
         inventory.setItem(20, mainBranchIcon(player, MainBranch.FRONTIER));
         inventory.setItem(24, mainBranchIcon(player, MainBranch.WARPATH));
         for (Specialization specialization : Specialization.values()) {
             inventory.setItem(specialization.slot(), specializationIcon(player, specialization));
-            inventory.setItem(specialization.viewSlot(), icon(Material.COMPASS, specialization.color() + "View " + specialization.display() + " Path", List.of(
-                "&7Preview is always allowed.",
-                "&7Unlocking is only allowed after",
-                "&7choosing this specialization.",
-                "&8Status: " + specializationStatusLabel(player, specialization)
-            )));
         }
         inventory.setItem(45, icon(Material.WRITTEN_BOOK, "&aMechanics Guide", List.of("&7Click for the written Bloodbound guide.")));
         inventory.setItem(49, icon(Material.EXPERIENCE_BOTTLE, "&bProgression Overview", List.of(
@@ -3284,25 +3281,37 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         boolean locked = !rootUnlocked(player);
         boolean other = chosen != null && chosen != branch;
         String color = locked || other ? "&8" : chosen == branch ? "&a" : "&e";
-        return icon(branch.icon(), color + branch.display(), List.of(
+        Map<String, String> placeholders = new HashMap<>();
+        placeholders.put("theme", branch.theme());
+        placeholders.put("systems", branch.systems());
+        placeholders.put("status", locked ? "&cLocked: unlock Worker's Instinct" : other ? "&8Preview-only" : chosen == branch ? "&aChosen" : "&eAvailable");
+        List<String> lore = configLines("branch." + branch.key() + ".tooltip", List.of(
             "&7Theme: &f" + branch.theme(),
             "&7Systems: &f" + branch.systems(),
-            "&7Status: " + (locked ? "&cLocked: unlock Worker's Instinct" : other ? "&8Preview-only" : chosen == branch ? "&aChosen" : "&eAvailable"),
+            "&7Status: " + placeholders.get("status"),
             "&8",
             "&7Choose this before committing",
             "&7to a specialization."
-        ));
+        ), placeholders);
+        return modelIcon(branch.icon(), modelKey("branch." + branch.key() + ".item_model", "skills/branch_" + branch.key()), color + branch.display(), applyTooltipToggles(lore));
     }
 
     private ItemStack specializationIcon(Player player, Specialization specialization) {
-        return icon(specialization.icon(), specialization.color() + specialization.display(), List.of(
+        Map<String, String> placeholders = new HashMap<>();
+        placeholders.put("main", specialization.main().display());
+        placeholders.put("identity", specialization.identity());
+        placeholders.put("systems", specialization.systems());
+        placeholders.put("status", specializationStatusLabel(player, specialization));
+        List<String> lore = configLines("specialization." + specialization.key() + ".tooltip", List.of(
             "&7Main branch: &f" + specialization.main().display(),
             "&7Identity: " + specialization.identity(),
             "&7Systems: &f" + specialization.systems(),
             "&7Status: " + specializationStatusLabel(player, specialization),
             "&8",
-            "&eClick to preview this path."
-        ));
+            "&eClick to choose when available.",
+            "&bShift-click to preview this path."
+        ), placeholders);
+        return modelIcon(specialization.icon(), modelKey("specialization." + specialization.key() + ".item_model", "skills/spec_" + specialization.key()), specialization.color() + specialization.display(), applyTooltipToggles(lore));
     }
 
     private ItemStack treeNodeIcon(Player player, Perk perk, String branch, List<String> extraLore) {
@@ -3317,7 +3326,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             case LOCKED -> "&c";
         };
         Specialization specialization = specializationOf(perk);
-        List<String> lore = new ArrayList<>(List.of(
+        List<String> dynamicLore = new ArrayList<>(List.of(
             "&7Branch: &f" + branch,
             "&7Page: &f" + (specialization == null ? "FOUNDATION" : specialization.name() + "_1"),
             "&7Status: " + state.label(),
@@ -3326,19 +3335,81 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             "&7XP track: &f" + perk.category().display(),
             "&7Systems: &f" + linkedSystems(perk)
         ));
-        lore.addAll(extraLore);
-        lore.addAll(requirementLore(player, perk));
-        lore.add("&8");
-        lore.addAll(perkDescriptionLines(perk));
+        dynamicLore.addAll(extraLore);
+        dynamicLore.addAll(requirementLore(player, perk));
+        dynamicLore.add("&8");
+        dynamicLore.addAll(perkDescriptionLines(perk));
         if (state == NodeState.PREVIEW) {
-            lore.add("&8Preview Mode: you can view this,");
-            lore.add("&8but cannot unlock skills here.");
+            dynamicLore.add("&8Preview Mode: you can view this,");
+            dynamicLore.add("&8but cannot unlock skills here.");
         } else if (state == NodeState.AVAILABLE) {
-            lore.add("&eClick to unlock or upgrade.");
+            dynamicLore.add("&eClick to unlock or upgrade.");
         } else if (state == NodeState.LOCKED) {
-            lore.add("&cLocked. Check requirements above.");
+            dynamicLore.add("&cLocked. Check requirements above.");
         }
-        return icon(perkIcon(perk), color + perkDisplay(perk) + " &f" + current + "/" + max, lore);
+        Map<String, String> placeholders = new HashMap<>();
+        placeholders.put("branch", branch);
+        placeholders.put("page", specialization == null ? "FOUNDATION" : specialization.name() + "_1");
+        placeholders.put("status", state.label());
+        placeholders.put("current", String.valueOf(current));
+        placeholders.put("max", String.valueOf(max));
+        placeholders.put("cost", current >= max ? "0" : "1");
+        placeholders.put("category", perk.category().display());
+        placeholders.put("systems", linkedSystems(perk));
+        placeholders.put("description", String.join("|", perkDescriptionLines(perk)));
+        placeholders.put("requirements", String.join("|", requirementLore(player, perk)));
+        List<String> lore = configLines("node." + perk.key() + ".tooltip", dynamicLore, placeholders);
+        lore = applyTooltipToggles(lore);
+        return modelIcon(perkIcon(perk), modelKey("node." + perk.key() + ".item_model", "skills/node_" + perk.key()), color + perkDisplay(perk) + " &f" + current + "/" + max, lore);
+    }
+
+    private List<String> applyTooltipToggles(List<String> lore) {
+        List<String> filtered = new ArrayList<>();
+        for (String line : lore) {
+            String plain = Text.stripColorCodes(line).trim().toLowerCase(Locale.ROOT);
+            if (!tooltipPart("branch") && plain.startsWith("branch:")) {
+                continue;
+            }
+            if (!tooltipPart("page") && plain.startsWith("page:")) {
+                continue;
+            }
+            if (!tooltipPart("status") && plain.startsWith("status:")) {
+                continue;
+            }
+            if (!tooltipPart("current") && plain.startsWith("current:")) {
+                continue;
+            }
+            if (!tooltipPart("cost") && plain.startsWith("cost:")) {
+                continue;
+            }
+            if (!tooltipPart("xp_track") && plain.startsWith("xp track:")) {
+                continue;
+            }
+            if (!tooltipPart("systems") && plain.startsWith("systems:")) {
+                continue;
+            }
+            if (!tooltipPart("requirements") && (plain.startsWith("requires") || plain.startsWith("requirement") || plain.startsWith("locked:"))) {
+                continue;
+            }
+            if (!tooltipPart("description") && !plain.contains(":") && !plain.isBlank() && !plain.equals("-")) {
+                continue;
+            }
+            if (!tooltipPart("preview_hint") && plain.contains("preview")) {
+                continue;
+            }
+            if (!tooltipPart("action_hint") && (plain.startsWith("click ") || plain.startsWith("shift-click") || plain.contains("unlock or upgrade"))) {
+                continue;
+            }
+            if (plain.isBlank() && (filtered.isEmpty() || Text.stripColorCodes(filtered.get(filtered.size() - 1)).trim().isEmpty())) {
+                continue;
+            }
+            filtered.add(line);
+        }
+        return filtered;
+    }
+
+    private boolean tooltipPart(String key) {
+        return Boolean.parseBoolean(skillConfig.getString("ui.tooltip.show_" + key, "true"));
     }
 
     private NodeState treeNodeState(Player player, Perk perk) {
@@ -3356,21 +3427,21 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
     }
 
     private void fillSpecializationFrame(Inventory inventory) {
-        ItemStack filler = icon(Material.GLASS_PANE, "&8", List.of());
+        ItemStack filler = modelIcon(Material.GLASS_PANE, "skills/frame", "&8", List.of());
         for (int slot : new int[] {0, 1, 2, 3, 5, 6, 7, 8, 9, 17, 18, 26, 27, 35, 36, 44, 46, 47, 48, 50, 51, 52}) {
             inventory.setItem(slot, filler);
         }
     }
 
     private void drawFoundationConnectors(Inventory inventory) {
-        ItemStack link = icon(Material.GREEN_STAINED_GLASS_PANE, "&bPath", List.of("&7Foundation connection."));
+        ItemStack link = modelIcon(Material.GREEN_STAINED_GLASS_PANE, "skills/link_foundation", "&bPath", configLines("ui.link.foundation", List.of("&7Foundation connection.")));
         for (int slot : new int[] {13, 21, 22, 23, 30, 31, 32}) {
             inventory.setItem(slot, link);
         }
     }
 
     private void drawSpecializationConnectors(Inventory inventory) {
-        ItemStack link = icon(Material.GREEN_STAINED_GLASS_PANE, "&bPath", List.of("&7Specialization connection."));
+        ItemStack link = modelIcon(Material.GREEN_STAINED_GLASS_PANE, "skills/link_specialization", "&bPath", configLines("ui.link.specialization", List.of("&7Specialization connection.")));
         for (int slot : new int[] {13, 22, 31, 40}) {
             inventory.setItem(slot, link);
         }
@@ -3583,6 +3654,56 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         return item;
     }
 
+    private ItemStack modelIcon(Material material, String modelKey, String name, List<String> lore) {
+        ItemStack item = icon(material, name, lore);
+        if (modelKey == null || modelKey.isBlank() || !item.hasItemMeta()) {
+            return item;
+        }
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            try {
+                meta.setItemModel(new NamespacedKey("bloodbound", modelKey));
+            } catch (RuntimeException ignored) {
+            }
+            item.setItemMeta(meta);
+        }
+        return item;
+    }
+
+    private String modelKey(String configKey, String fallback) {
+        String value = skillConfig.getString(configKey, fallback);
+        if (value == null || value.isBlank()) {
+            return fallback;
+        }
+        return value.startsWith("bloodbound:") ? value.substring("bloodbound:".length()) : value;
+    }
+
+    private List<String> configLines(String key, List<String> fallback) {
+        return configLines(key, fallback, Map.of());
+    }
+
+    private List<String> configLines(String key, List<String> fallback, Map<String, String> placeholders) {
+        String raw = skillConfig.getString(key, "");
+        List<String> source = raw == null || raw.isBlank() ? fallback : java.util.Arrays.stream(raw.split("\\|", -1)).toList();
+        List<String> lines = new ArrayList<>();
+        for (String line : source) {
+            List<String> expanded = expandConfigLine(line, placeholders);
+            lines.addAll(expanded);
+        }
+        return lines;
+    }
+
+    private List<String> expandConfigLine(String line, Map<String, String> placeholders) {
+        String result = line;
+        for (Map.Entry<String, String> entry : placeholders.entrySet()) {
+            result = result.replace("{" + entry.getKey() + "}", entry.getValue() == null ? "" : entry.getValue());
+        }
+        if (result.contains("|")) {
+            return java.util.Arrays.stream(result.split("\\|", -1)).toList();
+        }
+        return List.of(result);
+    }
+
     private int averageSkillLevel(Player player) {
         int total = 0;
         for (Category category : Category.values()) {
@@ -3730,13 +3851,29 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         changed |= setDefault("tree.respec.cost_money", 0.0D);
         changed |= setDefault("tree.respec.cooldown_seconds", 86400);
         changed |= setDefault("tree.root.node", Perk.WORKERS_INSTINCT.key());
+        changed |= setDefault("ui.root.extra_lore", "&7Everyone starts here.|&7Unlock this before choosing Frontier|&7or Warpath.|&8No free hearts. No money printer.");
+        changed |= setDefault("ui.link.foundation", "&7Foundation connection.");
+        changed |= setDefault("ui.link.specialization", "&7Specialization connection.");
+        changed |= setDefault("ui.tooltip.show_branch", true);
+        changed |= setDefault("ui.tooltip.show_page", true);
+        changed |= setDefault("ui.tooltip.show_status", true);
+        changed |= setDefault("ui.tooltip.show_current", true);
+        changed |= setDefault("ui.tooltip.show_cost", true);
+        changed |= setDefault("ui.tooltip.show_xp_track", true);
+        changed |= setDefault("ui.tooltip.show_systems", true);
+        changed |= setDefault("ui.tooltip.show_requirements", true);
+        changed |= setDefault("ui.tooltip.show_description", true);
+        changed |= setDefault("ui.tooltip.show_preview_hint", true);
+        changed |= setDefault("ui.tooltip.show_action_hint", true);
         for (MainBranch branch : MainBranch.values()) {
             String prefix = "branch." + branch.key() + ".";
             changed |= setDefault(prefix + "enabled", true);
             changed |= setDefault(prefix + "display", branch.display());
             changed |= setDefault(prefix + "icon", branch.icon().name());
+            changed |= setDefault(prefix + "item_model", "bloodbound:skills/branch_" + branch.key());
             changed |= setDefault(prefix + "theme", branch.theme());
             changed |= setDefault(prefix + "linked_systems", branch.systems());
+            changed |= setDefault(prefix + "tooltip", "&7Theme: &f{theme}|&7Systems: &f{systems}|&7Status: {status}|&8|&7Choose this before committing|&7to a specialization.");
         }
         for (Specialization specialization : Specialization.values()) {
             String prefix = "specialization." + specialization.key() + ".";
@@ -3744,10 +3881,12 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             changed |= setDefault(prefix + "display", specialization.display());
             changed |= setDefault(prefix + "main_branch", specialization.main().key());
             changed |= setDefault(prefix + "icon", specialization.icon().name());
+            changed |= setDefault(prefix + "item_model", "bloodbound:skills/spec_" + specialization.key());
             changed |= setDefault(prefix + "identity", specialization.identity());
             changed |= setDefault(prefix + "linked_systems", specialization.systems());
             changed |= setDefault(prefix + "page", specialization.name() + "_1");
             changed |= setDefault(prefix + "choice_locked_after_confirm", true);
+            changed |= setDefault(prefix + "tooltip", "&7Main branch: &f{main}|&7Identity: {identity}|&7Systems: &f{systems}|&7Status: {status}|&8|&eClick to choose when available.|&bShift-click to preview this path.");
         }
         for (Perk perk : Perk.values()) {
             String prefix = "node." + perk.key() + ".";
@@ -3762,6 +3901,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             changed |= setDefault(prefix + "page", specialization == null ? "FOUNDATION" : specialization.name() + "_1");
             changed |= setDefault(prefix + "skillpoint_cost", 1);
             changed |= setDefault(prefix + "icon", perk.icon().name());
+            changed |= setDefault(prefix + "item_model", "bloodbound:skills/node_" + perk.key());
             changed |= setDefault(prefix + "slot", perk.slot());
             changed |= setDefault(prefix + "required_level", perk.requiredLevel());
             changed |= setDefault(prefix + "max_level", perk.max());
@@ -3770,6 +3910,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             changed |= setDefault(prefix + "bloodbound_enchant_bonus_percent", isBloodboundEnchantCapstone(perk) ? 2.0D : 0.0D);
             changed |= setDefault(prefix + "bloodbound_enchant_bonus_cap_percent", isBloodboundEnchantCapstone(perk) ? 12.0D : 0.0D);
             changed |= setDefault(prefix + "description", perk.description());
+            changed |= setDefault(prefix + "tooltip", "&7Branch: &f{branch}|&7Page: &f{page}|&7Status: {status}|&7Current: &f{current}/{max}|&7Cost: &f{cost} skillpoint|&7XP track: &f{category}|&7Systems: &f{systems}|{requirements}|&8|{description}");
         }
         if (changed) {
             skillConfig.save();

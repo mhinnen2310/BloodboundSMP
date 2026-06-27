@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.21 Skilltree Icons, MOTD Controls and EndBoss Config Polish
+
+- Added chat-editable Bloodbound MOTD controls with `/motd show`, `/motd set 1`, `/motd set 2`, `/motd frames` and `/motd reload`.
+- Added `plugins/MitchSMP-Core/motd.properties` with readable help keys, animation frames and two-line MOTD text.
+- Made the EndBoss arena barrier configurable and set the default invisible barrier one block tighter than before.
+- Reorganized EndBoss public config into clearer grouped keys such as `requirements.*`, `boss.*` and `arena.*`, while keeping legacy flat keys as fallback.
+- Added skilltree tooltip section toggles through `ui.tooltip.show_*` keys in `skilltree.properties`.
+- Added Bloodbound specialization/node custom item models and generated resourcepack textures for skilltree UI icons.
+- Added Owner-only `//limit max <blocks>` so BBEdit's hard maximum can be tuned without code changes.
+- Kept `/endboss config` safer by allowing text values for title/color/mobs and numeric validation for numeric keys only.
+
 ## 1.0.20 Safezones and Config-Driven Blood Skills
 
 - Added `MitchSMP-Safezones`, a dedicated staff-managed safezone plugin with cuboid claims, wand/pos selection and configurable flags for PvP, mob spawning, hunger, build protection, explosions, fall damage and hostile damage.

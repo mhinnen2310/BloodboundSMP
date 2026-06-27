@@ -250,6 +250,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         Map.entry("corruptedheart", "mitchsmp.lifesteal.admin"),
         Map.entry("cheart", "mitchsmp.lifesteal.admin"),
         Map.entry("mitchcore", "mitchsmp.core.reload"),
+        Map.entry("motd", "mitchsmp.core.motd"),
         Map.entry("features", "mitchsmp.features.admin"),
         Map.entry("errors", "mitchsmp.errors.view"),
         Map.entry("maintenance", "mitchsmp.maintenance.admin"),
@@ -4304,16 +4305,31 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             case "sphere" -> bbSphere(player, args);
             case "undo" -> bbUndo(player);
             case "limit" -> {
-                int limit = args.length > 1 ? parseInt(args[1], bbLimit(), 100, 250000) : bbLimit();
+                if (args.length > 2 && args[1].equalsIgnoreCase("max")) {
+                    if (MitchSMP.ranks().getRank(player.getUniqueId()) != MitchRank.OWNER) {
+                        Text.msg(player, "&cOnly the Owner rank can change the BBEdit maximum limit.");
+                        return;
+                    }
+                    int maxLimit = parseInt(args[2], bbMaxLimit(), 100, 5_000_000);
+                    data.set("bbedit.limit.max", maxLimit);
+                    if (bbLimit() > maxLimit) {
+                        data.set("bbedit.limit", maxLimit);
+                    }
+                    data.saveSoon(this, 20L);
+                    Text.msg(player, "&aBBEdit maximum block limit: &f" + maxLimit);
+                    return;
+                }
+                int limit = args.length > 1 ? parseInt(args[1], bbLimit(), 100, bbMaxLimit()) : bbLimit();
                 data.set("bbedit.limit", limit);
                 data.saveSoon(this, 20L);
-                Text.msg(player, "&aBBEdit block limit: &f" + limit);
+                Text.msg(player, "&aBBEdit block limit: &f" + limit + " &7(max &f" + bbMaxLimit() + "&7)");
             }
             default -> {
                 Text.msg(player, "&4BloodboundEdit &7commands:");
                 Text.msg(player, "&f//permission <player> yes|no &7Owner only");
                 Text.msg(player, "&f//wand //pos1 //pos2 //set //replace //walls //outline");
-                Text.msg(player, "&f//copy //paste //cut //sphere //undo //limit");
+                Text.msg(player, "&f//copy //paste //cut //sphere //undo //limit [blocks]");
+                Text.msg(player, "&f//limit max <blocks> &7Owner only");
             }
         }
     }
@@ -4381,7 +4397,11 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
     }
 
     private int bbLimit() {
-        return Math.max(100, Math.min(250000, data.getInt("bbedit.limit", 50000)));
+        return Math.max(100, Math.min(bbMaxLimit(), data.getInt("bbedit.limit", 50000)));
+    }
+
+    private int bbMaxLimit() {
+        return Math.max(100, data.getInt("bbedit.limit.max", 250000));
     }
 
     private Material parseMaterial(String input) {
