@@ -24,6 +24,10 @@ public final class Bukkit {
         return null;
     }
 
+    public static boolean isPrimaryThread() {
+        return true;
+    }
+
     public static Collection<? extends Player> getOnlinePlayers() {
         return List.of();
     }

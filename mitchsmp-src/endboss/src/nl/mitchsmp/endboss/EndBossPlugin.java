@@ -386,10 +386,8 @@ public final class EndBossPlugin extends JavaPlugin implements Listener, TabComp
         if (!(entity instanceof LivingEntity boss)) {
             return null;
         }
-        if (boss.getAttribute(Attribute.MAX_HEALTH) != null) {
-            boss.getAttribute(Attribute.MAX_HEALTH).setBaseValue(bossHealth());
-        }
-        boss.setHealth(bossHealth());
+        double health = MitchSMP.runtime().safeMaxHealth(boss, bossHealth());
+        MitchSMP.runtime().safeSetHealth(boss, health);
         boss.setCustomName(Text.color("&4Bloodbound Archfiend"));
         boss.setCustomNameVisible(false);
         hideControllerEntity(boss);

@@ -1,5 +1,22 @@
 # Changelog
 
+## 1.0.20 Safezones and Config-Driven Blood Skills
+
+- Added `MitchSMP-Safezones`, a dedicated staff-managed safezone plugin with cuboid claims, wand/pos selection and configurable flags for PvP, mob spawning, hunger, build protection, explosions, fall damage and hostile damage.
+- Rebuilt the visible skilltree into a tighter Bloodbound identity selection: fewer filler nodes, exclusive paths, `/skills reset confirm`, and a one-time wipe of test-launch skill progress.
+- Made the skilltree config-driven through `plugins/MitchSMP-Skills/skilltree.properties`; node visibility, display names, icon material, slot, lane, required level, max level and lore can be edited and reloaded with `/skills reload`.
+- Prepared the build script to select the newest locally available Paper API jar, making the codebase friendlier for Paper 26.1.2 build 72 while still falling back to the currently installed local API.
+
+## 1.0.19 Archfiend Hitbox and Persistent Model Hotfix
+
+- Fixed `/testmob endboss` on newer Paper 26.1.2 builds by clamping test boss health to the server-supported max.
+- Added the first central `ServerRuntime` API helper for safer main-thread scheduling and capped entity health writes.
+- Added Owner-gated BloodboundEdit `//` building commands with persistent owner grants, wand selection, batched edits and undo.
+- Kept the Bloodbound Archfiend fight controller on a normal zombie-sized hitbox instead of a huge boss hitbox.
+- Strengthened hidden-controller setup for the real EndBoss and sandbox test EndBoss so the visual model is the player-facing boss.
+- Hardened CustomMobs persistent visual cleanup so saved models and clones do not leave stale runtime armorstands behind.
+- Added persistent visual runtime tracking for saved clones so follow/path/action behavior is managed consistently.
+
 ## 1.0.18 Staff Clones and EndBoss Test Route Fix
 
 - Expanded CustomMobs staff tooling with clone display names, nearest visual info, rename and remove commands for Hall of Fame/NPC decoration work.

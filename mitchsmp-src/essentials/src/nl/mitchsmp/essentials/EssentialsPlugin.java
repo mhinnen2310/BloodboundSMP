@@ -5,10 +5,13 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.Deque;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -186,6 +189,8 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         Map.entry("mechanics", "mitchsmp.skills.use"),
         Map.entry("guide", "mitchsmp.skills.use"),
         Map.entry("mguide", "mitchsmp.skills.use"),
+        Map.entry("safezone", "mitchsmp.safezones.admin"),
+        Map.entry("sz", "mitchsmp.safezones.admin"),
         Map.entry("homes", "mitchsmp.homes.use"),
         Map.entry("home", "mitchsmp.homes.use"),
         Map.entry("sethome", "mitchsmp.homes.use"),
@@ -295,6 +300,10 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
     private final Map<UUID, Long> staffPvpRequestExpiries = new ConcurrentHashMap<>();
     private final Map<String, Long> staffPvpSessions = new ConcurrentHashMap<>();
     private final Map<UUID, SmpWorldConfirmation> smpWorldConfirmations = new ConcurrentHashMap<>();
+    private final Map<UUID, BbSelection> bbSelections = new ConcurrentHashMap<>();
+    private final Map<UUID, Deque<List<BbBlockChange>>> bbUndo = new ConcurrentHashMap<>();
+    private final Map<UUID, List<BbClipboardBlock>> bbClipboards = new ConcurrentHashMap<>();
+    private final Set<UUID> bbEditAllowed = ConcurrentHashMap.newKeySet();
     private final java.util.Random random = new java.util.Random();
     private PropertiesFile data;
 
@@ -304,6 +313,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         ensureShopDefaults();
         jailWorld();
         loadJails();
+        loadBbEditPermissions();
         Bukkit.getPluginManager().registerEvents(this, this);
         for (String command : List.of("spawn", "setspawn", "heal", "feed", "fly", "gamemode", "day", "night", "sun", "rain", "speed", "trash", "admin", "invsee", "enderchest", "tp", "tphere", "clearinventory", "back", "commands", "help", "menu", "noclip", "fakeores", "godtools", "freeze", "lockdown", "release", "jail", "unjail", "adminmode", "staffmode", "vanish", "model", "starterkit", "shop", "lagclear", "spawnmob", "killall", "testworld", "smpworld", "ownerconfirm", "serverconfig")) {
             if (getCommand(command) != null) {
@@ -702,6 +712,11 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         Player player = event.getPlayer();
         String message = event.getMessage();
         String lower = message.toLowerCase(Locale.ROOT).trim();
+        if (lower.equals("//") || lower.startsWith("//")) {
+            event.setCancelled(true);
+            bbEditCommand(player, message.substring(2).trim());
+            return;
+        }
         if (lower.equals("/staffaudit") || lower.startsWith("/staffaudit ") || lower.equals("/stafflogs") || lower.startsWith("/stafflogs ")) {
             event.setCancelled(true);
             if (!isAuditOwner(player)) {
@@ -889,6 +904,9 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
 
     @EventHandler
     public void onInteract(PlayerInteractEvent event) {
+        if (handleBbEditWand(event)) {
+            return;
+        }
         FakeOreSelection selection = fakeOreSelections.get(event.getPlayer().getUniqueId());
         if (selection != null) {
             if (event.getAction() == Action.RIGHT_CLICK_BLOCK && event.getClickedBlock() != null) {
@@ -1178,6 +1196,8 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             "/staffmode pvp <player> - Request staffmode PvP",
             "/staffmode pvpaccept|pvpdeny|pvpstop - Staffmode PvP response",
             "/testworld create|join|leave|reset|list - Isolated test worlds",
+            "//permission <player> yes|no - Owner grants BloodboundEdit access",
+            "//wand, //set, //replace, //walls, //copy, //paste, //undo - BloodboundEdit building",
             "/v [player] - Vanish",
             "/noclip [player] - No-clip/admin possession",
             "/fakeores [player|all|nearby|cancel] [radius] [seconds] - Fake ore bait",
@@ -1192,6 +1212,12 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         );
         List<String> visible = new ArrayList<>();
         for (String line : all) {
+            if (line.startsWith("//")) {
+                if (sender instanceof Player player && hasBbEditAccess(player)) {
+                    visible.add(line);
+                }
+                continue;
+            }
             String root = rootCommand(line);
             if (canSeeRootCommand(sender, root)) {
                 visible.add(line);
@@ -3092,10 +3118,8 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         if (entity instanceof LivingEntity boss) {
             boss.setCustomName(Text.color("&4Bloodbound Archfiend &7(Test)"));
             boss.setCustomNameVisible(true);
-            if (boss.getAttribute(Attribute.MAX_HEALTH) != null) {
-                boss.getAttribute(Attribute.MAX_HEALTH).setBaseValue(5000.0D);
-            }
-            boss.setHealth(5000.0D);
+            double health = MitchSMP.runtime().safeMaxHealth(boss, 5000.0D);
+            MitchSMP.runtime().safeSetHealth(boss, health);
             boss.setCustomNameVisible(false);
             hideTestController(boss);
             entityFlag(boss, "setRemoveWhenFarAway", false);
@@ -4201,6 +4225,351 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         return null;
     }
 
+    private void loadBbEditPermissions() {
+        bbEditAllowed.clear();
+        for (String key : data.keys()) {
+            if (!key.startsWith("bbedit.allowed.") || !Boolean.parseBoolean(data.getString(key, "false"))) {
+                continue;
+            }
+            try {
+                bbEditAllowed.add(UUID.fromString(key.substring("bbedit.allowed.".length())));
+            } catch (IllegalArgumentException ignored) {
+            }
+        }
+    }
+
+    private void bbEditCommand(Player player, String input) {
+        String[] args = input.isBlank() ? new String[0] : input.split("\\s+");
+        String sub = args.length == 0 ? "help" : args[0].toLowerCase(Locale.ROOT);
+        if (sub.equals("permission")) {
+            bbEditPermission(player, args);
+            return;
+        }
+        if (!hasBbEditAccess(player)) {
+            Text.msg(player, "&cBBEdit access is locked. An Owner must use &f//permission " + player.getName() + " yes&c.");
+            return;
+        }
+        switch (sub) {
+            case "wand" -> {
+                player.getInventory().addItem(item(Material.BLAZE_ROD, "&4BloodboundEdit Wand", "&7Left-click: pos1", "&7Right-click: pos2"));
+                Text.msg(player, "&aBBEdit wand granted.");
+            }
+            case "pos1" -> {
+                selection(player).pos1 = player.getLocation().getBlock().getLocation();
+                Text.msg(player, "&aBBEdit pos1 set to &f" + shortLocation(selection(player).pos1));
+            }
+            case "pos2" -> {
+                selection(player).pos2 = player.getLocation().getBlock().getLocation();
+                Text.msg(player, "&aBBEdit pos2 set to &f" + shortLocation(selection(player).pos2));
+            }
+            case "set" -> {
+                Material material = args.length > 1 ? parseMaterial(args[1]) : null;
+                if (material == null) {
+                    Text.msg(player, "&cUsage: //set <material>");
+                    return;
+                }
+                applySelection(player, "set " + material.name(), (block, edge) -> material);
+            }
+            case "replace" -> {
+                Material from = args.length > 1 ? parseMaterial(args[1]) : null;
+                Material to = args.length > 2 ? parseMaterial(args[2]) : null;
+                if (from == null || to == null) {
+                    Text.msg(player, "&cUsage: //replace <from> <to>");
+                    return;
+                }
+                applySelection(player, "replace " + from.name() + " " + to.name(), (block, edge) -> block.getType() == from ? to : null);
+            }
+            case "walls" -> {
+                Material material = args.length > 1 ? parseMaterial(args[1]) : null;
+                if (material == null) {
+                    Text.msg(player, "&cUsage: //walls <material>");
+                    return;
+                }
+                applySelection(player, "walls " + material.name(), (block, edge) -> edge.wall() ? material : null);
+            }
+            case "outline" -> {
+                Material material = args.length > 1 ? parseMaterial(args[1]) : null;
+                if (material == null) {
+                    Text.msg(player, "&cUsage: //outline <material>");
+                    return;
+                }
+                applySelection(player, "outline " + material.name(), (block, edge) -> edge.outline() ? material : null);
+            }
+            case "cut" -> {
+                bbCopy(player, true);
+                applySelection(player, "cut", (block, edge) -> Material.AIR);
+            }
+            case "copy" -> bbCopy(player, false);
+            case "paste" -> bbPaste(player);
+            case "sphere" -> bbSphere(player, args);
+            case "undo" -> bbUndo(player);
+            case "limit" -> {
+                int limit = args.length > 1 ? parseInt(args[1], bbLimit(), 100, 250000) : bbLimit();
+                data.set("bbedit.limit", limit);
+                data.saveSoon(this, 20L);
+                Text.msg(player, "&aBBEdit block limit: &f" + limit);
+            }
+            default -> {
+                Text.msg(player, "&4BloodboundEdit &7commands:");
+                Text.msg(player, "&f//permission <player> yes|no &7Owner only");
+                Text.msg(player, "&f//wand //pos1 //pos2 //set //replace //walls //outline");
+                Text.msg(player, "&f//copy //paste //cut //sphere //undo //limit");
+            }
+        }
+    }
+
+    private void bbEditPermission(Player owner, String[] args) {
+        if (MitchSMP.ranks().getRank(owner.getUniqueId()) != MitchRank.OWNER) {
+            Text.msg(owner, "&cOnly the Owner rank can grant BBEdit access.");
+            return;
+        }
+        if (args.length < 3) {
+            Text.msg(owner, "&cUsage: //permission <player> yes|no");
+            return;
+        }
+        Player target = Bukkit.getPlayerExact(args[1]);
+        if (target == null) {
+            Text.msg(owner, "&cPlayer must be online for BBEdit permission changes.");
+            return;
+        }
+        boolean allow = args[2].equalsIgnoreCase("yes") || args[2].equalsIgnoreCase("true") || args[2].equalsIgnoreCase("on");
+        if (allow) {
+            bbEditAllowed.add(target.getUniqueId());
+        } else {
+            bbEditAllowed.remove(target.getUniqueId());
+        }
+        data.set("bbedit.allowed." + target.getUniqueId(), allow);
+        data.saveSoon(this, 20L);
+        Text.msg(owner, "&aBBEdit access for &f" + target.getName() + " &ais now &f" + (allow ? "enabled" : "disabled") + "&a.");
+        Text.msg(target, allow ? "&aOwner granted you BBEdit access." : "&cOwner revoked your BBEdit access.");
+    }
+
+    private boolean handleBbEditWand(PlayerInteractEvent event) {
+        Player player = event.getPlayer();
+        if (!hasBbEditAccess(player) || !isBbEditWand(event.getItem()) || event.getClickedBlock() == null) {
+            return false;
+        }
+        event.setCancelled(true);
+        BbSelection selection = selection(player);
+        if (event.getAction() == Action.LEFT_CLICK_BLOCK) {
+            selection.pos1 = event.getClickedBlock().getLocation();
+            Text.msg(player, "&aBBEdit pos1 set to &f" + shortLocation(selection.pos1));
+            return true;
+        }
+        if (event.getAction() == Action.RIGHT_CLICK_BLOCK) {
+            selection.pos2 = event.getClickedBlock().getLocation();
+            Text.msg(player, "&aBBEdit pos2 set to &f" + shortLocation(selection.pos2));
+            return true;
+        }
+        return true;
+    }
+
+    private boolean isBbEditWand(ItemStack item) {
+        if (item == null || item.getType() != Material.BLAZE_ROD || !item.hasItemMeta()) {
+            return false;
+        }
+        ItemMeta meta = item.getItemMeta();
+        return meta != null && meta.hasDisplayName() && Text.stripColorCodes(meta.getDisplayName()).toLowerCase(Locale.ROOT).contains("bloodboundedit");
+    }
+
+    private boolean hasBbEditAccess(Player player) {
+        return MitchSMP.ranks().getRank(player.getUniqueId()) == MitchRank.OWNER || bbEditAllowed.contains(player.getUniqueId());
+    }
+
+    private BbSelection selection(Player player) {
+        return bbSelections.computeIfAbsent(player.getUniqueId(), ignored -> new BbSelection());
+    }
+
+    private int bbLimit() {
+        return Math.max(100, Math.min(250000, data.getInt("bbedit.limit", 50000)));
+    }
+
+    private Material parseMaterial(String input) {
+        if (input == null || input.isBlank()) {
+            return null;
+        }
+        String normalized = input.toUpperCase(Locale.ROOT).replace("MINECRAFT:", "").replace('-', '_');
+        try {
+            return Material.valueOf(normalized);
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
+    private void applySelection(Player player, String label, BbMaterialResolver resolver) {
+        BbSelection selection = selection(player);
+        Region region = region(player, selection);
+        if (region == null) {
+            return;
+        }
+        if (region.volume() > bbLimit()) {
+            Text.msg(player, "&cSelection too large: &f" + region.volume() + " &cblocks. Limit: &f" + bbLimit() + "&c.");
+            return;
+        }
+        List<BbBlockChange> changes = new ArrayList<>();
+        for (int x = region.minX; x <= region.maxX; x++) {
+            for (int y = region.minY; y <= region.maxY; y++) {
+                for (int z = region.minZ; z <= region.maxZ; z++) {
+                    Block block = region.world.getBlockAt(x, y, z);
+                    Edge edge = new Edge(x == region.minX, x == region.maxX, y == region.minY, y == region.maxY, z == region.minZ, z == region.maxZ);
+                    Material to = resolver.resolve(block, edge);
+                    if (to != null && block.getType() != to) {
+                        changes.add(new BbBlockChange(block.getLocation(), block.getType(), to));
+                    }
+                }
+            }
+        }
+        queueBbChanges(player, changes, label);
+    }
+
+    private Region region(Player player, BbSelection selection) {
+        if (selection.pos1 == null || selection.pos2 == null) {
+            Text.msg(player, "&cSet both positions first with &f//wand&c, &f//pos1 &cor &f//pos2&c.");
+            return null;
+        }
+        if (selection.pos1.getWorld() == null || selection.pos2.getWorld() == null || !selection.pos1.getWorld().equals(selection.pos2.getWorld())) {
+            Text.msg(player, "&cBoth BBEdit positions must be in the same world.");
+            return null;
+        }
+        World world = selection.pos1.getWorld();
+        int minY = Math.max(world.getMinHeight(), Math.min(selection.pos1.getBlockY(), selection.pos2.getBlockY()));
+        int maxY = Math.min(319, Math.max(selection.pos1.getBlockY(), selection.pos2.getBlockY()));
+        return new Region(world,
+            Math.min(selection.pos1.getBlockX(), selection.pos2.getBlockX()),
+            minY,
+            Math.min(selection.pos1.getBlockZ(), selection.pos2.getBlockZ()),
+            Math.max(selection.pos1.getBlockX(), selection.pos2.getBlockX()),
+            maxY,
+            Math.max(selection.pos1.getBlockZ(), selection.pos2.getBlockZ()));
+    }
+
+    private void queueBbChanges(Player player, List<BbBlockChange> changes, String label) {
+        if (changes.isEmpty()) {
+            Text.msg(player, "&7BBEdit: nothing changed.");
+            return;
+        }
+        Deque<List<BbBlockChange>> stack = bbUndo.computeIfAbsent(player.getUniqueId(), ignored -> new ArrayDeque<>());
+        stack.push(changes);
+        while (stack.size() > 10) {
+            stack.removeLast();
+        }
+        int batchSize = data.getInt("bbedit.batch", 2500);
+        final int[] index = {0};
+        final org.bukkit.scheduler.BukkitTask[] task = new org.bukkit.scheduler.BukkitTask[1];
+        task[0] = Bukkit.getScheduler().runTaskTimer(this, () -> {
+            int end = Math.min(changes.size(), index[0] + Math.max(100, batchSize));
+            for (int i = index[0]; i < end; i++) {
+                BbBlockChange change = changes.get(i);
+                if (change.location.getWorld() != null) {
+                    change.location.getBlock().setType(change.to, false);
+                }
+            }
+            index[0] = end;
+            if (index[0] >= changes.size()) {
+                task[0].cancel();
+                Text.msg(player, "&aBBEdit " + label + " complete: &f" + changes.size() + " &ablocks.");
+                audit(player, "bbedit-" + label, changes.size() + " blocks");
+            }
+        }, 1L, 1L);
+    }
+
+    private void bbCopy(Player player, boolean quiet) {
+        BbSelection selection = selection(player);
+        Region region = region(player, selection);
+        if (region == null) {
+            return;
+        }
+        if (region.volume() > bbLimit()) {
+            Text.msg(player, "&cSelection too large to copy: &f" + region.volume() + "&c.");
+            return;
+        }
+        List<BbClipboardBlock> clipboard = new ArrayList<>();
+        for (int x = region.minX; x <= region.maxX; x++) {
+            for (int y = region.minY; y <= region.maxY; y++) {
+                for (int z = region.minZ; z <= region.maxZ; z++) {
+                    Material type = region.world.getBlockAt(x, y, z).getType();
+                    clipboard.add(new BbClipboardBlock(x - region.minX, y - region.minY, z - region.minZ, type));
+                }
+            }
+        }
+        bbClipboards.put(player.getUniqueId(), clipboard);
+        if (!quiet) {
+            Text.msg(player, "&aCopied &f" + clipboard.size() + " &ablocks.");
+        }
+    }
+
+    private void bbPaste(Player player) {
+        List<BbClipboardBlock> clipboard = bbClipboards.get(player.getUniqueId());
+        if (clipboard == null || clipboard.isEmpty()) {
+            Text.msg(player, "&cClipboard is empty.");
+            return;
+        }
+        if (clipboard.size() > bbLimit()) {
+            Text.msg(player, "&cClipboard too large for current limit.");
+            return;
+        }
+        Location origin = player.getLocation().getBlock().getLocation();
+        List<BbBlockChange> changes = new ArrayList<>();
+        for (BbClipboardBlock entry : clipboard) {
+            Location location = new Location(origin.getWorld(), origin.getBlockX() + entry.dx, origin.getBlockY() + entry.dy, origin.getBlockZ() + entry.dz);
+            Block block = location.getBlock();
+            if (block.getType() != entry.material) {
+                changes.add(new BbBlockChange(location, block.getType(), entry.material));
+            }
+        }
+        queueBbChanges(player, changes, "paste");
+    }
+
+    private void bbSphere(Player player, String[] args) {
+        Material material = args.length > 1 ? parseMaterial(args[1]) : null;
+        int radius = args.length > 2 ? parseInt(args[2], 5, 1, 30) : 5;
+        boolean hollow = args.length > 3 && args[3].equalsIgnoreCase("hollow");
+        if (material == null) {
+            Text.msg(player, "&cUsage: //sphere <material> [radius] [hollow]");
+            return;
+        }
+        Location center = player.getLocation().getBlock().getLocation();
+        int diameter = radius * 2 + 1;
+        long volume = (long) diameter * diameter * diameter;
+        if (volume > bbLimit()) {
+            Text.msg(player, "&cSphere bounding box too large: &f" + volume + "&c.");
+            return;
+        }
+        List<BbBlockChange> changes = new ArrayList<>();
+        double max = radius * radius + 0.5D;
+        double inner = Math.max(0.0D, (radius - 1) * (radius - 1) - 0.5D);
+        for (int x = -radius; x <= radius; x++) {
+            for (int y = -radius; y <= radius; y++) {
+                for (int z = -radius; z <= radius; z++) {
+                    double distance = x * x + y * y + z * z;
+                    if (distance > max || (hollow && distance < inner)) {
+                        continue;
+                    }
+                    Location location = new Location(center.getWorld(), center.getBlockX() + x, center.getBlockY() + y, center.getBlockZ() + z);
+                    Block block = location.getBlock();
+                    if (block.getType() != material) {
+                        changes.add(new BbBlockChange(location, block.getType(), material));
+                    }
+                }
+            }
+        }
+        queueBbChanges(player, changes, "sphere");
+    }
+
+    private void bbUndo(Player player) {
+        Deque<List<BbBlockChange>> stack = bbUndo.get(player.getUniqueId());
+        if (stack == null || stack.isEmpty()) {
+            Text.msg(player, "&cNothing to undo.");
+            return;
+        }
+        List<BbBlockChange> previous = stack.pop();
+        List<BbBlockChange> reverse = new ArrayList<>();
+        for (BbBlockChange change : previous) {
+            reverse.add(new BbBlockChange(change.location, change.to, change.from));
+        }
+        queueBbChanges(player, reverse, "undo");
+    }
+
     private boolean hasAdmin(CommandSender sender) {
         if (!MitchSMP.permissions().has(sender, "mitchsmp.essentials.admin")) {
             Text.msg(sender, "&cGeen permissie.");
@@ -4589,6 +4958,48 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
     }
 
     private record AuditView(int page, String filter) {
+    }
+
+    private static final class BbSelection {
+        private Location pos1;
+        private Location pos2;
+    }
+
+    private record Region(World world, int minX, int minY, int minZ, int maxX, int maxY, int maxZ) {
+        long volume() {
+            return (long) (maxX - minX + 1) * (long) (maxY - minY + 1) * (long) (maxZ - minZ + 1);
+        }
+    }
+
+    private record Edge(boolean minX, boolean maxX, boolean minY, boolean maxY, boolean minZ, boolean maxZ) {
+        boolean wall() {
+            return minX || maxX || minZ || maxZ;
+        }
+
+        boolean outline() {
+            int count = 0;
+            if (minX || maxX) {
+                count++;
+            }
+            if (minY || maxY) {
+                count++;
+            }
+            if (minZ || maxZ) {
+                count++;
+            }
+            return count >= 2;
+        }
+    }
+
+    private record BbBlockChange(Location location, Material from, Material to) {
+    }
+
+    private record BbClipboardBlock(int dx, int dy, int dz, Material material) {
+    }
+
+    @FunctionalInterface
+    private interface BbMaterialResolver {
+        Material resolve(Block block, Edge edge);
     }
 }
 

@@ -22,6 +22,7 @@ import nl.mitchsmp.core.api.MitchRank;
 import nl.mitchsmp.core.api.MitchSMP;
 import nl.mitchsmp.core.api.PermissionService;
 import nl.mitchsmp.core.api.RankService;
+import nl.mitchsmp.core.api.ServerRuntime;
 import nl.mitchsmp.core.storage.BoundedRecordStore;
 import nl.mitchsmp.core.storage.KeyValueStore;
 import nl.mitchsmp.core.storage.PropertiesFile;
@@ -50,13 +51,14 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
         "MitchSMP-Skyblock", "MitchSMP-Performance", "MitchSMP-Artifacts", "MitchSMP-Bosses", "MitchSMP-BedWars",
         "MitchSMP-TNTRun", "MitchSMP-Spleef", "MitchSMP-Cosmetics", "MitchSMP-Events", "MitchSMP-Progression",
         "MitchSMP-Gameplay", "MitchSMP-Skirmish", "MitchSMP-Skills", "MitchSMP-EndBoss", "MitchSMP-Chat", "MitchSMP-AntiCheat",
-        "MitchSMP-Seasons", "MitchSMP-UpdateOrchestrator", "MitchSMP-CustomMobs"
+        "MitchSMP-Seasons", "MitchSMP-UpdateOrchestrator", "MitchSMP-CustomMobs", "MitchSMP-Safezones"
     );
     private final Map<Class<?>, Object> services = new HashMap<>();
     private CoreRankService rankService;
     private CorePermissionService permissionService;
     private CoreFeatureFlagService featureFlagService;
     private CommandErrorTracker commandErrorTracker;
+    private ServerRuntime runtime;
     private KeyValueStore systemState;
     private BoundedRecordStore qaLog;
     private final Map<UUID, QaSession> qaSessions = new HashMap<>();
@@ -66,6 +68,7 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
     @Override
     public void onEnable() {
         MitchSMP.setCore(this);
+        runtime = new ServerRuntime(this);
 
         Path dataRoot = getDataFolder().toPath();
         rankService = new CoreRankService(new PropertiesFile(dataRoot.resolve("players.properties")));
@@ -123,6 +126,10 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
 
     public FeatureFlagService features() {
         return featureFlagService;
+    }
+
+    public ServerRuntime runtime() {
+        return runtime;
     }
 
     public <T> void registerService(Class<T> type, T service) {

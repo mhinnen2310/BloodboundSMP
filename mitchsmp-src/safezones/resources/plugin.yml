@@ -1,0 +1,14 @@
+name: MitchSMP-Safezones
+version: 0.1.0
+main: nl.mitchsmp.safezones.SafezonesPlugin
+api-version: '1.21'
+depend: [MitchSMP-Core]
+commands:
+  safezone:
+    description: Manage Bloodbound safezones
+    usage: /safezone
+    aliases: [sz]
+permissions:
+  mitchsmp.safezones.admin:
+    description: Manage safezones
+    default: op

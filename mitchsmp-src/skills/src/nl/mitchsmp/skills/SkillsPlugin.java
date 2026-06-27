@@ -6,6 +6,7 @@ import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -70,6 +71,14 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
     private static final String STATE_PREFIX = "[MSA:";
     private static final String LORE_MARKER = "[MSAbility]";
     private static final int CATEGORY_COUNT = 6;
+    private static final Set<Perk> ACTIVE_PERKS = EnumSet.of(
+        Perk.DEEP_MINER, Perk.ORE_SURVEYOR, Perk.VEIN_DISCIPLINE, Perk.MINING_MASTERY,
+        Perk.FORESTER, Perk.REPLANTER, Perk.HARVEST_FLOW, Perk.FARMING_MASTERY,
+        Perk.DUELIST, Perk.COMBAT_SUSTAIN, Perk.BOUNTY_FOCUS, Perk.ESCAPE_DISCIPLINE, Perk.KINGSLAYER_FOCUS,
+        Perk.BREWING_FOCUS, Perk.RELIC_ALCHEMY, Perk.INFERNAL_RESOLVE, Perk.ALCHEMY_GRANDMASTER,
+        Perk.RUNE_SENSE, Perk.TABLE_ATTUNEMENT, Perk.BOOKSMITH, Perk.ENCHANTING_GRANDMASTER,
+        Perk.ECONOMY_QUICKSELL_EFFICIENCY, Perk.ORDER_RUNNER, Perk.CONTRACT_BROKER
+    );
     private final Set<UUID> abilityBreaking = new HashSet<>();
     private final Map<UUID, Long> abilityToggleCooldowns = new HashMap<>();
     private final Map<String, Long> activeSkillCooldowns = new HashMap<>();
@@ -79,6 +88,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
     private final Map<UUID, Long> brewingBoostCooldowns = new HashMap<>();
     private final Random random = new Random();
     private PropertiesFile data;
+    private PropertiesFile skillConfig;
     private NamespacedKey guideKey;
     private NamespacedKey recoveryPreviewExpiryKey;
     private boolean skillDataDirty;
@@ -86,6 +96,8 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
     @Override
     public void onEnable() {
         data = new PropertiesFile(getDataFolder().toPath().resolve("skills.properties"));
+        skillConfig = new PropertiesFile(getDataFolder().toPath().resolve("skilltree.properties"));
+        writeDefaultSkilltreeConfig();
         guideKey = new NamespacedKey(this, "mechanics_guide");
         recoveryPreviewExpiryKey = new NamespacedKey(this, "recovery_preview_expiry");
         wipeLegacySkillProgressOnce();
@@ -106,13 +118,13 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
     }
 
     private void wipeLegacySkillProgressOnce() {
-        String marker = "migration.v1_0_17_lane_reset_done";
+        String marker = "migration.v1_0_20_bloodbound_tree_reset_done";
         if (Boolean.parseBoolean(data.getString(marker, "false"))) {
             return;
         }
         int removed = 0;
         for (String key : new ArrayList<>(data.keys())) {
-            if (key.startsWith("xp.") || key.startsWith("points.") || key.startsWith("perk.")) {
+            if (key.startsWith("xp.") || key.startsWith("points.") || key.startsWith("perk.") || key.startsWith("skill.")) {
                 data.set(key, null);
                 removed++;
             }
@@ -120,7 +132,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         data.set(marker, true);
         data.save();
         if (removed > 0) {
-            getLogger().info("Bloodbound skilltree lane migration wiped " + removed + " test skill-progress entries. Item abilities and other player data were not touched.");
+            getLogger().info("Bloodbound skilltree rebuild wiped " + removed + " test skill-progress entries. Item abilities and other player data were not touched.");
         }
     }
 
@@ -171,7 +183,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         if (name.equals("skills")) {
             boolean admin = MitchSMP.permissions().has(sender, "mitchsmp.skills.admin");
             if (args.length == 1) {
-                return admin ? Tab.complete(args[0], "enchant", "anvil", "admin") : Tab.complete(args[0], "enchant", "anvil");
+                return admin ? Tab.complete(args[0], "enchant", "anvil", "reset", "reload", "admin") : Tab.complete(args[0], "enchant", "anvil", "reset");
             }
             if (!admin) {
                 return List.of();
@@ -232,6 +244,27 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         }
         if (!(sender instanceof Player player)) {
             Text.msg(sender, "&cPlayers only.");
+            return true;
+        }
+        if (args.length > 0 && args[0].equalsIgnoreCase("reload")) {
+            if (!MitchSMP.permissions().has(player, "mitchsmp.skills.admin")) {
+                Text.msg(player, "&cYou do not have permission.");
+                return true;
+            }
+            skillConfig.load();
+            writeDefaultSkilltreeConfig();
+            Text.msg(player, "&aBloodbound skilltree config reloaded.");
+            return true;
+        }
+        if (args.length > 0 && args[0].equalsIgnoreCase("reset")) {
+            if (args.length < 2 || !args[1].equalsIgnoreCase("confirm")) {
+                Text.msg(player, "&cThis resets your Bloodbound skilltree choices and points.");
+                Text.msg(player, "&7Use &f/skills reset confirm &7to choose a different build.");
+                return true;
+            }
+            resetPlayer(player);
+            Text.msg(player, "&aYour Bloodbound skilltree has been reset.");
+            player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.7F, 0.8F);
             return true;
         }
         if (args.length > 0 && args[0].matches("(?i)enchant|anvil")) {
@@ -1433,12 +1466,12 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
     }
 
     private int perk(Player player, Perk perk) {
-        return data.getInt("perk." + profileKey(player.getUniqueId()) + "." + perk.key(), 0);
+        return Math.min(perkMax(perk), data.getInt("perk." + profileKey(player.getUniqueId()) + "." + perk.key(), 0));
     }
 
     private void buyPerk(Player player, Perk perk) {
         int current = perk(player, perk);
-        if (current >= perk.max()) {
+        if (current >= perkMax(perk)) {
             Text.msg(player, "&cThis perk is maxed.");
             return;
         }
@@ -1446,8 +1479,8 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             Text.msg(player, "&cYou do not have skillpoints.");
             return;
         }
-        if (level(player, perk.category()) < perk.requiredLevel()) {
-            Text.msg(player, "&cYou need level &f" + perk.requiredLevel() + " &cin " + perk.category().display() + "&c.");
+        if (level(player, perk.category()) < perkRequiredLevel(perk)) {
+            Text.msg(player, "&cYou need level &f" + perkRequiredLevel(perk) + " &cin " + perk.category().display() + "&c.");
             return;
         }
         SkillLane lane = lane(perk);
@@ -1460,7 +1493,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         data.set("perk." + profileKey(player.getUniqueId()) + "." + perk.key(), current + 1);
         data.set("points." + profileKey(player.getUniqueId()), points(player) - 1);
         saveSkillDataSoon();
-        Text.msg(player, "&aPerk purchased: &f" + perk.display() + " " + (current + 1) + "/" + perk.max() + " &8[" + lane.display() + "]");
+        Text.msg(player, "&aPerk purchased: &f" + perkDisplay(perk) + " " + (current + 1) + "/" + perkMax(perk) + " &8[" + lane.display() + "]");
         player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.8F, 1.5F);
     }
 
@@ -1475,6 +1508,11 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
     }
 
     private SkillLane lane(Perk perk) {
+        String configured = skillConfig.getString("node." + perk.key() + ".lane", "");
+        SkillLane override = SkillLane.from(configured);
+        if (override != null) {
+            return override;
+        }
         return switch (perk) {
             case MINING_SPEED, VEIN_DISCIPLINE -> SkillLane.TUNNEL_RAT;
             case MINING_YIELD, ORE_SURVEYOR -> SkillLane.PROSPECTOR;
@@ -1482,9 +1520,10 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             case FARMING_YIELD, REPLANTER, HARVEST_FLOW -> SkillLane.CULTIVATOR;
             case FORESTER -> SkillLane.FORESTER;
             case SUPPLY_GARDENER -> SkillLane.HOMESTEADER;
-            case DUELIST -> SkillLane.DUELIST;
-            case BOUNTY_FOCUS, KINGSLAYER_FOCUS -> SkillLane.HUNTER;
-            case COMBAT_SUSTAIN, ESCAPE_DISCIPLINE -> SkillLane.SURVIVOR;
+            case DUELIST -> SkillLane.REAVER;
+            case COMBAT_SUSTAIN -> SkillLane.WARDEN;
+            case ESCAPE_DISCIPLINE -> SkillLane.PHANTOM;
+            case BOUNTY_FOCUS, KINGSLAYER_FOCUS -> SkillLane.HEXBLADE;
             case BREWING_FOCUS, ALCHEMY_MASTERY -> SkillLane.BREWER;
             case APPLE_LORE, RELIC_ALCHEMY -> SkillLane.RELICIST;
             case INFERNAL_RESOLVE -> SkillLane.INFERNALIST;
@@ -1532,7 +1571,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         }
         int replanter = perk(player, Perk.REPLANTER);
         Material crop = block.getType();
-        if (replanter >= Perk.REPLANTER.max() && isCropLike(crop)) {
+        if (replanter >= perkMax(Perk.REPLANTER) && isCropLike(crop)) {
             Bukkit.getScheduler().runTask(this, () -> replantArea(player, block, crop, 2, 16));
         } else if (replanter > 0 && isCropLike(crop) && Math.random() * 100.0D < 45.0D + replanter * 5.0D) {
             Bukkit.getScheduler().runTask(this, () -> {
@@ -1552,14 +1591,14 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
     private boolean openPortableStation(Player player, String type) {
         boolean anvil = type.equalsIgnoreCase("anvil");
         Perk required = anvil ? Perk.BOOKSMITH : Perk.ENCHANTING_GRANDMASTER;
-        if (perk(player, required) < required.max()) {
-            Text.msg(player, "&cPortable " + type.toLowerCase(Locale.ROOT) + " requires maxed &f" + required.display() + "&c.");
+        if (perk(player, required) < perkMax(required)) {
+            Text.msg(player, "&cPortable " + type.toLowerCase(Locale.ROOT) + " requires maxed &f" + perkDisplay(required) + "&c.");
             return true;
         }
         String method = anvil ? "openAnvil" : "openEnchanting";
         try {
             player.getClass().getMethod(method, Location.class, boolean.class).invoke(player, player.getLocation(), true);
-            player.sendActionBar(Text.color("&5" + required.display() + " &8| &aPortable " + type.toLowerCase(Locale.ROOT) + " opened"));
+            player.sendActionBar(Text.color("&5" + perkDisplay(required) + " &8| &aPortable " + type.toLowerCase(Locale.ROOT) + " opened"));
         } catch (ReflectiveOperationException | RuntimeException exception) {
             Text.msg(player, "&cPortable " + type.toLowerCase(Locale.ROOT) + " is unavailable on this server build.");
             getLogger().warning("Could not open portable " + type + " for " + player.getName() + ": " + exception.getMessage());
@@ -2727,35 +2766,35 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
 
     private ItemStack perkIcon(Player player, Perk perk) {
         int current = perk(player, perk);
-        boolean locked = level(player, perk.category()) < perk.requiredLevel();
+        boolean locked = level(player, perk.category()) < perkRequiredLevel(perk);
         SkillLane lane = lane(perk);
         SkillLane chosen = chosenLane(player, perk.category());
         boolean laneLocked = lane.exclusive() && chosen != null && chosen != lane && current <= 0;
-        boolean maxed = current >= perk.max();
+        boolean maxed = current >= perkMax(perk);
         String color = maxed ? "&a" : locked || laneLocked ? "&c" : points(player) > 0 ? "&e" : "&7";
         List<String> lore = new ArrayList<>(List.of(
             "&7Category: &f" + perk.category().display(),
             "&7Path: &f" + lane.display() + (lane.exclusive() ? " &8(exclusive)" : ""),
-            "&7Required level: &f" + perk.requiredLevel(),
-            "&7Current: &f" + current + "/" + perk.max(),
+            "&7Required level: &f" + perkRequiredLevel(perk),
+            "&7Current: &f" + current + "/" + perkMax(perk),
             "&7Cost: &f1 skillpoint"
         ));
         if (chosen != null && lane.exclusive()) {
             lore.add("&7Chosen path: &f" + chosen.display());
         }
-        lore.addAll(perk.descriptionLines());
+        lore.addAll(perkDescriptionLines(perk));
         if (maxed) {
             lore.add("&aMaxed.");
         } else if (laneLocked) {
             lore.add("&cLocked by your " + chosen.display() + " path.");
         } else if (locked) {
-            lore.add("&cLocked. Grind " + perk.category().display() + " level " + perk.requiredLevel() + ".");
+            lore.add("&cLocked. Grind " + perk.category().display() + " level " + perkRequiredLevel(perk) + ".");
         } else if (points(player) <= 0) {
             lore.add("&cNo skillpoints available.");
         } else {
             lore.add(lane.exclusive() && chosen == null ? "&eClick to choose this path." : "&eClick to buy.");
         }
-        return icon(perk.icon(), color + perk.display() + " &f" + current + "/" + perk.max(), lore);
+        return icon(perkIcon(perk), color + perkDisplay(perk) + " &f" + current + "/" + perkMax(perk), lore);
     }
 
     private ItemStack icon(Material material, String name, List<String> lore) {
@@ -2780,12 +2819,100 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
     private List<Perk> perksFor(Category category) {
         return java.util.Arrays.stream(Perk.values())
             .filter(perk -> perk.category() == category)
-            .filter(perk -> category != Category.ECONOMY
-                || perk == Perk.ECONOMY_QUICKSELL_EFFICIENCY
-                || perk == Perk.ORDER_RUNNER
-                || perk == Perk.CONTRACT_BROKER)
-            .sorted(Comparator.comparingInt(Perk::requiredLevel).thenComparing(Perk::slot))
+            .filter(this::perkEnabled)
+            .sorted(Comparator.comparingInt(this::perkRequiredLevel).thenComparing(this::perkSlotConfig))
             .toList();
+    }
+
+    private void writeDefaultSkilltreeConfig() {
+        boolean changed = false;
+        if (!skillConfig.contains("meta.version")) {
+            skillConfig.set("meta.version", "bloodbound-tree-v1");
+            skillConfig.set("meta.notes", "Edit node.<id> values, then run /skills reload. Effects are implemented by matching node ids in the plugin engine.");
+            changed = true;
+        }
+        for (Perk perk : Perk.values()) {
+            String prefix = "node." + perk.key() + ".";
+            changed |= setDefault(prefix + "enabled", ACTIVE_PERKS.contains(perk));
+            changed |= setDefault(prefix + "display", perk.display());
+            changed |= setDefault(prefix + "category", perk.category().key());
+            changed |= setDefault(prefix + "lane", laneDefault(perk).name().toLowerCase(Locale.ROOT));
+            changed |= setDefault(prefix + "icon", perk.icon().name());
+            changed |= setDefault(prefix + "slot", perk.slot());
+            changed |= setDefault(prefix + "required_level", perk.requiredLevel());
+            changed |= setDefault(prefix + "max_level", perk.max());
+            changed |= setDefault(prefix + "description", perk.description());
+        }
+        if (changed) {
+            skillConfig.save();
+        }
+    }
+
+    private boolean setDefault(String key, Object value) {
+        if (skillConfig.contains(key)) {
+            return false;
+        }
+        skillConfig.set(key, value);
+        return true;
+    }
+
+    private boolean perkEnabled(Perk perk) {
+        return Boolean.parseBoolean(skillConfig.getString("node." + perk.key() + ".enabled", String.valueOf(ACTIVE_PERKS.contains(perk))));
+    }
+
+    private String perkDisplay(Perk perk) {
+        return skillConfig.getString("node." + perk.key() + ".display", perk.display());
+    }
+
+    private Material perkIcon(Perk perk) {
+        try {
+            return Material.valueOf(skillConfig.getString("node." + perk.key() + ".icon", perk.icon().name()).toUpperCase(Locale.ROOT));
+        } catch (IllegalArgumentException exception) {
+            return perk.icon();
+        }
+    }
+
+    private int perkSlotConfig(Perk perk) {
+        return Math.max(0, Math.min(53, skillConfig.getInt("node." + perk.key() + ".slot", perk.slot())));
+    }
+
+    private int perkRequiredLevel(Perk perk) {
+        return Math.max(1, Math.min(MAX_LEVEL, skillConfig.getInt("node." + perk.key() + ".required_level", perk.requiredLevel())));
+    }
+
+    private int perkMax(Perk perk) {
+        return Math.max(1, Math.min(100, skillConfig.getInt("node." + perk.key() + ".max_level", perk.max())));
+    }
+
+    private List<String> perkDescriptionLines(Perk perk) {
+        return java.util.Arrays.stream(skillConfig.getString("node." + perk.key() + ".description", perk.description()).split("\\|"))
+            .map(line -> "&7" + line)
+            .toList();
+    }
+
+    private SkillLane laneDefault(Perk perk) {
+        return switch (perk) {
+            case MINING_SPEED, VEIN_DISCIPLINE -> SkillLane.TUNNEL_RAT;
+            case MINING_YIELD, ORE_SURVEYOR -> SkillLane.PROSPECTOR;
+            case DEEP_MINER -> SkillLane.DEEP_MINER;
+            case FARMING_YIELD, REPLANTER, HARVEST_FLOW -> SkillLane.CULTIVATOR;
+            case FORESTER -> SkillLane.FORESTER;
+            case SUPPLY_GARDENER -> SkillLane.HOMESTEADER;
+            case DUELIST -> SkillLane.REAVER;
+            case COMBAT_SUSTAIN -> SkillLane.WARDEN;
+            case ESCAPE_DISCIPLINE -> SkillLane.PHANTOM;
+            case BOUNTY_FOCUS, KINGSLAYER_FOCUS -> SkillLane.HEXBLADE;
+            case BREWING_FOCUS, ALCHEMY_MASTERY -> SkillLane.BREWER;
+            case APPLE_LORE, RELIC_ALCHEMY -> SkillLane.RELICIST;
+            case INFERNAL_RESOLVE -> SkillLane.INFERNALIST;
+            case RUNE_SENSE, TABLE_ATTUNEMENT -> SkillLane.RUNEWRIGHT;
+            case BOOKSMITH, ANVIL_CARE -> SkillLane.BOOKSMITH;
+            case ENCHANTING_MASTERY -> SkillLane.ARCANIST;
+            case ECONOMY_QUICKSELL_EFFICIENCY -> SkillLane.MERCHANT;
+            case ORDER_RUNNER -> SkillLane.LOGISTICIAN;
+            case CONTRACT_BROKER -> SkillLane.CONTRACTOR;
+            default -> SkillLane.MASTERY;
+        };
     }
 
     private int[] perkDisplaySlots() {
@@ -2794,12 +2921,12 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
 
     private List<String> categoryGuide(Category category) {
         return switch (category) {
-            case MINING -> List.of("&7XP: ores, stone, deepslate, debris.", "&7Choose one path:", "&bProspector &7finds ore value.", "&8Tunnel Rat &7moves and mines faster underground.", "&9Deep Miner &7specializes below Y0.", "&7Active: &f/markvein");
-            case FARMING -> List.of("&7XP: crops and logs.", "&7Choose one path:", "&aCultivator &7controls fields and replanting.", "&2Forester &7owns tree/log economy.", "&6Homesteader &7keeps rebuild supplies flowing.");
-            case COMBAT -> List.of("&7XP: damage and kills.", "&7Choose one path:", "&cDuelist &7wins direct fights.", "&6Hunter &7tracks bounties and kings.", "&5Survivor &7escapes and outlasts.", "&7Actives: &f/scout&7, &f/bloodrush");
-            case ALCHEMY -> List.of("&7XP: potions, apples, and bottles.", "&7Choose one path:", "&dBrewer &7controls potion tempo.", "&5Relicist &7leans into rare Bloodbound materials.", "&cInfernalist &7prepares for hell/endboss content.", "&7Active: &f/brewboost");
-            case ENCHANTING -> List.of("&7XP: enchanting and ability item use.", "&7Choose one path:", "&dRunewright &7hunts rare ability rolls.", "&eBooksmith &7moves power through books/anvils.", "&5Arcanist &7pushes item challenge mastery.");
-            case ECONOMY -> List.of("&7XP: QuickSell, AH, orders, and contracts.", "&7Choose one path:", "&aMerchant &7profits from selling.", "&6Contractor &7takes high-risk jobs.", "&bLogistician &7feeds server orders.", "&7Active: &f/contractboost");
+            case MINING -> List.of("&7XP: ores, stone, deepslate, debris.", "&7Choose one identity:", "&9Deep Miner &7dominates below Y0.", "&bProspector &7finds ore value.", "&8Tunnel Rat &7moves and survives underground.", "&7Active: &f/markvein");
+            case FARMING -> List.of("&7XP: crops and logs.", "&7Choose one identity:", "&2Forester &7owns tree/log economy.", "&aCultivator &7controls fields and replanting.", "&6Harvester &7keeps rebuild supplies flowing.");
+            case COMBAT -> List.of("&7XP: damage, kills and bounty pressure.", "&7Choose one identity:", "&cReaver &7executes low targets.", "&fWarden &7outlasts burst.", "&5Phantom &7escapes and outplays.", "&4Hexblade &7tracks high-value targets.");
+            case ALCHEMY -> List.of("&7XP: potions, apples, corrupted materials.", "&7Occultist-style progression:", "&dBrewing tempo", "&5relic/boss material value", "&cnether and ritual readiness.", "&7Active: &f/brewboost");
+            case ENCHANTING -> List.of("&7XP: enchanting and ability item use.", "&7Choose one identity:", "&dRunewright &7hunts rare ability rolls.", "&eBooksmith &7moves power through books/anvils.", "&5Arcanist &7masters item-bound challenges.");
+            case ECONOMY -> List.of("&7XP: QuickSell, AH, orders, and contracts.", "&7Choose one identity:", "&aForger/Merchant &7profits from selling.", "&6Contractor &7takes high-risk jobs.", "&bLogistician &7keeps server orders moving.", "&7Active: &f/contractboost");
         };
     }
 
@@ -2970,6 +3097,10 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         CULTIVATOR("Cultivator", true),
         FORESTER("Forester", true),
         HOMESTEADER("Homesteader", true),
+        REAVER("Reaver", true),
+        WARDEN("Warden", true),
+        PHANTOM("Phantom", true),
+        HEXBLADE("Hexblade", true),
         DUELIST("Duelist", true),
         HUNTER("Hunter", true),
         SURVIVOR("Survivor", true),
@@ -2997,6 +3128,18 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
 
         boolean exclusive() {
             return exclusive;
+        }
+
+        static SkillLane from(String input) {
+            if (input == null || input.isBlank()) {
+                return null;
+            }
+            for (SkillLane lane : values()) {
+                if (lane.name().equalsIgnoreCase(input) || lane.display.equalsIgnoreCase(input)) {
+                    return lane;
+                }
+            }
+            return null;
         }
     }
 

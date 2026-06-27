@@ -82,4 +82,8 @@ public final class MitchSMP {
     public static CorruptedHeartService corruptedHearts() {
         return service(CorruptedHeartService.class);
     }
+
+    public static ServerRuntime runtime() {
+        return core().runtime();
+    }
 }

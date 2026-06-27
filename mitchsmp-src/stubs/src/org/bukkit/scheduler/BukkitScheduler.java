@@ -8,4 +8,6 @@ public interface BukkitScheduler {
     BukkitTask runTaskLater(Plugin plugin, Runnable task, long delay);
 
     BukkitTask runTaskTimer(Plugin plugin, Runnable task, long delay, long period);
+
+    BukkitTask runTaskAsynchronously(Plugin plugin, Runnable task);
 }

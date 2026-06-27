@@ -19,6 +19,16 @@ This file records active work in a simple visible format. New requests should be
 
 ## Afgerond
 
+- Added `MitchSMP-Safezones` with staff cuboid claims, wand selection and configurable flags for PvP, mob spawning, hunger, build protection, explosions, fall damage and hostile damage.
+- Rebuilt the visible skilltree around fewer stronger Bloodbound identity paths and added `/skills reset confirm` for respecs.
+- Added a one-time rebuild migration that wipes test-launch skill progress while leaving item abilities and other player data untouched.
+- Prepared the build script to pick the newest local Paper API jar for the upcoming Paper 26.1.2 build 72 update.
+- Fixed `/testmob endboss` health crashes on Paper 26.1.2 build 72 by using capped safe health writes.
+- Added a central `ServerRuntime` helper for safe sync/async scheduling and entity-health caps.
+- Added Owner-gated BloodboundEdit `//` commands with wand selection, set/replace/walls/outline/copy/paste/cut/sphere/undo and batched block writes.
+- Kept the EndBoss controller hitbox at normal zombie scale while the Bloodbound Archfiend model remains the visible boss.
+- Hardened hidden-controller behavior for real and sandbox EndBoss spawns.
+- Fixed persistent CustomMobs cleanup/tracking so saved clones and models are removed consistently on clear/disable.
 - Expanded CustomMobs staff tooling with clone display names, nearest visual info, rename and remove controls for Hall of Fame/NPC decoration.
 - Fixed `/testmob endboss` and `/spawnmob endboss` so sandbox testing no longer spawns a visible Warden.
 - Made test EndBoss use a hidden controller with the Bloodbound Archfiend visual attached.
@@ -107,3 +117,6 @@ This file records active work in a simple visible format. New requests should be
 - Local clean boot is blocked before plugin load by Paperclip `AccessDeniedException` on `_clean-server-test/cache/mojang_26.1.2.jar`; no plugin startup stacktrace was reached in that test.
 - This patch reduces main hotpath write pressure, but real 1000+ player readiness still requires a hosted load test/profiler run.
 - Because hosted servers may not run the external offline update script, manually upload `MitchSMP-UpdateOrchestrator-1.0.8.jar` once, then cancel any older pending update and stage `v1.0.8`.
+- A Bukkit-only plugin for accepting every client version from 26.0 upward was not implemented. That belongs in a protocol translation layer before Bukkit/Paper handles commands/events; building a custom unstable replacement is not launch-safe.
+- The separate public GitHub release-only repository was not created yet because this update is intentionally not being released/pushed in this step.
+- Safezones and the rebuilt skilltree compile, but still need in-game validation on Paper 26.1.2 build 72 before public use.

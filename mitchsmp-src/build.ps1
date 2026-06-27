@@ -9,7 +9,16 @@ $ProjectRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $ServerRoot = Split-Path -Parent $ProjectRoot
 $BuildRoot = Join-Path $ProjectRoot "build"
 $PluginsDir = Join-Path $ServerRoot "plugins"
+$PaperApiRoot = Join-Path $ServerRoot "libraries\io\papermc\paper\paper-api"
 $ApiJar = Join-Path $ServerRoot "libraries\io\papermc\paper\paper-api\26.1.2.build.70-stable\paper-api-26.1.2.build.70-stable.jar"
+if (Test-Path -LiteralPath $PaperApiRoot) {
+    $LatestPaperApi = Get-ChildItem -LiteralPath $PaperApiRoot -Recurse -Filter "paper-api-*.jar" -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending |
+        Select-Object -First 1
+    if ($LatestPaperApi) {
+        $ApiJar = $LatestPaperApi.FullName
+    }
+}
 $VersionFile = Join-Path $ServerRoot "VERSION"
 $Version = if (Test-Path -LiteralPath $VersionFile) { (Get-Content -LiteralPath $VersionFile -Raw).Trim() } else { "0.0.0-dev" }
 $JavaRelease = "25"
@@ -333,6 +342,7 @@ Build-Module "skyblock" "skyblock" "MitchSMP-Skyblock-0.1.0.jar" $coreClassPath
 Build-Module "performance" "performance" "MitchSMP-Performance-0.1.0.jar" $coreClassPath
 Build-Module "update-orchestrator" "update-orchestrator" "MitchSMP-UpdateOrchestrator-0.1.0.jar" $coreClassPath
 Build-Module "custommobs" "custommobs" "MitchSMP-CustomMobs-0.1.0.jar" $coreClassPath
+Build-Module "safezones" "safezones" "MitchSMP-Safezones-0.1.0.jar" $coreClassPath
 Build-Module "artifacts" "artifacts" "MitchSMP-Artifacts-0.1.0.jar" $coreClassPath
 Build-Module "bosses" "bosses" "MitchSMP-Bosses-0.1.0.jar" $coreClassPath
 Build-Module "bedwars" "bedwars" "MitchSMP-BedWars-0.1.0.jar" $coreClassPath
