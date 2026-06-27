@@ -2,16 +2,27 @@
 
 ## Skilltree
 
-Use `/skills` to open the Bloodbound progression tree. It is now arranged as visual lanes with connected nodes instead of a flat category list. Nodes show four states: locked, available, unlocked and maxed.
+Use `/skills` to open the Bloodbound specialization tree. It is now a commitment tree instead of a flat category list. Nodes show locked, available, preview-only, unlocked and maxed states.
 
-The six visible lanes are:
+Page 1 is the identity selection:
 
-- Rookie Path: onboarding, goals, skirmish participation and early recovery flow.
-- Bloodbound Path: lifesteal risk, bounties, corrupted hearts and comeback progression.
-- Combat Path: CombatTag awareness, assists, skirmish and high-risk PvP identity.
-- Economy Path: EconomyWatch, QuickSell, orders, contracts and AuctionHouse guidance.
-- Relic & Legacy Path: collections, relics, seasonal progress and long-term prestige.
-- Event & EndBoss Path: events, artifacts, boss shards, rituals and Archfiend preparation.
+- Worker's Instinct: required root skill.
+- Frontier: preparation, resources, farming and gear work.
+- Warpath: PvP pressure, bounties, defense and ranged combat.
+
+Frontier specializations:
+
+- Prospector: mining, resources, mining contracts, shard/material progression and Bloodbound pickaxe enchant chance.
+- Cultivator: farming, animals, food/recovery loops and Bloodbound hoe enchant chance.
+- Runesmith: enchanting, anvils, item improvement, Arcane Workstation, Bloodbound ability books and Bloodbound enchant chance.
+
+Warpath specializations:
+
+- Bloodreaver: valid fights, bounties, kill pressure and Bloodbound blade enchant chance.
+- Bulwark: defensive combat, recovery, frontline event play and Bloodbound shield enchant chance.
+- Marksman: ranged pressure, assists, bounty cover and Bloodbound bow enchant chance.
+
+You can preview all six specialization pages. Once a specialization is confirmed, only that path can be upgraded; the other paths stay visible as preview-only.
 
 Skill XP still comes from real gameplay tracks:
 
@@ -26,9 +37,11 @@ Important rules:
 
 - No skill grants free hearts.
 - Item-bound tool and weapon abilities remain separate under `/abilities`.
-- Some paths are exclusive, so players are pushed toward a build identity instead of maxing every branch quickly.
+- Specializations are exclusive, so players are pushed toward a build identity instead of maxing every branch.
 - Node settings live in `plugins/MitchSMP-Skills/skilltree.properties` and can be reloaded with `/skills reload`.
 - `node.<id>.requires` controls previous-node requirements as a comma-separated list of node ids.
+- Branch, specialization, page, linked-system and Bloodbound enchant bonus defaults are also written to `skilltree.properties`.
+- Runesmith's Arcane Workstation can unlock `/anvil` and `/enchant`, but these commands require the node, permission and no active CombatTag.
 
 ## Item Abilities
 

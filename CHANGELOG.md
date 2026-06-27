@@ -4,6 +4,10 @@
 
 - Added `MitchSMP-Safezones`, a dedicated staff-managed safezone plugin with cuboid claims, wand/pos selection and configurable flags for PvP, mob spawning, hunger, build protection, explosions, fall damage and hostile damage.
 - Rebuilt the visible skilltree into a tighter Bloodbound identity selection: fewer filler nodes, exclusive paths, `/skills reset confirm`, and a one-time wipe of test-launch skill progress.
+- Reworked `/skills` again into a true specialization tree: root node, Frontier/Warpath direction choice, six previewable specializations and confirm-before-commit branch locking.
+- Added specialization pages for Prospector, Cultivator, Runesmith, Bloodreaver, Bulwark and Marksman, with preview-only locked-out pages after a player commits.
+- Added `/anvil` and `/enchant` as Runesmith Arcane Workstation unlocks, gated by node progress, permissions and CombatTag.
+- Expanded `/skillsadmin` with `givepoint`, `unlock`, `setbranch`, `clearbranch`, `debug` and `testgui` for controlled testing.
 - Upgraded `/skills` into a Bloodbound progression hub with visual lane menus for Rookie, Bloodbound, Combat, Economy, Relic/Legacy and Event/EndBoss progression.
 - Added locked/available/unlocked/maxed node states, hover requirements, connected-system lore and config-driven previous-node requirements through `node.<id>.requires`.
 - Made the skilltree config-driven through `plugins/MitchSMP-Skills/skilltree.properties`; node visibility, display names, icon material, slot, lane, required level, max level and lore can be edited and reloaded with `/skills reload`.

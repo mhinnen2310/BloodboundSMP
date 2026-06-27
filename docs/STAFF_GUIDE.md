@@ -21,10 +21,16 @@ Player chat is not stored by the report or staff-audit implementation. Commands 
 
 - `/skillsadmin reload`: reload `plugins/MitchSMP-Skills/skilltree.properties`.
 - `/skillsadmin addxp <player> <track> <amount>`: grant XP to a gameplay track such as `mining`, `combat` or `economy`.
+- `/skillsadmin givepoint <player> <amount>`: add or remove available skillpoints.
 - `/skillsadmin points <player> <amount>`: set available skillpoints.
+- `/skillsadmin unlock <player> <node>`: force-unlock one node for testing.
+- `/skillsadmin setbranch <player> <specialization>`: force a specialization such as `prospector`, `runesmith`, `bloodreaver`, `bulwark` or `marksman`.
+- `/skillsadmin clearbranch <player>`: clear the chosen branch/specialization without wiping all XP.
+- `/skillsadmin debug <player>`: show root, chosen branch, chosen specialization, points and track levels.
+- `/skillsadmin testgui <player> [specialization]`: open the main skill UI or a branch preview for a tester.
 - `/skillsadmin reset <player>`: reset that player's Bloodbound skilltree choices and skill XP profile.
 
-Use this tooling mainly in test/sandbox while tuning progression lanes. Skilltree nodes do not grant free hearts, and item-bound weapon/tool abilities stay under `/abilities`.
+Use this tooling mainly in test/sandbox while tuning specialization paths. Skilltree nodes do not grant free hearts, and item-bound weapon/tool abilities stay under `/abilities`.
 
 ## Incident Response
 

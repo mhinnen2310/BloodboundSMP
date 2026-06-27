@@ -77,7 +77,14 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         Perk.DUELIST, Perk.COMBAT_SUSTAIN, Perk.BOUNTY_FOCUS, Perk.ESCAPE_DISCIPLINE, Perk.KINGSLAYER_FOCUS,
         Perk.BREWING_FOCUS, Perk.RELIC_ALCHEMY, Perk.INFERNAL_RESOLVE, Perk.ALCHEMY_GRANDMASTER,
         Perk.RUNE_SENSE, Perk.TABLE_ATTUNEMENT, Perk.BOOKSMITH, Perk.ENCHANTING_GRANDMASTER,
-        Perk.ECONOMY_QUICKSELL_EFFICIENCY, Perk.ORDER_RUNNER, Perk.CONTRACT_BROKER, Perk.AUCTION_APPRAISER
+        Perk.ECONOMY_QUICKSELL_EFFICIENCY, Perk.ORDER_RUNNER, Perk.CONTRACT_BROKER, Perk.AUCTION_APPRAISER,
+        Perk.WORKERS_INSTINCT,
+        Perk.STONE_SENSE, Perk.ORE_INSTINCT, Perk.DEEP_DELVER, Perk.CONTRACT_MINER, Perk.SHARD_PROSPECTOR, Perk.BLOODBOUND_PICK,
+        Perk.GREEN_THUMB, Perk.RANCH_HAND, Perk.FIELD_SENSE, Perk.STOCKPILE_DISCIPLINE, Perk.CRIMSON_GROWTH, Perk.BLOODBOUND_HOE,
+        Perk.ARCANE_FAMILIARITY, Perk.TEMPERED_TOOLS, Perk.ENCHANTERS_FOCUS, Perk.ARCANE_WORKSTATION, Perk.RUNE_EFFICIENCY, Perk.BLOODBOUND_INFUSION,
+        Perk.FRESH_BLOOD, Perk.PURSUIT, Perk.KILL_PRESSURE, Perk.BLOOD_RUSH_NODE, Perk.BOUNTY_HUNGER, Perk.BLOODBOUND_BLADE,
+        Perk.IRON_POSTURE, Perk.GUARDED_RECOVERY, Perk.COMBAT_ENDURANCE, Perk.HOLD_THE_LINE, Perk.LAST_STAND, Perk.BLOODBOUND_GUARD,
+        Perk.STEADY_AIM, Perk.HUNTERS_MARK, Perk.LONGSHOT_DISCIPLINE, Perk.EVENT_COVER, Perk.PIERCING_FOCUS, Perk.BLOODBOUND_BOW
     );
     private final Set<UUID> abilityBreaking = new HashSet<>();
     private final Map<UUID, Long> abilityToggleCooldowns = new HashMap<>();
@@ -105,6 +112,8 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         Bukkit.getPluginManager().registerEvents(this, this);
         command("skills");
         command("skillsadmin");
+        command("anvil");
+        command("enchant");
         command("abilities");
         command("mechanics");
         command("scout");
@@ -160,6 +169,13 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             System.arraycopy(args, 0, forwarded, 1, args.length);
             return skillsAdmin(sender, forwarded);
         }
+        if (name.equals("anvil") || name.equals("enchant")) {
+            if (!(sender instanceof Player player)) {
+                Text.msg(sender, "&cPlayers only.");
+                return true;
+            }
+            return openPortableStation(player, name);
+        }
         if (name.equals("abilities")) {
             return abilities(sender, args);
         }
@@ -190,20 +206,20 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         if (name.equals("skills")) {
             boolean admin = MitchSMP.permissions().has(sender, "mitchsmp.skills.admin");
             if (args.length == 1) {
-                List<String> options = new ArrayList<>(List.of("enchant", "anvil", "reset"));
-                for (BloodboundLane lane : BloodboundLane.values()) {
-                    options.add(lane.key());
-                }
+                List<String> options = new ArrayList<>(List.of("page", "branch", "preview", "enchant", "anvil", "reset"));
                 if (admin) {
                     options.addAll(List.of("reload", "admin"));
                 }
                 return Tab.complete(args[0], options);
             }
+            if (args.length == 2 && args[0].matches("(?i)page|branch|preview")) {
+                return Tab.complete(args[1], specializationKeys());
+            }
             if (!admin) {
                 return List.of();
             }
             if (args.length == 2 && args[0].equalsIgnoreCase("admin")) {
-                return Tab.complete(args[1], "addxp", "points", "reset");
+                return Tab.complete(args[1], "addxp", "givepoint", "points", "reset", "unlock", "setbranch", "clearbranch", "debug", "testgui", "reload");
             }
             if (args.length == 3 && args[0].equalsIgnoreCase("admin")) {
                 return Tab.onlinePlayers(args[2]);
@@ -217,13 +233,24 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
                 return List.of();
             }
             if (args.length == 1) {
-                return Tab.complete(args[0], "addxp", "points", "reset", "reload");
+                return Tab.complete(args[0], "addxp", "givepoint", "points", "reset", "unlock", "setbranch", "clearbranch", "debug", "testgui", "reload");
             }
             if (args.length == 2 && !args[0].equalsIgnoreCase("reload")) {
                 return Tab.onlinePlayers(args[1]);
             }
             if (args.length == 3 && args[0].equalsIgnoreCase("addxp")) {
                 return Tab.complete(args[2], Category.keys());
+            }
+            if (args.length == 3 && args[0].equalsIgnoreCase("setbranch")) {
+                List<String> options = new ArrayList<>(List.of(specializationKeys()));
+                options.addAll(java.util.Arrays.stream(MainBranch.values()).map(MainBranch::key).toList());
+                return Tab.complete(args[2], options);
+            }
+            if (args.length == 4 && args[0].equalsIgnoreCase("setbranch")) {
+                return Tab.complete(args[3], specializationKeys());
+            }
+            if (args.length == 3 && args[0].matches("(?i)unlock|testgui")) {
+                return Tab.complete(args[2], java.util.Arrays.stream(Perk.values()).map(Perk::key).toArray(String[]::new));
             }
         }
         if (name.equals("abilities")) {
@@ -302,10 +329,10 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             Text.msg(player, "&cYou do not have permission.");
             return true;
         }
-        if (args.length > 0) {
-            BloodboundLane lane = BloodboundLane.from(args[0]);
-            if (lane != null) {
-                openLane(player, lane);
+        if (args.length >= 2 && args[0].matches("(?i)page|branch|preview")) {
+            Specialization specialization = Specialization.from(args[1]);
+            if (specialization != null) {
+                openSpecialization(player, specialization);
                 return true;
             }
         }
@@ -546,6 +573,42 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         }
         activeSkillCooldowns.put(mapKey, now + Math.max(1, seconds) * 1000L);
         return true;
+    }
+
+    private double bloodboundEnchantBonus(Player player, ItemStack item, Ability ability) {
+        if (player == null || item == null || ability == null) {
+            return 0.0D;
+        }
+        double bonus = capstoneBonus(player, Perk.BLOODBOUND_INFUSION);
+        if (item.getType() == Material.ENCHANTED_BOOK) {
+            return bonus;
+        }
+        Perk specific = switch (ability) {
+            case GODS_DRILL -> Perk.BLOODBOUND_PICK;
+            case HARVEST_LORD -> Perk.BLOODBOUND_HOE;
+            case BLOOD_FORGED_EDGE, STORM_BIND, ANCIENT_TIMBER, EARTHSHAPER -> Perk.BLOODBOUND_BLADE;
+            case AEGIS_GUARD -> Perk.BLOODBOUND_GUARD;
+            case ECHO_QUIVER -> Perk.BLOODBOUND_BOW;
+        };
+        return Math.min(100.0D, bonus + capstoneBonus(player, specific));
+    }
+
+    private double capstoneBonus(Player player, Perk perk) {
+        int level = perk(player, perk);
+        if (level <= 0) {
+            return 0.0D;
+        }
+        double perLevel = configDouble("node." + perk.key() + ".bloodbound_enchant_bonus_percent", isBloodboundEnchantCapstone(perk) ? 2.0D : 0.0D);
+        double cap = configDouble("node." + perk.key() + ".bloodbound_enchant_bonus_cap_percent", isBloodboundEnchantCapstone(perk) ? 12.0D : 0.0D);
+        return Math.max(0.0D, Math.min(cap, level * perLevel));
+    }
+
+    private double configDouble(String key, double fallback) {
+        try {
+            return Double.parseDouble(skillConfig.getString(key, String.valueOf(fallback)));
+        } catch (NumberFormatException exception) {
+            return fallback;
+        }
     }
 
     private void applyBookText(BookMeta book, String methodName, String value) {
@@ -934,6 +997,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         chance += Math.min(2.0D, perk(player, Perk.ENCHANTING_MASTERY) * 0.10D);
         chance += Math.min(2.0D, perk(player, Perk.RUNE_SENSE) * 0.20D);
         chance += Math.min(3.5D, perk(player, Perk.TABLE_ATTUNEMENT) * 0.35D);
+        chance += bloodboundEnchantBonus(player, item, ability);
         if (random.nextDouble() * 100.0D > chance) {
             return;
         }
@@ -1022,6 +1086,27 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             return;
         }
         if (menu.type().equals("skills")) {
+            if (event.getRawSlot() == 4) {
+                buyPerk(player, Perk.WORKERS_INSTINCT);
+                openSkills(player);
+                return;
+            }
+            MainBranch mainBranch = mainBranchSlot(event.getRawSlot());
+            if (mainBranch != null) {
+                chooseMainBranch(player, mainBranch);
+                openSkills(player);
+                return;
+            }
+            Specialization specialization = specializationSlot(event.getRawSlot());
+            if (specialization != null) {
+                openSpecialization(player, specialization);
+                return;
+            }
+            Specialization view = specializationViewSlot(event.getRawSlot());
+            if (view != null) {
+                openSpecialization(player, view);
+                return;
+            }
             if (event.getRawSlot() == 45) {
                 player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.5F, 1.0F);
                 mechanics(player);
@@ -1032,11 +1117,42 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
                 openAbilities(player);
                 return;
             }
-            BloodboundLane lane = bloodboundLaneSlot(event.getRawSlot());
-            if (lane != null) {
-                player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.5F, 1.2F);
-                openLane(player, lane);
+            return;
+        }
+        if (menu.type().startsWith("spec:")) {
+            Specialization specialization = Specialization.valueOf(menu.type().split(":")[1]);
+            if (event.getRawSlot() == 45) {
+                openSkills(player);
                 return;
+            }
+            if (event.getRawSlot() == 49) {
+                openBranchOverview(player, specialization);
+                return;
+            }
+            if (event.getRawSlot() == 53) {
+                openAbilities(player);
+                return;
+            }
+            if (event.getRawSlot() == 4 && canChooseSpecialization(player, specialization)) {
+                openSpecializationConfirm(player, specialization);
+                return;
+            }
+            Perk perk = specializationPerkAt(specialization, event.getRawSlot());
+            if (perk != null) {
+                buyPerk(player, perk);
+                openSpecialization(player, specialization);
+            }
+            return;
+        }
+        if (menu.type().startsWith("choose:")) {
+            Specialization specialization = Specialization.valueOf(menu.type().split(":")[1]);
+            if (event.getRawSlot() == 11) {
+                confirmSpecialization(player, specialization);
+                openSpecialization(player, specialization);
+                return;
+            }
+            if (event.getRawSlot() == 15 || event.getRawSlot() == 22) {
+                openSpecialization(player, specialization);
             }
             return;
         }
@@ -1106,32 +1222,98 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
 
     private void openSkills(Player player) {
         SkillsMenu holder = new SkillsMenu("skills");
-        Inventory inventory = Bukkit.createInventory(holder, 54, Text.color("&4Bloodbound Skilltree"));
+        Inventory inventory = Bukkit.createInventory(holder, 54, Text.color("&4Bloodbound Specialization Tree"));
         holder.inventory(inventory);
-        fillTreeFrame(inventory);
-        inventory.setItem(4, icon(Material.NETHER_STAR, "&6Skillpoints: &f" + points(player), List.of(
-            "&7Choose a Bloodbound progression lane.",
-            "&7Every XP level grants 1 skillpoint.",
-            "&7Nodes connect SMP systems instead of",
-            "&7replacing item-bound abilities."
+        fillSpecializationFrame(inventory);
+        drawFoundationConnectors(inventory);
+        inventory.setItem(4, treeNodeIcon(player, Perk.WORKERS_INSTINCT, "&6Root Skill", List.of(
+            "&7Everyone starts here.",
+            "&7Unlock this before choosing Frontier",
+            "&7or Warpath.",
+            "&8No free hearts. No money printer."
         )));
-        inventory.setItem(22, icon(Material.PAPER, "&eHow this works", List.of(
-            "&7Each lane has locked, available,",
-            "&7unlocked and maxed nodes.",
-            "&7Some choices lock rival paths.",
-            "&7No skill grants free hearts.",
-            "&8Inspired by a real RPG tree layout."
-        )));
-        for (BloodboundLane lane : BloodboundLane.values()) {
-            inventory.setItem(lane.slot(), bloodboundLaneIcon(player, lane));
+        inventory.setItem(20, mainBranchIcon(player, MainBranch.FRONTIER));
+        inventory.setItem(24, mainBranchIcon(player, MainBranch.WARPATH));
+        for (Specialization specialization : Specialization.values()) {
+            inventory.setItem(specialization.slot(), specializationIcon(player, specialization));
+            inventory.setItem(specialization.viewSlot(), icon(Material.COMPASS, specialization.color() + "View " + specialization.display() + " Path", List.of(
+                "&7Preview is always allowed.",
+                "&7Unlocking is only allowed after",
+                "&7choosing this specialization.",
+                "&8Status: " + specializationStatusLabel(player, specialization)
+            )));
         }
         inventory.setItem(45, icon(Material.WRITTEN_BOOK, "&aMechanics Guide", List.of("&7Click for the written Bloodbound guide.")));
         inventory.setItem(49, icon(Material.EXPERIENCE_BOTTLE, "&bProgression Overview", List.of(
-            "&7Average XP level: &f" + averageSkillLevel(player) + "/100",
-            "&7Visible lanes: &f" + BloodboundLane.values().length,
-            "&7Skillpoints: &f" + points(player)
+            "&7Skillpoints: &f" + points(player),
+            "&7Root: " + (rootUnlocked(player) ? "&aUnlocked" : "&cLocked"),
+            "&7Direction: &f" + chosenMainDisplay(player),
+            "&7Specialization: &f" + chosenSpecializationDisplay(player)
         )));
         inventory.setItem(53, icon(Material.ANVIL, "&dTool Abilities", List.of("&7Click to inspect your held item ability.", "&7Abilities unlock through rare Bloodbound enchants.")));
+        player.openInventory(inventory);
+    }
+
+    private void openSpecialization(Player player, Specialization specialization) {
+        SkillsMenu holder = new SkillsMenu("spec:" + specialization.name());
+        Inventory inventory = Bukkit.createInventory(holder, 54, Text.color(specialization.color() + specialization.display() + " Path"));
+        holder.inventory(inventory);
+        fillSpecializationFrame(inventory);
+        drawSpecializationConnectors(inventory);
+        boolean active = chosenSpecialization(player) == specialization;
+        boolean canChoose = canChooseSpecialization(player, specialization);
+        List<String> gatewayLore = new ArrayList<>();
+        gatewayLore.add("&7Branch: &f" + specialization.main().display());
+        gatewayLore.add("&7Page: &f" + specialization.name().toLowerCase(Locale.ROOT) + "_1");
+        gatewayLore.add("&7Systems: &f" + specialization.systems());
+        gatewayLore.add("&8");
+        gatewayLore.add("&7Identity: " + specialization.identity());
+        gatewayLore.add("&8");
+        gatewayLore.add("&7Status: " + specializationStatusLabel(player, specialization));
+        if (active) {
+            gatewayLore.add("&aThis is your active specialization.");
+        } else if (canChoose) {
+            gatewayLore.add("&eClick to choose this specialization.");
+            gatewayLore.add("&cThis locks the other paths for upgrades.");
+        } else {
+            gatewayLore.add("&7Preview Mode");
+            gatewayLore.add("&8You can view this branch, but cannot unlock here.");
+        }
+        inventory.setItem(4, icon(specialization.icon(), specialization.color() + specialization.display() + " Oath", gatewayLore));
+        for (Perk perk : specialization.perks()) {
+            inventory.setItem(perkSlotConfig(perk), treeNodeIcon(player, perk, specialization.display(), List.of("&7Specialization: &f" + specialization.display())));
+        }
+        inventory.setItem(45, icon(Material.ARROW, "&aBack", List.of("&7Return to Page 1.")));
+        inventory.setItem(49, icon(Material.PAPER, "&eBranch Overview", List.of(
+            "&7Preview all branches from Page 1.",
+            "&7Current direction: &f" + chosenMainDisplay(player),
+            "&7Current specialization: &f" + chosenSpecializationDisplay(player),
+            "&7No cherry-picking endgame skills."
+        )));
+        inventory.setItem(53, icon(Material.ANVIL, "&dTool Abilities", List.of("&7Item-bound abilities remain separate.", "&7Branch capstones can improve Bloodbound enchant chance.")));
+        player.openInventory(inventory);
+    }
+
+    private void openSpecializationConfirm(Player player, Specialization specialization) {
+        SkillsMenu holder = new SkillsMenu("choose:" + specialization.name());
+        Inventory inventory = Bukkit.createInventory(holder, 27, Text.color("&4Choose " + specialization.display() + "?"));
+        holder.inventory(inventory);
+        inventory.setItem(11, icon(Material.GREEN_STAINED_GLASS_PANE, "&aConfirm " + specialization.display(), List.of(
+            "&7This chooses &f" + specialization.main().display() + "&7.",
+            "&7This locks all other specializations",
+            "&7for upgrades.",
+            "&8Preview stays available."
+        )));
+        inventory.setItem(13, icon(specialization.icon(), specialization.color() + specialization.display(), List.of(
+            "&7" + specialization.identity(),
+            "&8",
+            "&7Locked after choosing:",
+            "&8- Prospector, Cultivator, Runesmith",
+            "&8- Bloodreaver, Bulwark, Marksman",
+            "&8Except this chosen path."
+        )));
+        inventory.setItem(15, icon(Material.RED_STAINED_GLASS_PANE, "&cCancel", List.of("&7Return to preview.")));
+        inventory.setItem(22, icon(Material.ARROW, "&7Back", List.of("&7Do not choose yet.")));
         player.openInventory(inventory);
     }
 
@@ -1230,7 +1412,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             return true;
         }
         if (args.length < 2) {
-            Text.msg(sender, "&cUsage: /skills admin <addxp|points|reset|reload> ...");
+            Text.msg(sender, "&cUsage: /skillsadmin <addxp|givepoint|points|reset|unlock|setbranch|clearbranch|debug|testgui|reload> ...");
             return true;
         }
         if (args[1].equalsIgnoreCase("reload")) {
@@ -1260,7 +1442,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         }
         if (args[1].equalsIgnoreCase("points")) {
             if (args.length < 4) {
-                Text.msg(sender, "&cUsage: /skills admin points <player> <amount>");
+                Text.msg(sender, "&cUsage: /skillsadmin points <player> <amount>");
                 return true;
             }
             data.set("points." + profileKey(target.getUniqueId()), Math.max(0, parseInt(args[3], 0, 0, 10_000)));
@@ -1268,9 +1450,89 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             Text.msg(sender, "&aSkillpoints updated.");
             return true;
         }
+        if (args[1].equalsIgnoreCase("givepoint")) {
+            if (args.length < 4) {
+                Text.msg(sender, "&cUsage: /skillsadmin givepoint <player> <amount>");
+                return true;
+            }
+            int amount = parseInt(args[3], 0, -10_000, 10_000);
+            data.set("points." + profileKey(target.getUniqueId()), Math.max(0, points(target) + amount));
+            data.save();
+            Text.msg(sender, "&aSkillpoints changed by &f" + amount + "&a for &f" + target.getName() + "&a.");
+            return true;
+        }
         if (args[1].equalsIgnoreCase("reset")) {
             resetPlayer(target);
             Text.msg(sender, "&aSkills reset for &f" + target.getName() + "&a.");
+            return true;
+        }
+        if (args[1].equalsIgnoreCase("unlock")) {
+            if (args.length < 4) {
+                Text.msg(sender, "&cUsage: /skillsadmin unlock <player> <node>");
+                return true;
+            }
+            Perk perk = Perk.from(args[3]);
+            if (perk == null) {
+                Text.msg(sender, "&cUnknown node.");
+                return true;
+            }
+            if (perk == Perk.WORKERS_INSTINCT) {
+                data.set("tree." + profileKey(target.getUniqueId()) + ".root", true);
+            } else {
+                data.set("perk." + profileKey(target.getUniqueId()) + "." + perk.key(), Math.max(1, perk(target, perk)));
+            }
+            data.save();
+            Text.msg(sender, "&aUnlocked &f" + perkDisplay(perk) + " &afor &f" + target.getName() + "&a.");
+            return true;
+        }
+        if (args[1].equalsIgnoreCase("setbranch")) {
+            if (args.length < 4) {
+                Text.msg(sender, "&cUsage: /skillsadmin setbranch <player> <specialization>");
+                Text.msg(sender, "&7Optional: &f/skillsadmin setbranch <player> <frontier|warpath> <specialization>");
+                return true;
+            }
+            Specialization specialization = args.length >= 5 ? Specialization.from(args[4]) : Specialization.from(args[3]);
+            MainBranch branch = args.length >= 5 ? MainBranch.from(args[3]) : specialization == null ? null : specialization.main();
+            if (specialization == null || branch == null || specialization.main() != branch) {
+                Text.msg(sender, "&cUnknown or mismatched branch/specialization.");
+                return true;
+            }
+            data.set("tree." + profileKey(target.getUniqueId()) + ".root", true);
+            data.set("tree." + profileKey(target.getUniqueId()) + ".main", branch.name());
+            data.set("tree." + profileKey(target.getUniqueId()) + ".specialization", specialization.name());
+            data.set("tree." + profileKey(target.getUniqueId()) + ".page." + specialization.name(), true);
+            data.save();
+            Text.msg(sender, "&aSet &f" + target.getName() + " &ato &f" + specialization.display() + "&a.");
+            return true;
+        }
+        if (args[1].equalsIgnoreCase("clearbranch")) {
+            data.set("tree." + profileKey(target.getUniqueId()) + ".main", null);
+            data.set("tree." + profileKey(target.getUniqueId()) + ".specialization", null);
+            for (Specialization specialization : Specialization.values()) {
+                data.set("tree." + profileKey(target.getUniqueId()) + ".page." + specialization.name(), null);
+            }
+            data.save();
+            Text.msg(sender, "&aBranch choice cleared for &f" + target.getName() + "&a.");
+            return true;
+        }
+        if (args[1].equalsIgnoreCase("debug")) {
+            Text.msg(sender, "&5Skill debug for &f" + target.getName());
+            Text.msg(sender, "&7Root=&f" + rootUnlocked(target) + " &7Main=&f" + chosenMainDisplay(target) + " &7Spec=&f" + chosenSpecializationDisplay(target));
+            Text.msg(sender, "&7Points=&f" + points(target) + " &7Mining=&f" + level(target, Category.MINING) + " &7Farming=&f" + level(target, Category.FARMING) + " &7Combat=&f" + level(target, Category.COMBAT));
+            Text.msg(sender, "&7Alchemy=&f" + level(target, Category.ALCHEMY) + " &7Enchanting=&f" + level(target, Category.ENCHANTING) + " &7Economy=&f" + level(target, Category.ECONOMY));
+            return true;
+        }
+        if (args[1].equalsIgnoreCase("testgui")) {
+            if (args.length >= 4) {
+                Specialization specialization = Specialization.from(args[3]);
+                if (specialization != null) {
+                    openSpecialization(target, specialization);
+                    Text.msg(sender, "&aOpened specialization preview for &f" + target.getName() + "&a.");
+                    return true;
+                }
+            }
+            openSkills(target);
+            Text.msg(sender, "&aOpened skilltree GUI for &f" + target.getName() + "&a.");
             return true;
         }
         return true;
@@ -1563,6 +1825,19 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
     }
 
     private void buyPerk(Player player, Perk perk) {
+        if (perk == Perk.WORKERS_INSTINCT) {
+            buyRootSkill(player);
+            return;
+        }
+        Specialization specialization = specializationOf(perk);
+        if (specialization != null && chosenSpecialization(player) != specialization) {
+            if (chosenSpecialization(player) == null) {
+                Text.msg(player, "&cChoose the &f" + specialization.display() + " &cspecialization before upgrading this path.");
+            } else {
+                Text.msg(player, "&cPreview only. You chose &f" + chosenSpecialization(player).display() + "&c.");
+            }
+            return;
+        }
         int current = perk(player, perk);
         if (current >= perkMax(perk)) {
             Text.msg(player, "&cThis perk is maxed.");
@@ -1595,6 +1870,22 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         saveSkillDataSoon();
         Text.msg(player, "&aPerk purchased: &f" + perkDisplay(perk) + " " + (current + 1) + "/" + perkMax(perk) + " &8[" + lane.display() + "]");
         player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.8F, 1.5F);
+    }
+
+    private void buyRootSkill(Player player) {
+        if (rootUnlocked(player)) {
+            Text.msg(player, "&cWorker's Instinct is already unlocked.");
+            return;
+        }
+        if (points(player) <= 0) {
+            Text.msg(player, "&cYou need 1 skillpoint to unlock Worker's Instinct.");
+            return;
+        }
+        data.set("tree." + profileKey(player.getUniqueId()) + ".root", true);
+        data.set("points." + profileKey(player.getUniqueId()), points(player) - 1);
+        saveSkillDataSoon();
+        Text.msg(player, "&aUnlocked: &fWorker's Instinct&a. Choose Frontier or Warpath next.");
+        player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 0.7F, 1.4F);
     }
 
     private SkillLane chosenLane(Player player, Category category) {
@@ -1690,15 +1981,22 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
 
     private boolean openPortableStation(Player player, String type) {
         boolean anvil = type.equalsIgnoreCase("anvil");
-        Perk required = anvil ? Perk.BOOKSMITH : Perk.ENCHANTING_GRANDMASTER;
-        if (perk(player, required) < perkMax(required)) {
-            Text.msg(player, "&cPortable " + type.toLowerCase(Locale.ROOT) + " requires maxed &f" + perkDisplay(required) + "&c.");
+        if (!MitchSMP.permissions().has(player, anvil ? "mitchsmp.skills.anvil" : "mitchsmp.skills.enchant")) {
+            Text.msg(player, "&cYou do not have permission.");
+            return true;
+        }
+        if (chosenSpecialization(player) != Specialization.RUNESMITH || perk(player, Perk.ARCANE_WORKSTATION) <= 0) {
+            Text.msg(player, "&cYou need &fArcane Workstation &cin the Runesmith path to use /" + type.toLowerCase(Locale.ROOT) + ".");
+            return true;
+        }
+        if (MitchSMP.combatTags() != null && MitchSMP.combatTags().isTagged(player.getUniqueId())) {
+            Text.msg(player, "&cYou cannot use /" + type.toLowerCase(Locale.ROOT) + " while combat tagged.");
             return true;
         }
         String method = anvil ? "openAnvil" : "openEnchanting";
         try {
             player.getClass().getMethod(method, Location.class, boolean.class).invoke(player, player.getLocation(), true);
-            player.sendActionBar(Text.color("&5" + perkDisplay(required) + " &8| &aPortable " + type.toLowerCase(Locale.ROOT) + " opened"));
+            player.sendActionBar(Text.color("&5" + perkDisplay(Perk.ARCANE_WORKSTATION) + " &8| &aPortable " + type.toLowerCase(Locale.ROOT) + " opened"));
         } catch (ReflectiveOperationException | RuntimeException exception) {
             Text.msg(player, "&cPortable " + type.toLowerCase(Locale.ROOT) + " is unavailable on this server build.");
             getLogger().warning("Could not open portable " + type + " for " + player.getName() + ": " + exception.getMessage());
@@ -2852,6 +3150,236 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         return 1.0D;
     }
 
+    private boolean rootUnlocked(Player player) {
+        return Boolean.parseBoolean(data.getString("tree." + profileKey(player.getUniqueId()) + ".root", "false"));
+    }
+
+    private MainBranch chosenMain(Player player) {
+        return MainBranch.from(data.getString("tree." + profileKey(player.getUniqueId()) + ".main", ""));
+    }
+
+    private Specialization chosenSpecialization(Player player) {
+        return Specialization.from(data.getString("tree." + profileKey(player.getUniqueId()) + ".specialization", ""));
+    }
+
+    private String chosenMainDisplay(Player player) {
+        MainBranch branch = chosenMain(player);
+        return branch == null ? "Not chosen" : branch.display();
+    }
+
+    private String chosenSpecializationDisplay(Player player) {
+        Specialization specialization = chosenSpecialization(player);
+        return specialization == null ? "Not chosen" : specialization.display();
+    }
+
+    private void chooseMainBranch(Player player, MainBranch branch) {
+        if (!rootUnlocked(player)) {
+            Text.msg(player, "&cUnlock Worker's Instinct first.");
+            return;
+        }
+        MainBranch chosen = chosenMain(player);
+        if (chosen != null && chosen != branch) {
+            Text.msg(player, "&cYou already chose &f" + chosen.display() + "&c.");
+            return;
+        }
+        if (chosen == null) {
+            data.set("tree." + profileKey(player.getUniqueId()) + ".main", branch.name());
+            saveSkillDataSoon();
+            Text.msg(player, "&aDirection chosen: &f" + branch.display() + "&a. Preview and choose a specialization next.");
+            player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.8F, 1.2F);
+        }
+    }
+
+    private boolean canChooseSpecialization(Player player, Specialization specialization) {
+        if (!rootUnlocked(player)) {
+            return false;
+        }
+        MainBranch chosenMain = chosenMain(player);
+        Specialization chosenSpec = chosenSpecialization(player);
+        return chosenSpec == null && (chosenMain == null || chosenMain == specialization.main());
+    }
+
+    private void confirmSpecialization(Player player, Specialization specialization) {
+        if (!canChooseSpecialization(player, specialization)) {
+            Text.msg(player, "&cYou cannot choose this specialization right now.");
+            return;
+        }
+        data.set("tree." + profileKey(player.getUniqueId()) + ".main", specialization.main().name());
+        data.set("tree." + profileKey(player.getUniqueId()) + ".specialization", specialization.name());
+        data.set("tree." + profileKey(player.getUniqueId()) + ".page." + specialization.name(), true);
+        saveSkillDataSoon();
+        Text.msg(player, "&aSpecialization chosen: &f" + specialization.display() + "&a.");
+        Text.msg(player, "&7Other branches remain visible as preview-only.");
+        player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 0.7F, 1.35F);
+    }
+
+    private String specializationStatusLabel(Player player, Specialization specialization) {
+        Specialization chosen = chosenSpecialization(player);
+        if (chosen == specialization) {
+            return "&aActive";
+        }
+        if (chosen != null) {
+            return "&8Preview-only &7(chosen: &f" + chosen.display() + "&7)";
+        }
+        if (!rootUnlocked(player)) {
+            return "&cLocked &7(root required)";
+        }
+        MainBranch main = chosenMain(player);
+        if (main != null && main != specialization.main()) {
+            return "&8Preview-only &7(direction: &f" + main.display() + "&7)";
+        }
+        return "&eAvailable to choose";
+    }
+
+    private MainBranch mainBranchSlot(int slot) {
+        return switch (slot) {
+            case 20 -> MainBranch.FRONTIER;
+            case 24 -> MainBranch.WARPATH;
+            default -> null;
+        };
+    }
+
+    private Specialization specializationSlot(int slot) {
+        for (Specialization specialization : Specialization.values()) {
+            if (specialization.slot() == slot) {
+                return specialization;
+            }
+        }
+        return null;
+    }
+
+    private Specialization specializationViewSlot(int slot) {
+        for (Specialization specialization : Specialization.values()) {
+            if (specialization.viewSlot() == slot) {
+                return specialization;
+            }
+        }
+        return null;
+    }
+
+    private String[] specializationKeys() {
+        return java.util.Arrays.stream(Specialization.values()).map(Specialization::key).toArray(String[]::new);
+    }
+
+    private Specialization specializationOf(Perk perk) {
+        for (Specialization specialization : Specialization.values()) {
+            if (specialization.perks().contains(perk)) {
+                return specialization;
+            }
+        }
+        return null;
+    }
+
+    private Perk specializationPerkAt(Specialization specialization, int slot) {
+        for (Perk perk : specialization.perks()) {
+            if (perkSlotConfig(perk) == slot) {
+                return perk;
+            }
+        }
+        return null;
+    }
+
+    private ItemStack mainBranchIcon(Player player, MainBranch branch) {
+        MainBranch chosen = chosenMain(player);
+        boolean locked = !rootUnlocked(player);
+        boolean other = chosen != null && chosen != branch;
+        String color = locked || other ? "&8" : chosen == branch ? "&a" : "&e";
+        return icon(branch.icon(), color + branch.display(), List.of(
+            "&7Theme: &f" + branch.theme(),
+            "&7Systems: &f" + branch.systems(),
+            "&7Status: " + (locked ? "&cLocked: unlock Worker's Instinct" : other ? "&8Preview-only" : chosen == branch ? "&aChosen" : "&eAvailable"),
+            "&8",
+            "&7Choose this before committing",
+            "&7to a specialization."
+        ));
+    }
+
+    private ItemStack specializationIcon(Player player, Specialization specialization) {
+        return icon(specialization.icon(), specialization.color() + specialization.display(), List.of(
+            "&7Main branch: &f" + specialization.main().display(),
+            "&7Identity: " + specialization.identity(),
+            "&7Systems: &f" + specialization.systems(),
+            "&7Status: " + specializationStatusLabel(player, specialization),
+            "&8",
+            "&eClick to preview this path."
+        ));
+    }
+
+    private ItemStack treeNodeIcon(Player player, Perk perk, String branch, List<String> extraLore) {
+        int current = perk == Perk.WORKERS_INSTINCT ? (rootUnlocked(player) ? 1 : 0) : perk(player, perk);
+        int max = perk == Perk.WORKERS_INSTINCT ? 1 : perkMax(perk);
+        NodeState state = treeNodeState(player, perk);
+        String color = switch (state) {
+            case MAXED -> "&a";
+            case UNLOCKED -> "&2";
+            case AVAILABLE -> "&e";
+            case PREVIEW -> "&8";
+            case LOCKED -> "&c";
+        };
+        Specialization specialization = specializationOf(perk);
+        List<String> lore = new ArrayList<>(List.of(
+            "&7Branch: &f" + branch,
+            "&7Page: &f" + (specialization == null ? "FOUNDATION" : specialization.name() + "_1"),
+            "&7Status: " + state.label(),
+            "&7Current: &f" + current + "/" + max,
+            "&7Cost: &f" + (current >= max ? "0" : "1") + " skillpoint",
+            "&7XP track: &f" + perk.category().display(),
+            "&7Systems: &f" + linkedSystems(perk)
+        ));
+        lore.addAll(extraLore);
+        lore.addAll(requirementLore(player, perk));
+        lore.add("&8");
+        lore.addAll(perkDescriptionLines(perk));
+        if (state == NodeState.PREVIEW) {
+            lore.add("&8Preview Mode: you can view this,");
+            lore.add("&8but cannot unlock skills here.");
+        } else if (state == NodeState.AVAILABLE) {
+            lore.add("&eClick to unlock or upgrade.");
+        } else if (state == NodeState.LOCKED) {
+            lore.add("&cLocked. Check requirements above.");
+        }
+        return icon(perkIcon(perk), color + perkDisplay(perk) + " &f" + current + "/" + max, lore);
+    }
+
+    private NodeState treeNodeState(Player player, Perk perk) {
+        if (perk == Perk.WORKERS_INSTINCT) {
+            if (rootUnlocked(player)) {
+                return NodeState.MAXED;
+            }
+            return points(player) > 0 ? NodeState.AVAILABLE : NodeState.LOCKED;
+        }
+        Specialization specialization = specializationOf(perk);
+        if (specialization != null && chosenSpecialization(player) != specialization) {
+            return NodeState.PREVIEW;
+        }
+        return nodeState(player, perk);
+    }
+
+    private void fillSpecializationFrame(Inventory inventory) {
+        ItemStack filler = icon(Material.GLASS_PANE, "&8", List.of());
+        for (int slot : new int[] {0, 1, 2, 3, 5, 6, 7, 8, 9, 17, 18, 26, 27, 35, 36, 44, 46, 47, 48, 50, 51, 52}) {
+            inventory.setItem(slot, filler);
+        }
+    }
+
+    private void drawFoundationConnectors(Inventory inventory) {
+        ItemStack link = icon(Material.GREEN_STAINED_GLASS_PANE, "&bPath", List.of("&7Foundation connection."));
+        for (int slot : new int[] {13, 21, 22, 23, 30, 31, 32}) {
+            inventory.setItem(slot, link);
+        }
+    }
+
+    private void drawSpecializationConnectors(Inventory inventory) {
+        ItemStack link = icon(Material.GREEN_STAINED_GLASS_PANE, "&bPath", List.of("&7Specialization connection."));
+        for (int slot : new int[] {13, 22, 31, 40}) {
+            inventory.setItem(slot, link);
+        }
+    }
+
+    private void openBranchOverview(Player player, Specialization specialization) {
+        player.sendActionBar(Text.color(specialization.color() + specialization.display() + " &8| &7" + specialization.identity()));
+    }
+
     private ItemStack categoryIcon(Player player, Category category) {
         int level = level(player, category);
         int totalXp = xp(player, category);
@@ -2905,6 +3433,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             case MAXED -> "&a";
             case UNLOCKED -> "&2";
             case AVAILABLE -> "&e";
+            case PREVIEW -> "&8";
             case LOCKED -> "&c";
         };
         List<String> lore = new ArrayList<>(List.of(
@@ -2989,6 +3518,36 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             return parsed;
         }
         return switch (perk) {
+            case ORE_INSTINCT -> List.of(Perk.STONE_SENSE);
+            case DEEP_DELVER -> List.of(Perk.ORE_INSTINCT);
+            case CONTRACT_MINER -> List.of(Perk.DEEP_DELVER);
+            case SHARD_PROSPECTOR -> List.of(Perk.DEEP_DELVER);
+            case BLOODBOUND_PICK -> List.of(Perk.CONTRACT_MINER, Perk.SHARD_PROSPECTOR);
+            case RANCH_HAND -> List.of(Perk.GREEN_THUMB);
+            case FIELD_SENSE -> List.of(Perk.RANCH_HAND);
+            case STOCKPILE_DISCIPLINE -> List.of(Perk.FIELD_SENSE);
+            case CRIMSON_GROWTH -> List.of(Perk.FIELD_SENSE);
+            case BLOODBOUND_HOE -> List.of(Perk.STOCKPILE_DISCIPLINE, Perk.CRIMSON_GROWTH);
+            case TEMPERED_TOOLS -> List.of(Perk.ARCANE_FAMILIARITY);
+            case ENCHANTERS_FOCUS -> List.of(Perk.TEMPERED_TOOLS);
+            case ARCANE_WORKSTATION -> List.of(Perk.ENCHANTERS_FOCUS);
+            case RUNE_EFFICIENCY -> List.of(Perk.ENCHANTERS_FOCUS);
+            case BLOODBOUND_INFUSION -> List.of(Perk.ARCANE_WORKSTATION, Perk.RUNE_EFFICIENCY);
+            case PURSUIT -> List.of(Perk.FRESH_BLOOD);
+            case KILL_PRESSURE -> List.of(Perk.PURSUIT);
+            case BLOOD_RUSH_NODE -> List.of(Perk.KILL_PRESSURE);
+            case BOUNTY_HUNGER -> List.of(Perk.KILL_PRESSURE);
+            case BLOODBOUND_BLADE -> List.of(Perk.BLOOD_RUSH_NODE, Perk.BOUNTY_HUNGER);
+            case GUARDED_RECOVERY -> List.of(Perk.IRON_POSTURE);
+            case COMBAT_ENDURANCE -> List.of(Perk.GUARDED_RECOVERY);
+            case HOLD_THE_LINE -> List.of(Perk.COMBAT_ENDURANCE);
+            case LAST_STAND -> List.of(Perk.COMBAT_ENDURANCE);
+            case BLOODBOUND_GUARD -> List.of(Perk.HOLD_THE_LINE, Perk.LAST_STAND);
+            case HUNTERS_MARK -> List.of(Perk.STEADY_AIM);
+            case LONGSHOT_DISCIPLINE -> List.of(Perk.HUNTERS_MARK);
+            case EVENT_COVER -> List.of(Perk.LONGSHOT_DISCIPLINE);
+            case PIERCING_FOCUS -> List.of(Perk.LONGSHOT_DISCIPLINE);
+            case BLOODBOUND_BOW -> List.of(Perk.EVENT_COVER, Perk.PIERCING_FOCUS);
             case ORE_SURVEYOR -> List.of(Perk.MINING_YIELD);
             case VEIN_DISCIPLINE -> List.of(Perk.MINING_SPEED);
             case MINING_MASTERY -> List.of(Perk.DEEP_MINER);
@@ -3125,6 +3684,10 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
     }
 
     private BloodboundLane bloodboundLane(Perk perk) {
+        Specialization specialization = specializationOf(perk);
+        if (specialization != null) {
+            return specialization.main() == MainBranch.FRONTIER ? BloodboundLane.ROOKIE : BloodboundLane.COMBAT;
+        }
         String configured = skillConfig.getString("node." + perk.key() + ".tree_lane", "");
         BloodboundLane override = BloodboundLane.from(configured);
         if (override != null) {
@@ -3142,6 +3705,10 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
     }
 
     private String linkedSystems(Perk perk) {
+        Specialization specialization = specializationOf(perk);
+        if (specialization != null) {
+            return specialization.systems();
+        }
         return switch (bloodboundLane(perk)) {
             case ROOKIE -> "rookie, goals, skirmish";
             case BLOODBOUND -> "lifesteal, bounties, recovery";
@@ -3159,19 +3726,49 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             skillConfig.set("meta.notes", "Edit node.<id> values, then run /skills reload. Effects are implemented by matching node ids in the plugin engine.");
             changed = true;
         }
+        changed |= setDefault("tree.respec.enabled", true);
+        changed |= setDefault("tree.respec.cost_money", 0.0D);
+        changed |= setDefault("tree.respec.cooldown_seconds", 86400);
+        changed |= setDefault("tree.root.node", Perk.WORKERS_INSTINCT.key());
+        for (MainBranch branch : MainBranch.values()) {
+            String prefix = "branch." + branch.key() + ".";
+            changed |= setDefault(prefix + "enabled", true);
+            changed |= setDefault(prefix + "display", branch.display());
+            changed |= setDefault(prefix + "icon", branch.icon().name());
+            changed |= setDefault(prefix + "theme", branch.theme());
+            changed |= setDefault(prefix + "linked_systems", branch.systems());
+        }
+        for (Specialization specialization : Specialization.values()) {
+            String prefix = "specialization." + specialization.key() + ".";
+            changed |= setDefault(prefix + "enabled", true);
+            changed |= setDefault(prefix + "display", specialization.display());
+            changed |= setDefault(prefix + "main_branch", specialization.main().key());
+            changed |= setDefault(prefix + "icon", specialization.icon().name());
+            changed |= setDefault(prefix + "identity", specialization.identity());
+            changed |= setDefault(prefix + "linked_systems", specialization.systems());
+            changed |= setDefault(prefix + "page", specialization.name() + "_1");
+            changed |= setDefault(prefix + "choice_locked_after_confirm", true);
+        }
         for (Perk perk : Perk.values()) {
             String prefix = "node." + perk.key() + ".";
+            Specialization specialization = specializationOf(perk);
             changed |= setDefault(prefix + "enabled", ACTIVE_PERKS.contains(perk));
             changed |= setDefault(prefix + "display", perk.display());
             changed |= setDefault(prefix + "category", perk.category().key());
             changed |= setDefault(prefix + "tree_lane", bloodboundLane(perk).key());
             changed |= setDefault(prefix + "lane", laneDefault(perk).name().toLowerCase(Locale.ROOT));
+            changed |= setDefault(prefix + "main_branch", specialization == null ? "foundation" : specialization.main().key());
+            changed |= setDefault(prefix + "specialization", specialization == null ? "foundation" : specialization.key());
+            changed |= setDefault(prefix + "page", specialization == null ? "FOUNDATION" : specialization.name() + "_1");
+            changed |= setDefault(prefix + "skillpoint_cost", 1);
             changed |= setDefault(prefix + "icon", perk.icon().name());
             changed |= setDefault(prefix + "slot", perk.slot());
             changed |= setDefault(prefix + "required_level", perk.requiredLevel());
             changed |= setDefault(prefix + "max_level", perk.max());
             changed |= setDefault(prefix + "requires", defaultRequirementString(perk));
             changed |= setDefault(prefix + "linked_systems", linkedSystems(perk));
+            changed |= setDefault(prefix + "bloodbound_enchant_bonus_percent", isBloodboundEnchantCapstone(perk) ? 2.0D : 0.0D);
+            changed |= setDefault(prefix + "bloodbound_enchant_bonus_cap_percent", isBloodboundEnchantCapstone(perk) ? 12.0D : 0.0D);
             changed |= setDefault(prefix + "description", perk.description());
         }
         if (changed) {
@@ -3189,6 +3786,30 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
 
     private String defaultRequirementString(Perk perk) {
         return switch (perk) {
+            case ORE_INSTINCT -> "stone_sense";
+            case DEEP_DELVER -> "ore_instinct";
+            case CONTRACT_MINER, SHARD_PROSPECTOR -> "deep_delver";
+            case BLOODBOUND_PICK -> "contract_miner,shard_prospector";
+            case RANCH_HAND -> "green_thumb";
+            case FIELD_SENSE -> "ranch_hand";
+            case STOCKPILE_DISCIPLINE, CRIMSON_GROWTH -> "field_sense";
+            case BLOODBOUND_HOE -> "stockpile_discipline,crimson_growth";
+            case TEMPERED_TOOLS -> "arcane_familiarity";
+            case ENCHANTERS_FOCUS -> "tempered_tools";
+            case ARCANE_WORKSTATION, RUNE_EFFICIENCY -> "enchanters_focus";
+            case BLOODBOUND_INFUSION -> "arcane_workstation,rune_efficiency";
+            case PURSUIT -> "fresh_blood";
+            case KILL_PRESSURE -> "pursuit";
+            case BLOOD_RUSH_NODE, BOUNTY_HUNGER -> "kill_pressure";
+            case BLOODBOUND_BLADE -> "blood_rush_node,bounty_hunger";
+            case GUARDED_RECOVERY -> "iron_posture";
+            case COMBAT_ENDURANCE -> "guarded_recovery";
+            case HOLD_THE_LINE, LAST_STAND -> "combat_endurance";
+            case BLOODBOUND_GUARD -> "hold_the_line,last_stand";
+            case HUNTERS_MARK -> "steady_aim";
+            case LONGSHOT_DISCIPLINE -> "hunters_mark";
+            case EVENT_COVER, PIERCING_FOCUS -> "longshot_discipline";
+            case BLOODBOUND_BOW -> "event_cover,piercing_focus";
             case ORE_SURVEYOR -> "mining_yield";
             case VEIN_DISCIPLINE -> "mining_speed";
             case MINING_MASTERY -> "deep_miner";
@@ -3210,6 +3831,15 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             case AUCTION_APPRAISER -> "contract_broker";
             default -> "";
         };
+    }
+
+    private boolean isBloodboundEnchantCapstone(Perk perk) {
+        return perk == Perk.BLOODBOUND_PICK
+            || perk == Perk.BLOODBOUND_HOE
+            || perk == Perk.BLOODBOUND_INFUSION
+            || perk == Perk.BLOODBOUND_BLADE
+            || perk == Perk.BLOODBOUND_GUARD
+            || perk == Perk.BLOODBOUND_BOW;
     }
 
     private boolean perkEnabled(Perk perk) {
@@ -3448,6 +4078,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
     private enum NodeState {
         LOCKED("&cLocked"),
         AVAILABLE("&eAvailable"),
+        PREVIEW("&8Preview-only"),
         UNLOCKED("&2Unlocked"),
         MAXED("&aMaxed");
 
@@ -3459,6 +4090,105 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
 
         String label() {
             return label;
+        }
+    }
+
+    private enum MainBranch {
+        FRONTIER("frontier", "Frontier", Material.CHEST, "gathering, economy, crafting, preparation", "contracts, orders, economy, crafting"),
+        WARPATH("warpath", "Warpath", Material.DIAMOND_SWORD, "PvP, Lifesteal, bounties, defense", "lifesteal, bounties, skirmish, CombatTag");
+
+        private final String key;
+        private final String display;
+        private final Material icon;
+        private final String theme;
+        private final String systems;
+
+        MainBranch(String key, String display, Material icon, String theme, String systems) {
+            this.key = key;
+            this.display = display;
+            this.icon = icon;
+            this.theme = theme;
+            this.systems = systems;
+        }
+
+        String key() { return key; }
+        String display() { return display; }
+        Material icon() { return icon; }
+        String theme() { return theme; }
+        String systems() { return systems; }
+
+        static MainBranch from(String input) {
+            if (input == null || input.isBlank()) {
+                return null;
+            }
+            for (MainBranch branch : values()) {
+                if (branch.key.equalsIgnoreCase(input) || branch.name().equalsIgnoreCase(input) || branch.display.equalsIgnoreCase(input)) {
+                    return branch;
+                }
+            }
+            return null;
+        }
+    }
+
+    private enum Specialization {
+        PROSPECTOR("prospector", "Prospector", MainBranch.FRONTIER, Material.DIAMOND_PICKAXE, "&b", 28, 37, "Resource/mining specialist.", "mining, contracts, EconomyWatch, tool progression",
+            Perk.STONE_SENSE, Perk.ORE_INSTINCT, Perk.DEEP_DELVER, Perk.CONTRACT_MINER, Perk.SHARD_PROSPECTOR, Perk.BLOODBOUND_PICK),
+        CULTIVATOR("cultivator", "Cultivator", MainBranch.FRONTIER, Material.GOLDEN_HOE, "&a", 30, 38, "Farming, sustain and recovery specialist.", "farming, animals, recovery, food economy",
+            Perk.GREEN_THUMB, Perk.RANCH_HAND, Perk.FIELD_SENSE, Perk.STOCKPILE_DISCIPLINE, Perk.CRIMSON_GROWTH, Perk.BLOODBOUND_HOE),
+        RUNESMITH("runesmith", "Runesmith", MainBranch.FRONTIER, Material.ANVIL, "&d", 32, 39, "Gear, enchanting and workstation specialist.", "enchanting, anvils, artifacts, gear economy",
+            Perk.ARCANE_FAMILIARITY, Perk.TEMPERED_TOOLS, Perk.ENCHANTERS_FOCUS, Perk.ARCANE_WORKSTATION, Perk.RUNE_EFFICIENCY, Perk.BLOODBOUND_INFUSION),
+        BLOODREAVER("bloodreaver", "Bloodreaver", MainBranch.WARPATH, Material.NETHERITE_SWORD, "&4", 34, 40, "Aggressive Lifesteal and bounty hunter.", "lifesteal, bounties, kills, seasons, legacy",
+            Perk.FRESH_BLOOD, Perk.PURSUIT, Perk.KILL_PRESSURE, Perk.BLOOD_RUSH_NODE, Perk.BOUNTY_HUNGER, Perk.BLOODBOUND_BLADE),
+        BULWARK("bulwark", "Bulwark", MainBranch.WARPATH, Material.SHIELD, "&9", 36, 41, "Defensive frontline and teamfight sustain.", "CombatTag, recovery, shield play, events",
+            Perk.IRON_POSTURE, Perk.GUARDED_RECOVERY, Perk.COMBAT_ENDURANCE, Perk.HOLD_THE_LINE, Perk.LAST_STAND, Perk.BLOODBOUND_GUARD),
+        MARKSMAN("marksman", "Marksman", MainBranch.WARPATH, Material.BOW, "&e", 43, 42, "Ranged bounty pressure and assist support.", "bows, assists, bounties, skirmish, events",
+            Perk.STEADY_AIM, Perk.HUNTERS_MARK, Perk.LONGSHOT_DISCIPLINE, Perk.EVENT_COVER, Perk.PIERCING_FOCUS, Perk.BLOODBOUND_BOW);
+
+        private final String key;
+        private final String display;
+        private final MainBranch main;
+        private final Material icon;
+        private final String color;
+        private final int slot;
+        private final int viewSlot;
+        private final String identity;
+        private final String systems;
+        private final List<Perk> perks;
+
+        Specialization(String key, String display, MainBranch main, Material icon, String color, int slot, int viewSlot, String identity, String systems, Perk... perks) {
+            this.key = key;
+            this.display = display;
+            this.main = main;
+            this.icon = icon;
+            this.color = color;
+            this.slot = slot;
+            this.viewSlot = viewSlot;
+            this.identity = identity;
+            this.systems = systems;
+            this.perks = List.of(perks);
+        }
+
+        String key() { return key; }
+        String display() { return display; }
+        MainBranch main() { return main; }
+        Material icon() { return icon; }
+        String color() { return color; }
+        int slot() { return slot; }
+        int viewSlot() { return viewSlot; }
+        String identity() { return identity; }
+        String systems() { return systems; }
+        List<Perk> perks() { return perks; }
+
+        static Specialization from(String input) {
+            if (input == null || input.isBlank()) {
+                return null;
+            }
+            for (Specialization specialization : values()) {
+                if (specialization.key.equalsIgnoreCase(input) || specialization.name().equalsIgnoreCase(input) || specialization.display.equalsIgnoreCase(input)) {
+                    return specialization;
+                }
+            }
+            return null;
         }
     }
 
@@ -3660,7 +4390,44 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         RESOURCE_APPRAISER("resource_appraiser", "Resource Appraiser", Category.ECONOMY, Material.DIAMOND, 41, 55, 10, "Effect: high-value resources beter waarderen.|Per tier: betere rare-resource hooks."),
         MERCHANT_REPUTATION("merchant_reputation", "Merchant Reputation", Category.ECONOMY, Material.EMERALD_BLOCK, 42, 65, 10, "Effect: merchant prestige route.|Per tier: betere shop/order reputation."),
         BLACK_MARKET_SENSE("black_market_sense", "Black Market Sense", Category.ECONOMY, Material.TRIPWIRE_HOOK, 43, 75, 5, "Effect: rare merchant/event economy.|Per tier: betere black-market hooks."),
-        ECONOMY_MASTERY("economy_mastery", "Economy Mastery", Category.ECONOMY, Material.NETHER_STAR, 44, 90, 5, "Effect: economy prestige status.|Per tier: kleine globale economy mastery.");
+        ECONOMY_MASTERY("economy_mastery", "Economy Mastery", Category.ECONOMY, Material.NETHER_STAR, 44, 90, 5, "Effect: economy prestige status.|Per tier: kleine globale economy mastery."),
+        WORKERS_INSTINCT("workers_instinct", "Worker's Instinct", Category.MINING, Material.NETHER_STAR, 4, 1, 1, "Root skill: starts your Bloodbound progression.|Small early-game progression boost, no free hearts."),
+        STONE_SENSE("stone_sense", "Stone Sense", Category.MINING, Material.STONE, 13, 1, 3, "Prospector: improves basic mining progression.|Connects early resources to rookie contracts."),
+        ORE_INSTINCT("ore_instinct", "Ore Instinct", Category.MINING, Material.DIAMOND_ORE, 22, 8, 3, "Prospector: improves ore-focused progression.|Helps mining feel like a real identity."),
+        DEEP_DELVER("deep_delver", "Deep Delver", Category.MINING, Material.DEEPSLATE_DIAMOND_ORE, 31, 18, 3, "Prospector: rewards dangerous deep mining.|Supports midgame/endgame resource preparation."),
+        CONTRACT_MINER("contract_miner", "Contract Miner", Category.MINING, Material.WRITTEN_BOOK, 29, 30, 2, "Prospector: mining contracts matter more.|Rewards high-risk resource work without printing money."),
+        SHARD_PROSPECTOR("shard_prospector", "Shard Prospector", Category.MINING, Material.ECHO_SHARD, 33, 45, 2, "Prospector: improves shard/material progression visibility.|Does not grant free shards."),
+        BLOODBOUND_PICK("bloodbound_pick", "Bloodbound Pick", Category.MINING, Material.NETHERITE_PICKAXE, 40, 70, 1, "Prospector capstone: improves Bloodbound pickaxe enchant chance.|Chance and cap are config-driven."),
+        GREEN_THUMB("green_thumb", "Green Thumb", Category.FARMING, Material.WHEAT, 13, 1, 3, "Cultivator: improves basic farming progression.|Stable sustain without combat power."),
+        RANCH_HAND("ranch_hand", "Ranch Hand", Category.FARMING, Material.WHEAT, 22, 8, 3, "Cultivator: animal and breeding progression.|Supports food and recovery loops."),
+        FIELD_SENSE("field_sense", "Field Sense", Category.FARMING, Material.COMPASS, 31, 18, 3, "Cultivator: clearer farming goal progression.|Makes long-term sustain easier to plan."),
+        STOCKPILE_DISCIPLINE("stockpile_discipline", "Stockpile Discipline", Category.FARMING, Material.CHEST, 29, 30, 2, "Cultivator: improves recovery and food-prep loops.|No hearts, no combat item advantage."),
+        CRIMSON_GROWTH("crimson_growth", "Crimson Growth", Category.FARMING, Material.REDSTONE, 33, 45, 2, "Cultivator: high-tier farming and sustain identity.|Useful for rebuilding after losses."),
+        BLOODBOUND_HOE("bloodbound_hoe", "Bloodbound Hoe", Category.FARMING, Material.NETHERITE_HOE, 40, 70, 1, "Cultivator capstone: improves Bloodbound hoe enchant chance.|Chance and cap are config-driven."),
+        ARCANE_FAMILIARITY("arcane_familiarity", "Arcane Familiarity", Category.ENCHANTING, Material.BOOK, 13, 1, 3, "Runesmith: basic enchanting progression.|Introduces gear improvement identity."),
+        TEMPERED_TOOLS("tempered_tools", "Tempered Tools", Category.ENCHANTING, Material.ANVIL, 22, 8, 3, "Runesmith: tool and gear improvement progression.|Supports crafting and market loops."),
+        ENCHANTERS_FOCUS("enchanters_focus", "Enchanter's Focus", Category.ENCHANTING, Material.EXPERIENCE_BOTTLE, 31, 18, 3, "Runesmith: improves enchant-related progression.|Prepares for portable workstations."),
+        ARCANE_WORKSTATION("arcane_workstation", "Arcane Workstation", Category.ENCHANTING, Material.ANVIL, 29, 30, 1, "Runesmith unlock: enables /anvil and /enchant outside combat.|Disabled while combat tagged or in blocked worlds."),
+        RUNE_EFFICIENCY("rune_efficiency", "Rune Efficiency", Category.ENCHANTING, Material.LAPIS_LAZULI, 33, 45, 2, "Runesmith: improves gear-upgrade efficiency progression.|No free OP enchants."),
+        BLOODBOUND_INFUSION("bloodbound_infusion", "Bloodbound Infusion", Category.ENCHANTING, Material.ENCHANTED_BOOK, 40, 70, 1, "Runesmith capstone: improves relevant Bloodbound enchant chance.|Chance and cap are config-driven."),
+        FRESH_BLOOD("fresh_blood", "Fresh Blood", Category.COMBAT, Material.REDSTONE, 13, 1, 3, "Bloodreaver: valid fights grant better PvP progression.|Anti-farm rules still apply."),
+        PURSUIT("pursuit", "Pursuit", Category.COMBAT, Material.COMPASS, 22, 8, 3, "Bloodreaver: bounty target pressure progression.|No unfair wallhack tracking."),
+        KILL_PRESSURE("kill_pressure", "Kill Pressure", Category.COMBAT, Material.IRON_SWORD, 31, 18, 3, "Bloodreaver: legitimate kills matter more.|No extra hearts are granted."),
+        BLOOD_RUSH_NODE("blood_rush_node", "Blood Rush", Category.COMBAT, Material.REDSTONE, 29, 30, 2, "Bloodreaver: momentum after kills and assists.|Strictly config-driven and anti-farm aware."),
+        BOUNTY_HUNGER("bounty_hunger", "Bounty Hunger", Category.COMBAT, Material.GOLD_INGOT, 33, 45, 2, "Bloodreaver: bounty participation progression.|Rewards risk without money-printing."),
+        BLOODBOUND_BLADE("bloodbound_blade", "Bloodbound Blade", Category.COMBAT, Material.NETHERITE_SWORD, 40, 70, 1, "Bloodreaver capstone: improves Bloodbound sword enchant chance.|Chance and cap are config-driven."),
+        IRON_POSTURE("iron_posture", "Iron Posture", Category.COMBAT, Material.IRON_CHESTPLATE, 13, 1, 3, "Bulwark: defensive combat progression.|A frontline identity, not immortality."),
+        GUARDED_RECOVERY("guarded_recovery", "Guarded Recovery", Category.COMBAT, Material.GOLDEN_APPLE, 22, 8, 3, "Bulwark: recovery and survival utility progression.|Does not grant free hearts."),
+        COMBAT_ENDURANCE("combat_endurance", "Combat Endurance", Category.COMBAT, Material.SHIELD, 31, 18, 3, "Bulwark: better feedback and progression during CombatTag.|Rewards staying alive under pressure."),
+        HOLD_THE_LINE("hold_the_line", "Hold the Line", Category.COMBAT, Material.IRON_BARS, 29, 30, 2, "Bulwark: teamfight and event defense identity.|Supports group PvP without hard damage scaling."),
+        LAST_STAND("last_stand", "Last Stand", Category.COMBAT, Material.TOTEM_OF_UNDYING, 33, 45, 2, "Bulwark: emergency defensive utility progression.|Cooldown and power are config-driven."),
+        BLOODBOUND_GUARD("bloodbound_guard", "Bloodbound Guard", Category.COMBAT, Material.SHIELD, 40, 70, 1, "Bulwark capstone: improves Bloodbound shield enchant chance.|No permanent OP reduction."),
+        STEADY_AIM("steady_aim", "Steady Aim", Category.COMBAT, Material.BOW, 13, 1, 3, "Marksman: basic ranged progression.|Supports bows without forcing melee."),
+        HUNTERS_MARK("hunters_mark", "Hunter's Mark", Category.COMBAT, Material.COMPASS, 22, 8, 3, "Marksman: bounty and assist target progression.|No wallhack tracking."),
+        LONGSHOT_DISCIPLINE("longshot_discipline", "Longshot Discipline", Category.COMBAT, Material.ARROW, 31, 18, 3, "Marksman: ranged assist progression.|Rewards skillful distance pressure."),
+        EVENT_COVER("event_cover", "Event Cover", Category.COMBAT, Material.CROSSBOW, 29, 30, 2, "Marksman: ranged support during events.|Supports team fights and skirmishes."),
+        PIERCING_FOCUS("piercing_focus", "Piercing Focus", Category.COMBAT, Material.ARROW, 33, 45, 2, "Marksman: high-tier ranged progression.|Config-driven, not guaranteed burst."),
+        BLOODBOUND_BOW("bloodbound_bow", "Bloodbound Bow", Category.COMBAT, Material.BOW, 40, 70, 1, "Marksman capstone: improves Bloodbound bow enchant chance.|Chance and cap are config-driven.");
 
         private final String key;
         private final String display;

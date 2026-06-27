@@ -35,9 +35,16 @@ Contract selection uses EconomyWatch signals plus randomized variety. This helps
 
 ## Skills And Abilities
 
-Use `/skills` for the Bloodbound progression tree. The menu is split into Rookie, Bloodbound, Combat, Economy, Relic/Legacy and Event/EndBoss lanes. Nodes show whether they are locked, available, unlocked or maxed, and hover text explains costs, requirements and the systems they connect to.
+Use `/skills` for the Bloodbound specialization tree. Everyone starts at Worker's Instinct, then commits to one direction:
+
+- Frontier: preparation, resources, farming and gear work.
+- Warpath: PvP pressure, defense and ranged combat.
+
+After choosing a direction, you choose one specialization. Frontier has Prospector, Cultivator and Runesmith. Warpath has Bloodreaver, Bulwark and Marksman. You can preview every branch, but only your chosen specialization can be upgraded. This is intentional: builds should feel different instead of everyone maxing the same generic bonuses.
 
 Skill XP still comes from real gameplay tracks such as mining, farming, combat, alchemy, enchanting and economy actions. Item abilities are separate and item-bound; their challenge and unlocked state stay on that exact tool or weapon.
+
+Runesmith can unlock Arcane Workstation. With the right node and permission, `/anvil` and `/enchant` open portable stations, but they are blocked while CombatTagged.
 
 Ability status appears in the HUD. If both a held ability and Aegis Guard are relevant, both appear as separate lines. Ability interaction uses only a quiet pling at most; it does not spam activation audio.
 

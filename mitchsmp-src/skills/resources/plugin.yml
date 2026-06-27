@@ -14,7 +14,15 @@ commands:
   skillsadmin:
     aliases: [skilladmin, skadmin]
     description: Admin tooling for the Bloodbound skilltree.
-    usage: /skillsadmin <addxp|points|reset|reload> ...
+    usage: /skillsadmin <addxp|givepoint|points|reset|unlock|setbranch|clearbranch|debug|testgui|reload> ...
+  anvil:
+    aliases: [portableanvil]
+    description: Open the Runesmith Arcane Workstation anvil if unlocked.
+    usage: /anvil
+  enchant:
+    aliases: [enchanting, portableenchant]
+    description: Open the Runesmith Arcane Workstation enchanting table if unlocked.
+    usage: /enchant
   abilities:
     aliases: [ability, enchants]
     description: Open tool-bound endgame ability menu.
@@ -38,3 +46,16 @@ commands:
   contractboost:
     description: Active economy contract ability.
     usage: /contractboost
+permissions:
+  mitchsmp.skills.use:
+    default: true
+  mitchsmp.skills.reset:
+    default: true
+  mitchsmp.skills.anvil:
+    default: true
+  mitchsmp.skills.enchant:
+    default: true
+  mitchsmp.skills.admin:
+    default: op
+  mitchsmp.skills.debug:
+    default: op
