@@ -2,6 +2,7 @@ package org.bukkit.event.inventory;
 
 import org.bukkit.event.Cancellable;
 import org.bukkit.inventory.Inventory;
+import org.bukkit.inventory.ItemStack;
 
 public class InventoryMoveItemEvent implements Cancellable {
     public Inventory getSource() {
@@ -9,6 +10,10 @@ public class InventoryMoveItemEvent implements Cancellable {
     }
 
     public Inventory getDestination() {
+        return null;
+    }
+
+    public ItemStack getItem() {
         return null;
     }
 

@@ -3,13 +3,13 @@ version: 0.1.0
 api-version: '26.1'
 main: nl.mitchsmp.spawners.SpawnersPlugin
 author: Mitchel
-description: Inventory-based AFK spawners for BloodboundSMP.
+description: Proximity-based upgradeable mob spawners for BloodboundSMP.
 depend:
   - MitchSMP-Core
 commands:
   spawner:
     aliases: [spawners, bspawn]
-    description: Bloodbound inventory spawners.
+    description: Bloodbound proximity spawners.
     usage: /spawner <give|types|reload>
 permissions:
   mitchsmp.spawners.admin:

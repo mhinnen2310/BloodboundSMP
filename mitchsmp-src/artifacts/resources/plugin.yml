@@ -19,3 +19,16 @@ commands:
     aliases: [shards]
     description: Admin Boss Shard command.
     usage: /bossshards give <player> [amount]
+  shardatm:
+    description: Give a physical Shard ATM block.
+    usage: /shardatm [player] [amount]
+  shardvault:
+    description: Give a placeable Shard Vault block.
+    usage: /shardvault [player] [amount]
+permissions:
+  mitchsmp.artifacts.use:
+    description: Use the Boss Shard shop.
+    default: true
+  mitchsmp.artifacts.admin:
+    description: Manage Boss Shards, OP shop, Shard ATMs and Shard Vaults.
+    default: op

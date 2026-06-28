@@ -1,10 +1,11 @@
 package nl.mitchsmp.spawners;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
-import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 import java.util.UUID;
 
 import nl.mitchsmp.core.api.EconomyService;
@@ -17,10 +18,13 @@ import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Sound;
+import org.bukkit.World;
 import org.bukkit.block.Block;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
+import org.bukkit.entity.Entity;
+import org.bukkit.entity.EntityType;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
@@ -52,7 +56,8 @@ public final class SpawnersPlugin extends JavaPlugin implements Listener, TabCom
             getCommand("spawner").setExecutor(this);
             getCommand("spawner").setTabCompleter(this);
         }
-        getLogger().info("Bloodbound inventory spawners loaded. Types: " + String.join(", ", spawnerTypes()));
+        Bukkit.getScheduler().runTaskTimer(this, this::spawnTick, 40L, 40L);
+        getLogger().info("Bloodbound proximity spawners loaded. Types: " + String.join(", ", spawnerTypes()));
     }
 
     @Override
@@ -132,10 +137,11 @@ public final class SpawnersPlugin extends JavaPlugin implements Listener, TabCom
         int level = itemLevel(hand);
         data.set(key + ".type", type);
         data.set(key + ".level", level);
-        data.set(key + ".stored", 0);
+        data.set(key + ".owner", event.getPlayer().getUniqueId().toString());
+        data.set(key + ".ownerName", event.getPlayer().getName());
         data.set(key + ".last", System.currentTimeMillis());
         data.saveSoon(this, 20L);
-        Text.msg(event.getPlayer(), "&aPlaced &f" + display(type) + " &7Level &f" + level + "&a.");
+        Text.msg(event.getPlayer(), "&aPlaced &f" + display(type) + " &7Level &f" + level + "&a. Stay nearby to activate it.");
     }
 
     @EventHandler
@@ -153,15 +159,9 @@ public final class SpawnersPlugin extends JavaPlugin implements Listener, TabCom
             event.getClass().getMethod("setDropItems", boolean.class).invoke(event, false);
         } catch (ReflectiveOperationException | RuntimeException ignored) {
         }
-        updateProduction(key, type);
-        int level = data.getInt(key + ".level", 1);
-        int stored = data.getInt(key + ".stored", 0);
-        block.getLocation().getWorld().dropItemNaturally(block.getLocation(), spawnerItem(type, level));
-        if (stored > 0) {
-            block.getLocation().getWorld().dropItemNaturally(block.getLocation(), outputItem(type, stored));
-        }
+        block.getLocation().getWorld().dropItemNaturally(block.getLocation(), spawnerItem(type, level(key)));
         clearSpawner(key);
-        Text.msg(event.getPlayer(), "&eSpawner picked up. Stored output dropped.");
+        Text.msg(event.getPlayer(), "&eSpawner picked up.");
     }
 
     @EventHandler
@@ -175,8 +175,7 @@ public final class SpawnersPlugin extends JavaPlugin implements Listener, TabCom
             return;
         }
         event.setCancelled(true);
-        updateProduction(key, type);
-        openMain(event.getPlayer(), key, type);
+        openUpgrades(event.getPlayer(), key, type);
     }
 
     @EventHandler
@@ -189,66 +188,40 @@ public final class SpawnersPlugin extends JavaPlugin implements Listener, TabCom
         if (!(event.getWhoClicked() instanceof Player player)) {
             return;
         }
-        if (event.getRawSlot() == 11 && menu.page().equals("main")) {
-            collect(player, menu.key(), menu.type());
-            openMain(player, menu.key(), menu.type());
+        if (event.getRawSlot() == 18) {
+            player.closeInventory();
             return;
         }
-        if (event.getRawSlot() == 15 && menu.page().equals("main")) {
-            openUpgrades(player, menu.key(), menu.type());
-            return;
-        }
-        if (event.getRawSlot() == 22 && menu.page().equals("upgrades")) {
+        if (event.getRawSlot() == 22) {
             upgrade(player, menu.key(), menu.type());
             openUpgrades(player, menu.key(), menu.type());
-            return;
         }
-        if (event.getRawSlot() == 18 && menu.page().equals("upgrades")) {
-            openMain(player, menu.key(), menu.type());
-        }
-    }
-
-    private void openMain(Player player, String key, String type) {
-        Inventory inventory = Bukkit.createInventory(new SpawnerMenu("main", key, type), 27, Text.color("&4Spawner &8- &f" + display(type)));
-        inventory.setItem(11, icon(outputMaterial(type), "&aSpawner Inventory", List.of(
-            "&7Stored: &f" + data.getInt(key + ".stored", 0) + "&7/&f" + capacity(type, level(key)),
-            "&7Output: &f" + outputMaterial(type).name().toLowerCase(Locale.ROOT),
-            "&eClick to collect."
-        )));
-        inventory.setItem(15, icon(Material.ANVIL, "&6Upgrades", List.of(
-            "&7Level: &f" + level(key) + "&7/&f" + maxLevel(type),
-            "&7Production interval: &f" + intervalSeconds(type, level(key)) + "s",
-            "&eClick to upgrade."
-        )));
-        player.openInventory(inventory);
     }
 
     private void openUpgrades(Player player, String key, String type) {
         int level = level(key);
         boolean maxed = level >= maxLevel(type);
-        Inventory inventory = Bukkit.createInventory(new SpawnerMenu("upgrades", key, type), 27, Text.color("&4Spawner Upgrades"));
-        inventory.setItem(18, icon(Material.ARROW, "&aBack", List.of("&7Return to spawner.")));
+        Inventory inventory = Bukkit.createInventory(new SpawnerMenu(key, type), 27, Text.color("&4Spawner &8- &f" + display(type)));
+        inventory.setItem(10, icon(Material.SPAWNER, "&d" + display(type) + " Spawner", List.of(
+            "&7Level: &f" + level + "&7/&f" + maxLevel(type),
+            "&7Entity: &f" + entityType(type).name().toLowerCase(Locale.ROOT),
+            "&7Activation radius: &f" + activationRadius(type) + " blocks",
+            "&7Owner nearby required: &aYes"
+        )));
+        inventory.setItem(13, icon(Material.EXPERIENCE_BOTTLE, "&aSpawn Settings", List.of(
+            "&7Delay: &f" + spawnDelaySeconds(type, level) + "s",
+            "&7Count: &f" + spawnCount(type, level),
+            "&7Max nearby: &f" + maxNearby(type, level),
+            "&8Configurable in spawners.properties."
+        )));
+        inventory.setItem(18, icon(Material.ARROW, "&aClose", List.of("&7Close this menu.")));
         inventory.setItem(22, icon(maxed ? Material.EMERALD_BLOCK : Material.GOLD_INGOT, maxed ? "&aMax Level" : "&6Upgrade to Level " + (level + 1), List.of(
             "&7Current: &f" + level + "&7/&f" + maxLevel(type),
             "&7Cost: &a$" + String.format(Locale.US, "%.2f", upgradeCost(type, level + 1)),
-            "&7Next capacity: &f" + capacity(type, Math.min(maxLevel(type), level + 1)),
+            "&7Next delay: &f" + spawnDelaySeconds(type, Math.min(maxLevel(type), level + 1)) + "s",
             "&eClick to buy."
         )));
         player.openInventory(inventory);
-    }
-
-    private void collect(Player player, String key, String type) {
-        updateProduction(key, type);
-        int stored = data.getInt(key + ".stored", 0);
-        if (stored <= 0) {
-            Text.msg(player, "&7Spawner inventory is empty.");
-            return;
-        }
-        ItemStack item = outputItem(type, stored);
-        player.getInventory().addItem(item).values().forEach(left -> player.getWorld().dropItemNaturally(player.getLocation(), left));
-        data.set(key + ".stored", 0);
-        data.saveSoon(this, 20L);
-        player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 0.6F, 1.2F);
     }
 
     private void upgrade(Player player, String key, String type) {
@@ -269,20 +242,61 @@ public final class SpawnersPlugin extends JavaPlugin implements Listener, TabCom
         Text.msg(player, "&aSpawner upgraded to level &f" + (level + 1) + "&a.");
     }
 
-    private void updateProduction(String key, String type) {
+    private void spawnTick() {
         long now = System.currentTimeMillis();
-        long last = data.getLong(key + ".last", now);
-        int level = level(key);
-        long interval = Math.max(1L, intervalSeconds(type, level)) * 1000L;
-        long cycles = Math.max(0L, (now - last) / interval);
-        if (cycles <= 0L) {
-            return;
+        for (String storedKey : new ArrayList<>(data.keys())) {
+            if (!storedKey.startsWith("spawner.") || !storedKey.endsWith(".type")) {
+                continue;
+            }
+            String key = storedKey.substring(0, storedKey.length() - ".type".length());
+            String type = data.getString(storedKey, "");
+            if (type.isBlank()) {
+                continue;
+            }
+            Location location = locationFromKey(key);
+            if (location == null || location.getWorld() == null || location.getBlock().getType() != Material.SPAWNER) {
+                continue;
+            }
+            int level = level(key);
+            long delay = Math.max(1L, spawnDelaySeconds(type, level)) * 1000L;
+            long last = data.getLong(key + ".last", now);
+            if (now - last < delay) {
+                continue;
+            }
+            Player owner = ownerOnline(key);
+            if (owner == null || !owner.getWorld().equals(location.getWorld()) || owner.getLocation().distanceSquared(location) > activationRadius(type) * activationRadius(type)) {
+                continue;
+            }
+            if (nearbyCount(location, entityType(type), maxNearbyRadius(type)) >= maxNearby(type, level)) {
+                continue;
+            }
+            Location spawnLocation = new Location(location.getWorld(), location.getBlockX() + 0.5D, location.getBlockY() + 1.0D, location.getBlockZ() + 0.5D);
+            for (int i = 0; i < spawnCount(type, level); i++) {
+                location.getWorld().spawnEntity(spawnLocation, entityType(type));
+            }
+            data.set(key + ".last", now);
+            data.saveSoon(this, 60L);
         }
-        int stored = data.getInt(key + ".stored", 0);
-        int amount = (int) Math.min(100_000L, cycles * amountPerCycle(type, level));
-        data.set(key + ".stored", Math.min(capacity(type, level), stored + amount));
-        data.set(key + ".last", last + cycles * interval);
-        data.saveSoon(this, 40L);
+    }
+
+    private Player ownerOnline(String key) {
+        String raw = data.getString(key + ".owner", "");
+        try {
+            return raw.isBlank() ? null : Bukkit.getPlayer(UUID.fromString(raw));
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
+    private int nearbyCount(Location location, EntityType type, double radius) {
+        int total = 0;
+        double radiusSquared = radius * radius;
+        for (Entity entity : location.getWorld().getEntities()) {
+            if (entity.getType() == type && entity.getLocation().distanceSquared(location) <= radiusSquared) {
+                total++;
+            }
+        }
+        return total;
     }
 
     private void clearSpawner(String key) {
@@ -300,19 +314,15 @@ public final class SpawnersPlugin extends JavaPlugin implements Listener, TabCom
         if (meta != null) {
             meta.setDisplayName(Text.color("&d" + display(type) + " Spawner"));
             meta.setLore(List.of(
-                Text.color("&7Inventory-based AFK spawner."),
+                Text.color("&7Mob: &f" + display(type)),
                 Text.color("&7Level: &f" + level),
-                Text.color("&7Right-click after placing.")
+                Text.color("&7Output/hour: &f" + outputPerHour(type, level))
             ));
             meta.getPersistentDataContainer().set(typeKey, PersistentDataType.STRING, type);
             meta.getPersistentDataContainer().set(levelKey, PersistentDataType.STRING, String.valueOf(level));
             item.setItemMeta(meta);
         }
         return item;
-    }
-
-    private ItemStack outputItem(String type, int amount) {
-        return new ItemStack(outputMaterial(type), Math.max(1, amount));
     }
 
     private ItemStack icon(Material material, String name, List<String> lore) {
@@ -352,41 +362,72 @@ public final class SpawnersPlugin extends JavaPlugin implements Listener, TabCom
         return "spawner." + location.getWorld().getName() + "." + location.getBlockX() + "." + location.getBlockY() + "." + location.getBlockZ();
     }
 
-    private List<String> spawnerTypes() {
-        List<String> types = new ArrayList<>();
-        for (String key : data.keys()) {
-            if (key.startsWith("type.") && key.endsWith(".material")) {
-                types.add(key.substring("type.".length(), key.length() - ".material".length()));
-            }
+    private Location locationFromKey(String key) {
+        String[] parts = key.split("\\.");
+        if (parts.length != 5) {
+            return null;
         }
-        types.sort(String::compareToIgnoreCase);
-        return types;
+        World world = Bukkit.getWorld(parts[1]);
+        if (world == null) {
+            return null;
+        }
+        return new Location(world, parseInt(parts[2], 0, -30_000_000, 30_000_000), parseInt(parts[3], 64, -2048, 2048), parseInt(parts[4], 0, -30_000_000, 30_000_000));
     }
 
-    private Material outputMaterial(String type) {
-        return material(data.getString("type." + type + ".material", "ROTTEN_FLESH"), Material.ROTTEN_FLESH);
+    private List<String> spawnerTypes() {
+        Set<String> types = new TreeSet<>(String.CASE_INSENSITIVE_ORDER);
+        for (EntityType type : EntityType.values()) {
+            if (isMobSpawnerType(type.name())) {
+                types.add(normalize(type.name()));
+            }
+        }
+        for (String key : data.keys()) {
+            if (key.startsWith("type.") && key.endsWith(".entity")) {
+                types.add(key.substring("type.".length(), key.length() - ".entity".length()));
+            }
+        }
+        return new ArrayList<>(types);
+    }
+
+    private EntityType entityType(String type) {
+        try {
+            return EntityType.valueOf(data.getString("type." + type + ".entity", type).toUpperCase(Locale.ROOT).replace('-', '_'));
+        } catch (IllegalArgumentException exception) {
+            return EntityType.ZOMBIE;
+        }
     }
 
     private int maxLevel(String type) {
-        return Math.max(1, data.getInt("type." + type + ".maxLevel", 5));
+        return Math.max(1, data.getInt("type." + type + ".maxLevel", data.getInt("settings.defaultMaxLevel", 5)));
     }
 
-    private int intervalSeconds(String type, int level) {
-        int base = Math.max(1, data.getInt("type." + type + ".baseIntervalSeconds", 60));
-        int reduction = Math.max(0, data.getInt("type." + type + ".intervalReductionPerLevel", 6));
+    private int activationRadius(String type) {
+        return Math.max(1, data.getInt("type." + type + ".activationRadius", data.getInt("settings.defaultActivationRadius", 24)));
+    }
+
+    private int spawnDelaySeconds(String type, int level) {
+        int base = Math.max(1, data.getInt("type." + type + ".baseSpawnDelaySeconds", data.getInt("settings.defaultBaseSpawnDelaySeconds", 60)));
+        int reduction = Math.max(0, data.getInt("type." + type + ".delayReductionPerLevel", data.getInt("settings.defaultDelayReductionPerLevel", 6)));
         return Math.max(5, base - (Math.max(1, level) - 1) * reduction);
     }
 
-    private int amountPerCycle(String type, int level) {
-        return Math.max(1, data.getInt("type." + type + ".baseAmount", 1) + (Math.max(1, level) - 1) * data.getInt("type." + type + ".amountPerLevel", 1));
+    private int spawnCount(String type, int level) {
+        return Math.max(1, data.getInt("type." + type + ".baseSpawnCount", data.getInt("settings.defaultBaseSpawnCount", 1))
+            + (Math.max(1, level) - 1) * data.getInt("type." + type + ".spawnCountPerLevel", data.getInt("settings.defaultSpawnCountPerLevel", 0)));
     }
 
-    private int capacity(String type, int level) {
-        return Math.max(64, data.getInt("type." + type + ".baseCapacity", 256) + (Math.max(1, level) - 1) * data.getInt("type." + type + ".capacityPerLevel", 128));
+    private int maxNearby(String type, int level) {
+        return Math.max(1, data.getInt("type." + type + ".maxNearby", data.getInt("settings.defaultMaxNearby", 6))
+            + (Math.max(1, level) - 1) * data.getInt("type." + type + ".maxNearbyPerLevel", data.getInt("settings.defaultMaxNearbyPerLevel", 1)));
+    }
+
+    private int maxNearbyRadius(String type) {
+        return Math.max(4, data.getInt("type." + type + ".maxNearbyRadius", data.getInt("settings.defaultMaxNearbyRadius", 8)));
     }
 
     private double upgradeCost(String type, int level) {
-        return Math.max(0.0D, data.getDouble("type." + type + ".upgrade." + level, 250.0D * level * level));
+        return Math.max(0.0D, data.getDouble("type." + type + ".upgrade." + level,
+            data.getDouble("settings.defaultUpgrade." + level, data.getDouble("settings.defaultUpgradeBase", 250.0D) * level * level)));
     }
 
     private String display(String type) {
@@ -394,33 +435,61 @@ public final class SpawnersPlugin extends JavaPlugin implements Listener, TabCom
         if (!configured.isBlank()) {
             return configured;
         }
-        return type.substring(0, 1).toUpperCase(Locale.ROOT) + type.substring(1).replace('_', ' ');
+        return displayFallback(type);
     }
 
     private void ensureDefaults() {
-        Map<String, Material> defaults = new LinkedHashMap<>();
-        defaults.put("zombie", Material.ROTTEN_FLESH);
-        defaults.put("skeleton", Material.BONE);
-        defaults.put("spider", Material.STRING);
-        defaults.put("blaze", Material.BLAZE_ROD);
-        defaults.put("iron", Material.IRON_INGOT);
-        defaults.put("gold", Material.GOLD_INGOT);
-        for (Map.Entry<String, Material> entry : defaults.entrySet()) {
-            String prefix = "type." + entry.getKey() + ".";
-            setDefault(prefix + "display", displayFallback(entry.getKey()));
-            setDefault(prefix + "material", entry.getValue().name());
+        setDefault("settings.defaultActivationRadius", 24);
+        setDefault("settings.defaultMaxLevel", 5);
+        setDefault("settings.defaultBaseSpawnDelaySeconds", 60);
+        setDefault("settings.defaultDelayReductionPerLevel", 6);
+        setDefault("settings.defaultBaseSpawnCount", 1);
+        setDefault("settings.defaultSpawnCountPerLevel", 0);
+        setDefault("settings.defaultMaxNearby", 6);
+        setDefault("settings.defaultMaxNearbyPerLevel", 1);
+        setDefault("settings.defaultMaxNearbyRadius", 8);
+        setDefault("settings.defaultUpgradeBase", 250.0D);
+        for (int level = 2; level <= 5; level++) {
+            setDefault("settings.defaultUpgrade." + level, 250.0D * level * level);
+        }
+        for (String type : List.of("zombie", "skeleton", "spider", "blaze", "creeper", "enderman", "witch", "slime", "magma_cube")) {
+            String prefix = "type." + type + ".";
+            setDefault(prefix + "display", displayFallback(type));
+            setDefault(prefix + "entity", type.toUpperCase(Locale.ROOT));
             setDefault(prefix + "maxLevel", 5);
-            setDefault(prefix + "baseIntervalSeconds", 60);
-            setDefault(prefix + "intervalReductionPerLevel", 6);
-            setDefault(prefix + "baseAmount", 1);
-            setDefault(prefix + "amountPerLevel", 1);
-            setDefault(prefix + "baseCapacity", 256);
-            setDefault(prefix + "capacityPerLevel", 128);
+            setDefault(prefix + "activationRadius", 24);
+            setDefault(prefix + "baseSpawnDelaySeconds", 60);
+            setDefault(prefix + "delayReductionPerLevel", 6);
+            setDefault(prefix + "baseSpawnCount", 1);
+            setDefault(prefix + "spawnCountPerLevel", 0);
+            setDefault(prefix + "maxNearby", 6);
+            setDefault(prefix + "maxNearbyPerLevel", 1);
+            setDefault(prefix + "maxNearbyRadius", 8);
             for (int level = 2; level <= 5; level++) {
                 setDefault(prefix + "upgrade." + level, 250.0D * level * level);
             }
         }
         data.save();
+    }
+
+    private String outputPerHour(String type, int level) {
+        double output = spawnCount(type, level) * 3600.0D / Math.max(1, spawnDelaySeconds(type, level));
+        return Math.abs(output - Math.rint(output)) < 0.01D
+            ? String.format(Locale.US, "%.0f mobs", output)
+            : String.format(Locale.US, "%.1f mobs", output);
+    }
+
+    private boolean isMobSpawnerType(String name) {
+        Set<String> blocked = new HashSet<>(List.of(
+            "PLAYER", "ITEM", "EXPERIENCE_ORB", "AREA_EFFECT_CLOUD", "ARROW", "SPECTRAL_ARROW", "TRIDENT",
+            "FIREWORK_ROCKET", "DROPPED_ITEM", "FALLING_BLOCK", "BLOCK_DISPLAY", "ITEM_DISPLAY", "TEXT_DISPLAY",
+            "INTERACTION", "PAINTING", "ITEM_FRAME", "GLOW_ITEM_FRAME", "ARMOR_STAND", "BOAT", "CHEST_BOAT",
+            "MINECART", "CHEST_MINECART", "COMMAND_BLOCK_MINECART", "FURNACE_MINECART", "HOPPER_MINECART",
+            "SPAWNER_MINECART", "TNT_MINECART", "TNT", "LIGHTNING_BOLT", "UNKNOWN", "FISHING_BOBBER",
+            "EGG", "SNOWBALL", "SMALL_FIREBALL", "FIREBALL", "DRAGON_FIREBALL", "WITHER_SKULL", "WIND_CHARGE",
+            "BREEZE_WIND_CHARGE", "OMINOUS_ITEM_SPAWNER", "LEASH_KNOT", "END_CRYSTAL", "MARKER"
+        ));
+        return !blocked.contains(name);
     }
 
     private void setDefault(String key, Object value) {
@@ -437,14 +506,6 @@ public final class SpawnersPlugin extends JavaPlugin implements Listener, TabCom
         return input == null ? "" : input.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_\\-]", "");
     }
 
-    private Material material(String input, Material fallback) {
-        try {
-            return Material.valueOf(input.toUpperCase(Locale.ROOT).replace('-', '_'));
-        } catch (IllegalArgumentException exception) {
-            return fallback;
-        }
-    }
-
     private int parseInt(String input, int fallback, int min, int max) {
         try {
             return Math.max(min, Math.min(max, Integer.parseInt(input)));
@@ -453,7 +514,7 @@ public final class SpawnersPlugin extends JavaPlugin implements Listener, TabCom
         }
     }
 
-    private record SpawnerMenu(String page, String key, String type) implements InventoryHolder {
+    private record SpawnerMenu(String key, String type) implements InventoryHolder {
         @Override
         public Inventory getInventory() {
             return null;

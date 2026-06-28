@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.1.0 Shard Banking and Proximity Spawners
+
+- Bumped the release to `1.1.0` so hosted servers can reliably update past the previously cached `1.0.22` build.
+- Reworked `MitchSMP-Spawners` into proximity-based real mob spawners: placed spawners only run while their placer is online and nearby, while still keeping a GUI for info/upgrades.
+- Added dynamic spawner support for all mob entity types, with common mobs preconfigured and every unconfigured mob falling back to global default timings, limits and upgrade costs.
+- Simplified spawner item tooltips to only show mob, level and output per hour.
+- Made spawner upgrade prices configurable per spawner type and per level, with global defaults in `plugins/MitchSMP-Spawners/spawners.properties`.
+- Added physical Shard ATMs and Shard Vaults through `/shardatm` and `/shardvault`.
+- Boss Shards can no longer be stored in normal containers, hoppers, barrels, shulkers or ender chests; players must use a Shard ATM, Shard Vault or carry them.
+- Added configurable Shard Vault detection radius so nearby enemies can receive a one-time warning when they approach a hidden vault.
+- Ensured `/skillsadmin editor` is included in the `1.1.0` build and command usage so admins can edit skill node layout/icon data from the GUI.
+
 ## 1.0.22 Spawners, OP Shop Editor and World Management
 
 - Added `MitchSMP-Spawners`, an inventory-based AFK spawner system. Placed custom spawners no longer spawn mobs; right-click opens a GUI with stored output and upgrades.

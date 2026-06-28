@@ -16,11 +16,13 @@ import nl.mitchsmp.core.storage.PropertiesFile;
 import nl.mitchsmp.core.util.Tab;
 import nl.mitchsmp.core.util.Text;
 import org.bukkit.Bukkit;
+import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.NamespacedKey;
 import org.bukkit.Particle;
 import org.bukkit.Sound;
 import org.bukkit.attribute.Attribute;
+import org.bukkit.block.Block;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
 import org.bukkit.command.TabCompleter;
@@ -30,11 +32,17 @@ import org.bukkit.entity.LivingEntity;
 import org.bukkit.entity.Player;
 import org.bukkit.event.EventHandler;
 import org.bukkit.event.Listener;
+import org.bukkit.event.block.Action;
+import org.bukkit.event.block.BlockBreakEvent;
+import org.bukkit.event.block.BlockPlaceEvent;
 import org.bukkit.event.entity.EntityDamageEvent;
 import org.bukkit.event.player.PlayerJoinEvent;
 import org.bukkit.event.entity.EntityDeathEvent;
 import org.bukkit.event.entity.EntityResurrectEvent;
 import org.bukkit.event.inventory.InventoryClickEvent;
+import org.bukkit.event.inventory.InventoryDragEvent;
+import org.bukkit.event.inventory.InventoryMoveItemEvent;
+import org.bukkit.event.player.PlayerInteractEvent;
 import org.bukkit.inventory.Inventory;
 import org.bukkit.inventory.InventoryHolder;
 import org.bukkit.inventory.ItemFlag;
@@ -50,27 +58,36 @@ public final class ArtifactsPlugin extends JavaPlugin implements Listener, TabCo
     private final Map<UUID, Long> pendingPhoenix = new HashMap<>();
     private NamespacedKey shardKey;
     private NamespacedKey phoenixKey;
+    private NamespacedKey shardAtmKey;
+    private NamespacedKey shardVaultKey;
     private PropertiesFile shopData;
+    private PropertiesFile shardData;
 
     @Override
     public void onEnable() {
         shardKey = new NamespacedKey(this, "boss_shard");
         phoenixKey = new NamespacedKey(this, "phoenix_totem");
+        shardAtmKey = new NamespacedKey(this, "shard_atm");
+        shardVaultKey = new NamespacedKey(this, "shard_vault");
         shopData = new PropertiesFile(getDataFolder().toPath().resolve("opshop.properties"));
+        shardData = new PropertiesFile(getDataFolder().toPath().resolve("shards.properties"));
         ensureShopDefaults();
+        ensureShardDefaults();
         MitchSMP.registerService(BossShardService.class, this);
         Bukkit.getPluginManager().registerEvents(this, this);
-        for (String command : List.of("opshop", "opshopadmin", "bossshards")) {
+        for (String command : List.of("opshop", "opshopadmin", "bossshards", "shardatm", "shardvault")) {
             if (getCommand(command) != null) {
                 getCommand(command).setExecutor(this);
                 getCommand(command).setTabCompleter(this);
             }
         }
+        Bukkit.getScheduler().runTaskTimer(this, this::vaultAlertTick, 100L, 200L);
     }
 
     @Override
     public void onDisable() {
         shopData.save();
+        shardData.save();
     }
 
     @Override
@@ -89,6 +106,9 @@ public final class ArtifactsPlugin extends JavaPlugin implements Listener, TabCo
         }
         if (command.getName().equalsIgnoreCase("opshopadmin")) {
             return opShopAdmin(sender, args);
+        }
+        if (command.getName().equalsIgnoreCase("shardatm") || command.getName().equalsIgnoreCase("shardvault")) {
+            return shardBlockCommand(sender, command.getName(), args);
         }
         if (!MitchSMP.permissions().has(sender, "mitchsmp.artifacts.admin")) {
             Text.msg(sender, "&cYou do not have permission.");
@@ -145,6 +165,17 @@ public final class ArtifactsPlugin extends JavaPlugin implements Listener, TabCo
                 return Tab.amounts(args[2]);
             }
         }
+        if (command.getName().equalsIgnoreCase("shardatm") || command.getName().equalsIgnoreCase("shardvault")) {
+            if (!MitchSMP.permissions().has(sender, "mitchsmp.artifacts.admin")) {
+                return List.of();
+            }
+            if (args.length == 1) {
+                return Tab.onlinePlayers(args[0]);
+            }
+            if (args.length == 2) {
+                return Tab.amounts(args[1]);
+            }
+        }
         return List.of();
     }
 
@@ -180,6 +211,156 @@ public final class ArtifactsPlugin extends JavaPlugin implements Listener, TabCo
             return;
         }
         buy(player, menu.tab(), event.getRawSlot());
+    }
+
+    @EventHandler
+    public void onShardMenuClick(InventoryClickEvent event) {
+        Inventory top = event.getView().getTopInventory();
+        if (top.getHolder() instanceof ShopMenu) {
+            return;
+        }
+        if (top.getHolder() instanceof ShardMenu menu) {
+            event.setCancelled(true);
+            if (!(event.getWhoClicked() instanceof Player player)) {
+                return;
+            }
+            switch (event.getRawSlot()) {
+                case 11 -> depositAll(player, menu);
+                case 13 -> withdraw(player, menu, 1);
+                case 15 -> withdraw(player, menu, Math.min(64, shardBalance(player, menu)));
+                case 22 -> withdraw(player, menu, shardBalance(player, menu));
+                default -> {
+                }
+            }
+            openShardStorage(player, menu.kind(), menu.key());
+            return;
+        }
+        if (clickHasShard(event) && (event.isShiftClick() || event.getRawSlot() < top.getSize())) {
+            event.setCancelled(true);
+            if (event.getWhoClicked() instanceof Player player) {
+                Text.msg(player, "&cBoss Shards cannot be stored in normal containers. Use a Shard ATM or Shard Vault.");
+            }
+        }
+    }
+
+    @EventHandler
+    public void onShardDrag(InventoryDragEvent event) {
+        Inventory top = event.getView().getTopInventory();
+        if (top.getHolder() instanceof ShardMenu || top.getHolder() instanceof ShopMenu) {
+            return;
+        }
+        if (!draggedShard(event)) {
+            return;
+        }
+        for (Integer slot : event.getRawSlots()) {
+            if (slot != null && slot < top.getSize()) {
+                event.setCancelled(true);
+                if (event.getWhoClicked() instanceof Player player) {
+                    Text.msg(player, "&cBoss Shards cannot be dragged into normal containers.");
+                }
+                return;
+            }
+        }
+    }
+
+    private boolean draggedShard(InventoryDragEvent event) {
+        try {
+            Object item = event.getClass().getMethod("getOldCursor").invoke(event);
+            return item instanceof ItemStack stack && isShard(stack);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    private boolean clickHasShard(InventoryClickEvent event) {
+        if (isShard(event.getCurrentItem())) {
+            return true;
+        }
+        try {
+            Object cursor = event.getClass().getMethod("getCursor").invoke(event);
+            return cursor instanceof ItemStack stack && isShard(stack);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return false;
+        }
+    }
+
+    @EventHandler
+    public void onShardHopperMove(InventoryMoveItemEvent event) {
+        if (isShard(event.getItem())) {
+            event.setCancelled(true);
+        }
+    }
+
+    @EventHandler
+    public void onShardBlockPlace(BlockPlaceEvent event) {
+        ItemStack hand = event.getPlayer().getInventory().getItemInMainHand();
+        if (isShardAtm(hand)) {
+            if (event.getBlock().getType() != Material.ENDER_CHEST) {
+                event.setCancelled(true);
+                Text.msg(event.getPlayer(), "&cShard ATMs must be placed as ender chests.");
+                return;
+            }
+            String key = blockKey(event.getBlock().getLocation());
+            shardData.set("block." + key + ".type", "atm");
+            shardData.set("block." + key + ".placedBy", event.getPlayer().getUniqueId().toString());
+            shardData.saveSoon(this, 20L);
+            Text.msg(event.getPlayer(), "&aShard ATM placed. Players can bank shards here.");
+            return;
+        }
+        if (isShardVault(hand)) {
+            if (event.getBlock().getType() != Material.CHEST) {
+                event.setCancelled(true);
+                Text.msg(event.getPlayer(), "&cShard Vaults must be placed as chests.");
+                return;
+            }
+            String key = blockKey(event.getBlock().getLocation());
+            shardData.set("block." + key + ".type", "vault");
+            shardData.set("block." + key + ".owner", event.getPlayer().getUniqueId().toString());
+            shardData.set("block." + key + ".ownerName", event.getPlayer().getName());
+            shardData.set("vault." + key + ".balance", 0);
+            shardData.saveSoon(this, 20L);
+            Text.msg(event.getPlayer(), "&aShard Vault placed. Warning: nearby players may detect it.");
+        }
+    }
+
+    @EventHandler
+    public void onShardBlockBreak(BlockBreakEvent event) {
+        String key = blockKey(event.getBlock().getLocation());
+        String type = shardData.getString("block." + key + ".type", "");
+        if (type.isBlank()) {
+            return;
+        }
+        try {
+            event.getClass().getMethod("setDropItems", boolean.class).invoke(event, false);
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+        }
+        if (type.equals("atm")) {
+            event.getBlock().getLocation().getWorld().dropItemNaturally(event.getBlock().getLocation(), shardAtmItem(1));
+        } else {
+            int balance = shardData.getInt("vault." + key + ".balance", 0);
+            event.getBlock().getLocation().getWorld().dropItemNaturally(event.getBlock().getLocation(), shardVaultItem(1));
+            if (balance > 0) {
+                event.getBlock().getLocation().getWorld().dropItemNaturally(event.getBlock().getLocation(), shard(balance));
+            }
+            clearVault(key);
+        }
+        clearShardBlock(key);
+        Text.msg(event.getPlayer(), "&eShard storage removed.");
+    }
+
+    @EventHandler
+    public void onShardBlockInteract(PlayerInteractEvent event) {
+        if (event.getAction() != Action.RIGHT_CLICK_BLOCK || event.getClickedBlock() == null) {
+            return;
+        }
+        Block block = event.getClickedBlock();
+        String key = blockKey(block.getLocation());
+        String type = shardData.getString("block." + key + ".type", "");
+        if (type.isBlank()) {
+            return;
+        }
+        event.setCancelled(true);
+        openShardStorage(event.getPlayer(), type, key);
     }
 
     @EventHandler
@@ -308,6 +489,194 @@ public final class ArtifactsPlugin extends JavaPlugin implements Listener, TabCo
         removeShards(player, cost);
         player.getInventory().addItem(decorateReward(reward.clone())).values().forEach(left -> player.getWorld().dropItemNaturally(player.getLocation(), left));
         Text.msg(player, "&aPurchased &f" + displayName(reward) + "&a.");
+    }
+
+    private boolean shardBlockCommand(CommandSender sender, String command, String[] args) {
+        if (!MitchSMP.permissions().has(sender, "mitchsmp.artifacts.admin")) {
+            Text.msg(sender, "&cYou do not have permission.");
+            return true;
+        }
+        Player target;
+        if (args.length >= 1) {
+            target = Bukkit.getPlayerExact(args[0]);
+            if (target == null) {
+                Text.msg(sender, "&cPlayer is not online.");
+                return true;
+            }
+        } else if (sender instanceof Player player) {
+            target = player;
+        } else {
+            Text.msg(sender, "&cUsage: /" + command + " <player> [amount]");
+            return true;
+        }
+        int amount = args.length >= 2 ? Math.max(1, parseInt(args[1], 1)) : 1;
+        ItemStack item = command.equalsIgnoreCase("shardatm") ? shardAtmItem(amount) : shardVaultItem(amount);
+        target.getInventory().addItem(item).values().forEach(left -> target.getWorld().dropItemNaturally(target.getLocation(), left));
+        Text.msg(sender, "&aGranted &f" + amount + " &a" + (command.equalsIgnoreCase("shardatm") ? "Shard ATM" : "Shard Vault") + "&a.");
+        return true;
+    }
+
+    private void openShardStorage(Player player, String kind, String key) {
+        ShardMenu holder = new ShardMenu(kind, key);
+        Inventory inventory = Bukkit.createInventory(holder, 27, Text.color(kind.equals("atm") ? "&4Shard ATM" : "&4Shard Vault"));
+        holder.inventory(inventory);
+        int balance = shardBalance(player, holder);
+        inventory.setItem(4, icon(kind.equals("atm") ? Material.ENDER_CHEST : Material.CHEST, kind.equals("atm") ? "&dShard ATM" : "&dShard Vault", List.of(
+            "&7Stored shards: &f" + balance,
+            kind.equals("atm") ? "&7Personal protected shard bank." : "&7Physical vault storage.",
+            kind.equals("vault") ? "&cNearby enemies can detect this vault." : "&7Use ATMs at risky PvP locations."
+        )));
+        inventory.setItem(11, icon(Material.NETHER_STAR, "&aDeposit all", List.of("&7Move all carried Boss Shards into storage.")));
+        inventory.setItem(13, icon(Material.PAPER, "&eWithdraw 1", List.of("&7Withdraw one Boss Shard.")));
+        inventory.setItem(15, icon(Material.EMERALD, "&eWithdraw stack", List.of("&7Withdraw up to 64 Boss Shards.")));
+        inventory.setItem(22, icon(Material.REDSTONE, "&cWithdraw all", List.of("&7Withdraw every stored Boss Shard.")));
+        player.openInventory(inventory);
+    }
+
+    private int shardBalance(Player player, ShardMenu menu) {
+        if (menu.kind().equals("atm")) {
+            return Math.max(0, shardData.getInt("bank." + player.getUniqueId(), 0));
+        }
+        return Math.max(0, shardData.getInt("vault." + menu.key() + ".balance", 0));
+    }
+
+    private void setShardBalance(Player player, ShardMenu menu, int amount) {
+        if (menu.kind().equals("atm")) {
+            shardData.set("bank." + player.getUniqueId(), Math.max(0, amount));
+        } else {
+            shardData.set("vault." + menu.key() + ".balance", Math.max(0, amount));
+        }
+        shardData.saveSoon(this, 20L);
+    }
+
+    private void depositAll(Player player, ShardMenu menu) {
+        int carried = countShards(player);
+        if (carried <= 0) {
+            Text.msg(player, "&7You are not carrying Boss Shards.");
+            return;
+        }
+        removeShards(player, carried);
+        setShardBalance(player, menu, shardBalance(player, menu) + carried);
+        Text.msg(player, "&aDeposited &f" + carried + " &aBoss Shards.");
+        player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.5F, 1.4F);
+    }
+
+    private void withdraw(Player player, ShardMenu menu, int amount) {
+        int balance = shardBalance(player, menu);
+        int take = Math.max(0, Math.min(balance, amount));
+        if (take <= 0) {
+            Text.msg(player, "&7No Boss Shards stored here.");
+            return;
+        }
+        setShardBalance(player, menu, balance - take);
+        giveShards(player, take);
+        Text.msg(player, "&aWithdrew &f" + take + " &aBoss Shards.");
+        player.playSound(player.getLocation(), Sound.ENTITY_EXPERIENCE_ORB_PICKUP, 0.5F, 1.2F);
+    }
+
+    private ItemStack shardAtmItem(int amount) {
+        ItemStack item = new ItemStack(Material.ENDER_CHEST, Math.max(1, amount));
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.setDisplayName(Text.color("&dShard ATM"));
+            meta.setLore(List.of(Text.color("&7Physical Boss Shard bank terminal."), Text.color("&7Place at PvP locations for risky banking.")));
+            meta.getPersistentDataContainer().set(shardAtmKey, PersistentDataType.BYTE, (byte) 1);
+            item.setItemMeta(meta);
+        }
+        return item;
+    }
+
+    private ItemStack shardVaultItem(int amount) {
+        ItemStack item = new ItemStack(Material.CHEST, Math.max(1, amount));
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.setDisplayName(Text.color("&dShard Vault"));
+            meta.setLore(List.of(Text.color("&7Placeable Boss Shard vault."), Text.color("&cEnemies nearby may detect it.")));
+            meta.getPersistentDataContainer().set(shardVaultKey, PersistentDataType.BYTE, (byte) 1);
+            item.setItemMeta(meta);
+        }
+        return item;
+    }
+
+    private boolean isShardAtm(ItemStack item) {
+        return item != null && item.hasItemMeta() && item.getItemMeta().getPersistentDataContainer().has(shardAtmKey, PersistentDataType.BYTE);
+    }
+
+    private boolean isShardVault(ItemStack item) {
+        return item != null && item.hasItemMeta() && item.getItemMeta().getPersistentDataContainer().has(shardVaultKey, PersistentDataType.BYTE);
+    }
+
+    private String blockKey(Location location) {
+        return location.getWorld().getName() + "." + location.getBlockX() + "." + location.getBlockY() + "." + location.getBlockZ();
+    }
+
+    private Location locationFromBlockKey(String key) {
+        String[] parts = key.split("\\.");
+        if (parts.length != 4) {
+            return null;
+        }
+        org.bukkit.World world = Bukkit.getWorld(parts[0]);
+        if (world == null) {
+            return null;
+        }
+        return new Location(world, parseInt(parts[1], 0), parseInt(parts[2], 64), parseInt(parts[3], 0));
+    }
+
+    private void clearShardBlock(String key) {
+        for (String stored : new ArrayList<>(shardData.keys())) {
+            if (stored.startsWith("block." + key + ".")) {
+                shardData.set(stored, null);
+            }
+        }
+        shardData.saveSoon(this, 20L);
+    }
+
+    private void clearVault(String key) {
+        for (String stored : new ArrayList<>(shardData.keys())) {
+            if (stored.startsWith("vault." + key + ".")) {
+                shardData.set(stored, null);
+            }
+        }
+        shardData.saveSoon(this, 20L);
+    }
+
+    private void vaultAlertTick() {
+        double radius = Math.max(1.0D, shardData.getDouble("settings.vault_alert_radius", 50.0D));
+        double radiusSquared = radius * radius;
+        for (String stored : new ArrayList<>(shardData.keys())) {
+            if (!stored.startsWith("block.") || !stored.endsWith(".type") || !shardData.getString(stored, "").equals("vault")) {
+                continue;
+            }
+            String key = stored.substring("block.".length(), stored.length() - ".type".length());
+            Location location = locationFromBlockKey(key);
+            if (location == null || location.getWorld() == null) {
+                continue;
+            }
+            String owner = shardData.getString("block." + key + ".owner", "");
+            for (Player player : Bukkit.getOnlinePlayers()) {
+                if (!player.getWorld().equals(location.getWorld()) || player.getLocation().distanceSquared(location) > radiusSquared) {
+                    continue;
+                }
+                if (player.getUniqueId().toString().equals(owner)) {
+                    continue;
+                }
+                String alertKey = "vault." + key + ".alerted." + player.getUniqueId();
+                if (Boolean.parseBoolean(shardData.getString(alertKey, "false"))) {
+                    continue;
+                }
+                shardData.set(alertKey, true);
+                Text.msg(player, "&5You sense a hidden Shard Vault nearby...");
+                player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.35F, 0.65F);
+            }
+        }
+        shardData.saveSoon(this, 40L);
+    }
+
+    private void ensureShardDefaults() {
+        if (!shardData.contains("settings.vault_alert_radius")) {
+            shardData.set("settings.vault_alert_radius", 50.0D);
+            shardData.save();
+        }
     }
 
     private ItemStack decorateReward(ItemStack item) {
@@ -901,6 +1270,34 @@ public final class ArtifactsPlugin extends JavaPlugin implements Listener, TabCo
 
         String tab() {
             return tab;
+        }
+
+        void inventory(Inventory inventory) {
+            this.inventory = inventory;
+        }
+
+        @Override
+        public Inventory getInventory() {
+            return inventory;
+        }
+    }
+
+    private static final class ShardMenu implements InventoryHolder {
+        private Inventory inventory;
+        private final String kind;
+        private final String key;
+
+        private ShardMenu(String kind, String key) {
+            this.kind = kind;
+            this.key = key;
+        }
+
+        String kind() {
+            return kind;
+        }
+
+        String key() {
+            return key;
         }
 
         void inventory(Inventory inventory) {

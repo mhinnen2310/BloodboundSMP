@@ -296,6 +296,8 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         Map.entry("bossshopadmin", "mitchsmp.artifacts.admin"),
         Map.entry("shardshopadmin", "mitchsmp.artifacts.admin"),
         Map.entry("bossshards", "mitchsmp.artifacts.admin"),
+        Map.entry("shardatm", "mitchsmp.artifacts.admin"),
+        Map.entry("shardvault", "mitchsmp.artifacts.admin"),
         Map.entry("shards", "mitchsmp.artifacts.admin"),
         Map.entry("spawner", "mitchsmp.spawners.admin"),
         Map.entry("spawners", "mitchsmp.spawners.admin"),

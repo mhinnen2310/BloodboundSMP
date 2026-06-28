@@ -14,7 +14,7 @@ commands:
   skillsadmin:
     aliases: [skilladmin, skadmin]
     description: Admin tooling for the Bloodbound skilltree.
-    usage: /skillsadmin <addxp|givepoint|points|reset|unlock|setbranch|clearbranch|debug|testgui|reload> ...
+    usage: /skillsadmin <addxp|givepoint|points|reset|unlock|setbranch|clearbranch|debug|testgui|editor|reload> ...
   anvil:
     aliases: [portableanvil]
     description: Open the Runesmith Arcane Workstation anvil if unlocked.
