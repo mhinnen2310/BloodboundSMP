@@ -9,9 +9,9 @@ Internal jar/plugin names still use `MitchSMP-*` for Paper compatibility. Player
 
 ## Release Status
 
-- Current release: `1.0.20`
+- Current release: `1.0.22`
 - Release branch: `release/1.0`
-- Stable tag: `v1.0.20`
+- Stable tag: `v1.0.22`
 - Runtime: **Java 25**
 - Server: **Paper 26.1.2**
 - Build target: **Java 25**
@@ -20,7 +20,7 @@ Do not deploy these jars on Java 21. They are built for Java 25 and will not loa
 
 ## What Is Included
 
-BloodboundSMP ships as 36 custom plugins that are designed to run together.
+BloodboundSMP ships as 37 custom plugins that are designed to run together.
 
 | Area | Systems |
 | --- | --- |

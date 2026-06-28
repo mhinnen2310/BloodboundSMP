@@ -8,6 +8,10 @@ commands:
     description: Manage Bloodbound safezones
     usage: /safezone
     aliases: [sz]
+  commandsign:
+    description: Bind a command to a protected sign.
+    usage: /commandsign <set|text|remove|info>
+    aliases: [csign]
 permissions:
   mitchsmp.safezones.admin:
     description: Manage safezones

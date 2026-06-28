@@ -51,7 +51,7 @@ public final class MitchSMPCore extends JavaPlugin implements Listener, TabCompl
         "MitchSMP-Skyblock", "MitchSMP-Performance", "MitchSMP-Artifacts", "MitchSMP-Bosses", "MitchSMP-BedWars",
         "MitchSMP-TNTRun", "MitchSMP-Spleef", "MitchSMP-Cosmetics", "MitchSMP-Events", "MitchSMP-Progression",
         "MitchSMP-Gameplay", "MitchSMP-Skirmish", "MitchSMP-Skills", "MitchSMP-EndBoss", "MitchSMP-Chat", "MitchSMP-AntiCheat",
-        "MitchSMP-Seasons", "MitchSMP-UpdateOrchestrator", "MitchSMP-CustomMobs", "MitchSMP-Safezones"
+        "MitchSMP-Seasons", "MitchSMP-UpdateOrchestrator", "MitchSMP-CustomMobs", "MitchSMP-Safezones", "MitchSMP-Spawners"
     );
     private final Map<Class<?>, Object> services = new HashMap<>();
     private CoreRankService rankService;

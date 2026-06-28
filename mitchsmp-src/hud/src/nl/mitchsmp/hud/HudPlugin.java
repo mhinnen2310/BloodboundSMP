@@ -222,6 +222,7 @@ public final class HudPlugin extends JavaPlugin implements Listener, TabComplete
             case WORLD -> "&7World:&f" + player.getWorld().getName();
             case ONLINE -> "&bOnline:&f" + Bukkit.getOnlinePlayers().size();
             case PING -> "&7Ping:&f" + ping(player);
+            case TPS -> tps(player);
             case SEASON -> "&4Season:&f#" + seasonStats.getInt("number", 1) + " " + seasonStats.getString("name", "Blood Dawn");
         };
     }
@@ -266,6 +267,18 @@ public final class HudPlugin extends JavaPlugin implements Listener, TabComplete
             return value + "ms";
         } catch (ReflectiveOperationException exception) {
             return "?";
+        }
+    }
+
+    private String tps(Player player) {
+        if (!MitchSMP.permissions().has(player, "mitchsmp.performance.staff") && !MitchSMP.permissions().has(player, "mitchsmp.essentials.admin")) {
+            return "";
+        }
+        try {
+            double[] values = (double[]) Bukkit.class.getMethod("getTPS").invoke(null);
+            return "&6TPS:&f" + String.format(Locale.US, "%.2f", Math.min(20.0D, values[0]));
+        } catch (ReflectiveOperationException | RuntimeException exception) {
+            return "";
         }
     }
 
@@ -434,6 +447,7 @@ public final class HudPlugin extends JavaPlugin implements Listener, TabComplete
         WORLD("world"),
         ONLINE("online"),
         PING("ping"),
+        TPS("tps"),
         SEASON("season");
 
         private final String key;

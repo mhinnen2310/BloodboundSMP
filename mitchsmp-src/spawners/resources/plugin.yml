@@ -1,0 +1,17 @@
+name: MitchSMP-Spawners
+version: 0.1.0
+api-version: '26.1'
+main: nl.mitchsmp.spawners.SpawnersPlugin
+author: Mitchel
+description: Inventory-based AFK spawners for BloodboundSMP.
+depend:
+  - MitchSMP-Core
+commands:
+  spawner:
+    aliases: [spawners, bspawn]
+    description: Bloodbound inventory spawners.
+    usage: /spawner <give|types|reload>
+permissions:
+  mitchsmp.spawners.admin:
+    description: Manage and give Bloodbound spawners.
+    default: op

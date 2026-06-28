@@ -343,6 +343,7 @@ Build-Module "performance" "performance" "MitchSMP-Performance-0.1.0.jar" $coreC
 Build-Module "update-orchestrator" "update-orchestrator" "MitchSMP-UpdateOrchestrator-0.1.0.jar" $coreClassPath
 Build-Module "custommobs" "custommobs" "MitchSMP-CustomMobs-0.1.0.jar" $coreClassPath
 Build-Module "safezones" "safezones" "MitchSMP-Safezones-0.1.0.jar" $coreClassPath
+Build-Module "spawners" "spawners" "MitchSMP-Spawners-0.1.0.jar" $coreClassPath
 Build-Module "artifacts" "artifacts" "MitchSMP-Artifacts-0.1.0.jar" $coreClassPath
 Build-Module "bosses" "bosses" "MitchSMP-Bosses-0.1.0.jar" $coreClassPath
 Build-Module "bedwars" "bedwars" "MitchSMP-BedWars-0.1.0.jar" $coreClassPath

@@ -47,6 +47,11 @@ public final class HubPlugin extends JavaPlugin implements Listener, TabComplete
     @Override
     public void onEnable() {
         data = new PropertiesFile(getDataFolder().toPath().resolve("hub.properties"));
+        if (!data.contains("enabled")) {
+            data.set("enabled", false);
+            data.set("note", "Legacy hub disabled. Build custom spawn worlds and protect them with MitchSMP-Safezones.");
+            data.save();
+        }
         Bukkit.getPluginManager().registerEvents(this, this);
         if (getCommand("hub") != null) {
             getCommand("hub").setExecutor(this);
@@ -57,6 +62,9 @@ public final class HubPlugin extends JavaPlugin implements Listener, TabComplete
             getCommand("protect").setTabCompleter(this);
         }
         Bukkit.getScheduler().runTaskLater(this, () -> {
+            if (!hubEnabled()) {
+                return;
+            }
             World world = hubWorld();
             if (world != null && data.getInt("layoutVersion", 0) < 2) {
                 buildHub(world);
@@ -68,6 +76,10 @@ public final class HubPlugin extends JavaPlugin implements Listener, TabComplete
     public boolean onCommand(CommandSender sender, Command command, String label, String[] args) {
         if (!(sender instanceof Player player)) {
             Text.msg(sender, "&cPlayers only.");
+            return true;
+        }
+        if (!hubEnabled()) {
+            Text.msg(sender, "&cThe legacy hub is disabled. Create a world with &f/testworld create <name> <normal|flat|void>&c, build spawn, then protect it with &f/safezone&c.");
             return true;
         }
         if (command.getName().equalsIgnoreCase("protect")) {
@@ -500,7 +512,14 @@ public final class HubPlugin extends JavaPlugin implements Listener, TabComplete
     }
 
     private World hubWorld() {
+        if (!hubEnabled()) {
+            return null;
+        }
         return loadWorld(HUB_WORLD);
+    }
+
+    private boolean hubEnabled() {
+        return Boolean.parseBoolean(data.getString("enabled", "false"));
     }
 
     private World loadWorld(String name) {

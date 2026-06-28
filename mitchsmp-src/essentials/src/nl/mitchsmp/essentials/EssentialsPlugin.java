@@ -144,7 +144,11 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         Map.entry("testworld", "mitchsmp.essentials.admin"),
         Map.entry("tworld", "mitchsmp.essentials.admin"),
         Map.entry("sandbox", "mitchsmp.essentials.admin"),
+        Map.entry("bbedit", "mitchsmp.essentials.admin"),
+        Map.entry("bbe", "mitchsmp.essentials.admin"),
         Map.entry("smpworld", "mitchsmp.owner.smpworld"),
+        Map.entry("worldmanager", "mitchsmp.owner.worldmanager"),
+        Map.entry("wm", "mitchsmp.owner.worldmanager"),
         Map.entry("ownerconfirm", "mitchsmp.owner.confirm"),
         Map.entry("serverconfig", "mitchsmp.essentials.admin"),
         Map.entry("confighelp", "mitchsmp.essentials.admin"),
@@ -183,14 +187,30 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         Map.entry("skills", "mitchsmp.skills.use"),
         Map.entry("skilltree", "mitchsmp.skills.use"),
         Map.entry("sk", "mitchsmp.skills.use"),
+        Map.entry("skillsadmin", "mitchsmp.skills.admin"),
+        Map.entry("skilladmin", "mitchsmp.skills.admin"),
+        Map.entry("skadmin", "mitchsmp.skills.admin"),
         Map.entry("abilities", "mitchsmp.skills.use"),
         Map.entry("ability", "mitchsmp.skills.use"),
         Map.entry("enchants", "mitchsmp.skills.use"),
+        Map.entry("enchant", "mitchsmp.skills.enchant"),
+        Map.entry("enchanting", "mitchsmp.skills.enchant"),
+        Map.entry("portableenchant", "mitchsmp.skills.enchant"),
+        Map.entry("anvil", "mitchsmp.skills.anvil"),
+        Map.entry("portableanvil", "mitchsmp.skills.anvil"),
         Map.entry("mechanics", "mitchsmp.skills.use"),
         Map.entry("guide", "mitchsmp.skills.use"),
         Map.entry("mguide", "mitchsmp.skills.use"),
+        Map.entry("scout", "mitchsmp.skills.use"),
+        Map.entry("markvein", "mitchsmp.skills.use"),
+        Map.entry("markv", "mitchsmp.skills.use"),
+        Map.entry("bloodrush", "mitchsmp.skills.use"),
+        Map.entry("brewboost", "mitchsmp.skills.use"),
+        Map.entry("contractboost", "mitchsmp.skills.use"),
         Map.entry("safezone", "mitchsmp.safezones.admin"),
         Map.entry("sz", "mitchsmp.safezones.admin"),
+        Map.entry("commandsign", "mitchsmp.safezones.admin"),
+        Map.entry("csign", "mitchsmp.safezones.admin"),
         Map.entry("homes", "mitchsmp.homes.use"),
         Map.entry("home", "mitchsmp.homes.use"),
         Map.entry("sethome", "mitchsmp.homes.use"),
@@ -272,8 +292,20 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         Map.entry("opshop", "mitchsmp.artifacts.use"),
         Map.entry("bossshop", "mitchsmp.artifacts.use"),
         Map.entry("shardshop", "mitchsmp.artifacts.use"),
+        Map.entry("opshopadmin", "mitchsmp.artifacts.admin"),
+        Map.entry("bossshopadmin", "mitchsmp.artifacts.admin"),
+        Map.entry("shardshopadmin", "mitchsmp.artifacts.admin"),
         Map.entry("bossshards", "mitchsmp.artifacts.admin"),
         Map.entry("shards", "mitchsmp.artifacts.admin"),
+        Map.entry("spawner", "mitchsmp.spawners.admin"),
+        Map.entry("spawners", "mitchsmp.spawners.admin"),
+        Map.entry("bspawn", "mitchsmp.spawners.admin"),
+        Map.entry("plugins", "mitchsmp.essentials.admin"),
+        Map.entry("pl", "mitchsmp.essentials.admin"),
+        Map.entry("bukkit:plugins", "mitchsmp.essentials.admin"),
+        Map.entry("bukkit:pl", "mitchsmp.essentials.admin"),
+        Map.entry("version", "mitchsmp.essentials.admin"),
+        Map.entry("ver", "mitchsmp.essentials.admin"),
         Map.entry("hub", "mitchsmp.hub.use"),
         Map.entry("serverhub", "mitchsmp.hub.use"),
         Map.entry("navigator", "mitchsmp.hub.use"),
@@ -304,6 +336,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
     private final Map<UUID, BbSelection> bbSelections = new ConcurrentHashMap<>();
     private final Map<UUID, Deque<List<BbBlockChange>>> bbUndo = new ConcurrentHashMap<>();
     private final Map<UUID, List<BbClipboardBlock>> bbClipboards = new ConcurrentHashMap<>();
+    private final Map<UUID, BbBrush> bbBrushes = new ConcurrentHashMap<>();
     private final Set<UUID> bbEditAllowed = ConcurrentHashMap.newKeySet();
     private final java.util.Random random = new java.util.Random();
     private PropertiesFile data;
@@ -316,7 +349,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         loadJails();
         loadBbEditPermissions();
         Bukkit.getPluginManager().registerEvents(this, this);
-        for (String command : List.of("spawn", "setspawn", "heal", "feed", "fly", "gamemode", "day", "night", "sun", "rain", "speed", "trash", "admin", "invsee", "enderchest", "tp", "tphere", "clearinventory", "back", "commands", "help", "menu", "noclip", "fakeores", "godtools", "freeze", "lockdown", "release", "jail", "unjail", "adminmode", "staffmode", "vanish", "model", "starterkit", "shop", "lagclear", "spawnmob", "killall", "testworld", "smpworld", "ownerconfirm", "serverconfig")) {
+        for (String command : List.of("spawn", "setspawn", "heal", "feed", "fly", "gamemode", "day", "night", "sun", "rain", "speed", "trash", "admin", "invsee", "enderchest", "tp", "tphere", "clearinventory", "back", "commands", "help", "menu", "noclip", "fakeores", "godtools", "freeze", "lockdown", "release", "jail", "unjail", "adminmode", "staffmode", "vanish", "model", "starterkit", "shop", "lagclear", "spawnmob", "killall", "testworld", "bbedit", "smpworld", "worldmanager", "ownerconfirm", "serverconfig")) {
             if (getCommand(command) != null) {
                 getCommand(command).setExecutor(this);
                 getCommand(command).setTabCompleter(this);
@@ -447,8 +480,19 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         if (name.equals("testworld")) {
             return testWorld(sender, args);
         }
+        if (name.equals("bbedit")) {
+            if (!(sender instanceof Player player)) {
+                Text.msg(sender, "&cThis command is player-only.");
+                return true;
+            }
+            bbEditCommand(player, String.join(" ", args));
+            return true;
+        }
         if (name.equals("smpworld")) {
             return smpWorld(sender, args);
+        }
+        if (name.equals("worldmanager")) {
+            return worldManager(sender, args);
         }
         if (name.equals("ownerconfirm")) {
             return ownerConfirm(sender, args);
@@ -488,14 +532,23 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         }
         if (name.equals("testworld")) {
             if (args.length == 1) {
-                return Tab.complete(args[0], "create", "join", "leave", "reset", "list");
+                return Tab.complete(args[0], "create", "join", "leave", "reset", "delete", "list");
             }
-            if (args.length == 2 && args[0].matches("(?i)join|reset")) {
+            if (args.length == 2 && args[0].matches("(?i)join|reset|delete")) {
                 return Tab.complete(args[1], testWorldNames().toArray(String[]::new));
+            }
+            if (args.length == 3 && args[0].equalsIgnoreCase("create")) {
+                return Tab.complete(args[2], "normal", "flat", "void");
             }
             if (args.length == 3 && args[0].equalsIgnoreCase("reset")) {
                 return Tab.complete(args[2], "confirm");
             }
+            if (args.length == 3 && args[0].equalsIgnoreCase("delete")) {
+                return Tab.complete(args[2], "confirm");
+            }
+        }
+        if (name.equals("bbedit")) {
+            return bbEditTabComplete(sender, args);
         }
         if (name.equals("smpworld")) {
             if (!(sender instanceof Player player) || MitchSMP.ranks().getRank(player.getUniqueId()) != MitchRank.OWNER) {
@@ -508,6 +561,26 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
                 return Tab.complete(args[2], "confirm");
             }
             if (args.length == 4 && args[0].equalsIgnoreCase("load")) {
+                return Tab.complete(args[3], "confirm");
+            }
+        }
+        if (name.equals("worldmanager")) {
+            if (!(sender instanceof Player player) || MitchSMP.ranks().getRank(player.getUniqueId()) != MitchRank.OWNER) {
+                return List.of();
+            }
+            if (args.length == 1) {
+                return Tab.complete(args[0], "create", "tp", "delete", "list", "setspawn");
+            }
+            if (args.length == 2 && args[0].matches("(?i)tp|delete|setspawn")) {
+                return Tab.complete(args[1], managedWorldNames().toArray(String[]::new));
+            }
+            if (args.length == 3 && args[0].equalsIgnoreCase("create")) {
+                return Tab.complete(args[2], "normal", "flat", "void");
+            }
+            if (args.length == 3 && args[0].equalsIgnoreCase("delete")) {
+                return Tab.complete(args[2], "confirm");
+            }
+            if (args.length == 4 && args[0].equalsIgnoreCase("delete")) {
                 return Tab.complete(args[3], "confirm");
             }
         }
@@ -3311,14 +3384,213 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         return Bukkit.getWorld(worldName);
     }
 
+    private boolean worldManager(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            Text.msg(sender, "&cPlayers only.");
+            return true;
+        }
+        if (MitchSMP.ranks().getRank(player.getUniqueId()) != MitchRank.OWNER) {
+            Text.msg(player, "&cThis command is restricted to the Owner rank.");
+            return true;
+        }
+        if (!MitchSMP.permissions().isAdminMode(player)) {
+            Text.msg(player, "&cEnter admin mode before managing server worlds.");
+            return true;
+        }
+        if (args.length == 0 || args[0].equalsIgnoreCase("list")) {
+            List<String> names = managedWorldNames();
+            Text.msg(player, names.isEmpty() ? "&7No managed worlds." : "&7Managed worlds: &f" + String.join("&7, &f", names));
+            Text.msg(player, "&7Use &f/worldmanager create <name> [normal|flat|void]&7.");
+            return true;
+        }
+        String sub = args[0].toLowerCase(Locale.ROOT);
+        if (args.length < 2) {
+            Text.msg(player, "&cUsage: /worldmanager <create|tp|delete|setspawn> <name>");
+            return true;
+        }
+        String name = safeManagedWorld(args[1]);
+        if (name.isBlank() || name.length() > 32) {
+            Text.msg(player, "&cWorld name must contain 1-32 letters, digits, dashes, or underscores.");
+            return true;
+        }
+        if (sub.equals("create")) {
+            String type = args.length >= 3 ? args[2].toLowerCase(Locale.ROOT) : "normal";
+            if (!List.of("normal", "flat", "void").contains(type)) {
+                Text.msg(player, "&cType must be normal, flat or void.");
+                return true;
+            }
+            World world = loadManagedWorld(name, type);
+            if (world == null) {
+                Text.msg(player, "&cCould not create/load that world. Check console.");
+                return true;
+            }
+            data.set("worldmanager." + name + ".world", managedWorldName(name));
+            data.set("worldmanager." + name + ".type", type);
+            data.save();
+            player.teleport(safeWorldSpawn(world));
+            Text.msg(player, "&aManaged world &f" + name + " &7(" + type + ") &ais ready.");
+            audit(player, "worldmanager-create", name + " type=" + type);
+            return true;
+        }
+        if (sub.equals("tp")) {
+            World world = loadManagedWorld(name, data.getString("worldmanager." + name + ".type", "normal"));
+            if (world == null) {
+                Text.msg(player, "&cUnknown or unloaded managed world.");
+                return true;
+            }
+            player.teleport(safeWorldSpawn(world));
+            player.setFallDistance(0.0F);
+            player.setNoDamageTicks(100);
+            Text.msg(player, "&aTeleported to managed world &f" + name + "&a.");
+            return true;
+        }
+        if (sub.equals("setspawn")) {
+            if (!player.getWorld().getName().equals(managedWorldName(name))) {
+                Text.msg(player, "&cStand inside that managed world first.");
+                return true;
+            }
+            data.set("worldmanager." + name + ".spawn", encode(player.getLocation()));
+            data.save();
+            Text.msg(player, "&aManaged world spawn saved.");
+            return true;
+        }
+        if (sub.equals("delete")) {
+            if (args.length < 4 || !args[2].equalsIgnoreCase("confirm") || !args[3].equalsIgnoreCase("confirm")) {
+                Text.msg(player, "&cThis deletes only managed world &f" + name + "&c.");
+                Text.msg(player, "&7Confirm with &f/worldmanager delete " + name + " confirm confirm");
+                return true;
+            }
+            deleteManagedWorld(player, name);
+            return true;
+        }
+        Text.msg(player, "&cUnknown worldmanager subcommand.");
+        return true;
+    }
+
+    private World loadManagedWorld(String name, String type) {
+        String worldName = managedWorldName(name);
+        World existing = Bukkit.getWorld(worldName);
+        if (existing != null) {
+            return existing;
+        }
+        try {
+            Class<?> creatorClass = Class.forName("org.bukkit.WorldCreator");
+            Constructor<?> constructor = creatorClass.getConstructor(String.class);
+            Object creator = constructor.newInstance(worldName);
+            if (type.equalsIgnoreCase("void")) {
+                creatorClass.getMethod("generator", ChunkGenerator.class).invoke(creator, new VoidChunkGenerator());
+                creatorClass.getMethod("generateStructures", boolean.class).invoke(creator, false);
+            } else {
+                creatorClass.getMethod("generateStructures", boolean.class).invoke(creator, type.equalsIgnoreCase("normal"));
+            }
+            Bukkit.class.getMethod("createWorld", creatorClass).invoke(null, creator);
+        } catch (ReflectiveOperationException exception) {
+            getLogger().warning("Could not create managed world " + worldName + ": " + exception.getMessage());
+        }
+        return Bukkit.getWorld(worldName);
+    }
+
+    private Location safeWorldSpawn(World world) {
+        Location configured = decode(data.getString("worldmanager." + shortManagedName(world.getName()) + ".spawn", ""));
+        if (configured != null) {
+            return configured;
+        }
+        if (world.getName().startsWith("bloodbound_world_") && data.getString("worldmanager." + shortManagedName(world.getName()) + ".type", "normal").equalsIgnoreCase("void")) {
+            buildManagedVoidSpawn(world);
+            return new Location(world, 0.5D, 100.0D, 0.5D);
+        }
+        Location spawn = world.getSpawnLocation();
+        Block highest = world.getHighestBlockAt(spawn.getBlockX(), spawn.getBlockZ());
+        return highest == null ? spawn : highest.getLocation().add(0.5D, 1.0D, 0.5D);
+    }
+
+    private void buildManagedVoidSpawn(World world) {
+        for (int x = -4; x <= 4; x++) {
+            for (int z = -4; z <= 4; z++) {
+                world.getBlockAt(x, 99, z).setType(Material.QUARTZ_BLOCK, false);
+            }
+        }
+    }
+
+    private void deleteManagedWorld(CommandSender sender, String name) {
+        String worldName = managedWorldName(name);
+        if (!data.contains("worldmanager." + name + ".world")) {
+            Text.msg(sender, "&cThat world is not managed by /worldmanager.");
+            return;
+        }
+        World world = Bukkit.getWorld(worldName);
+        if (world != null) {
+            for (Player online : new ArrayList<>(Bukkit.getOnlinePlayers())) {
+                if (online.getWorld().getName().equals(worldName)) {
+                    online.teleport(decode(data.getString("spawn", "")) == null ? Bukkit.getWorlds().get(0).getSpawnLocation() : decode(data.getString("spawn", "")));
+                }
+            }
+            try {
+                Bukkit.class.getMethod("unloadWorld", World.class, boolean.class).invoke(null, world, false);
+            } catch (ReflectiveOperationException exception) {
+                getLogger().warning("Could not unload managed world " + worldName + ": " + exception.getMessage());
+            }
+        }
+        deleteManagedWorldFolder(worldName);
+        for (String key : new ArrayList<>(data.keys())) {
+            if (key.startsWith("worldmanager." + name + ".")) {
+                data.set(key, null);
+            }
+        }
+        data.save();
+        Text.msg(sender, "&aManaged world &f" + name + " &ahas been deleted.");
+        audit(sender instanceof Player player ? player : null, "worldmanager-delete", name);
+    }
+
+    private List<String> managedWorldNames() {
+        List<String> names = new ArrayList<>();
+        for (String key : data.keys()) {
+            if (key.startsWith("worldmanager.") && key.endsWith(".world")) {
+                String name = key.substring("worldmanager.".length(), key.length() - ".world".length());
+                if (!names.contains(name)) {
+                    names.add(name);
+                }
+            }
+        }
+        names.sort(String::compareToIgnoreCase);
+        return names;
+    }
+
+    private String managedWorldName(String name) {
+        return "bloodbound_world_" + safeManagedWorld(name);
+    }
+
+    private String shortManagedName(String worldName) {
+        return worldName.startsWith("bloodbound_world_") ? worldName.substring("bloodbound_world_".length()) : worldName;
+    }
+
+    private String safeManagedWorld(String input) {
+        return input == null ? "" : input.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_\\-]+", "_").replaceAll("^_+|_+$", "");
+    }
+
+    private void deleteManagedWorldFolder(String worldName) {
+        Path root = Path.of(worldName).toAbsolutePath().normalize();
+        if (!root.getFileName().toString().startsWith("bloodbound_world_") || !Files.exists(root)) {
+            return;
+        }
+        try (var paths = Files.walk(root)) {
+            for (Path path : paths.sorted(Comparator.reverseOrder()).toList()) {
+                Files.deleteIfExists(path);
+            }
+        } catch (IOException exception) {
+            getLogger().warning("Could not delete managed world " + worldName + ": " + exception.getMessage());
+        }
+    }
+
     private boolean testWorld(CommandSender sender, String[] args) {
         if (!hasAdmin(sender)) {
             return true;
         }
         if (args.length == 0) {
-            Text.msg(sender, "&e/testworld create <name> &7- create sandbox world");
+            Text.msg(sender, "&e/testworld create <name> [normal|flat|void] &7- create sandbox/build world");
             Text.msg(sender, "&e/testworld join <name> &7- ga naar sandbox met losse inventory");
             Text.msg(sender, "&e/testworld reset <name> confirm &7- reset sandbox volledig");
+            Text.msg(sender, "&e/testworld delete <name> confirm &7- delete sandbox world");
             Text.msg(sender, "&e/testworld leave &7- return to your SMP state");
             Text.msg(sender, "&e/testworld list &7- toon sandboxes");
             return true;
@@ -3349,14 +3621,21 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             return true;
         }
         if (sub.equals("create")) {
+            String type = args.length >= 3 ? args[2].toLowerCase(Locale.ROOT) : "normal";
+            if (!List.of("normal", "flat", "void").contains(type)) {
+                Text.msg(sender, "&cWorld type must be normal, flat or void.");
+                return true;
+            }
+            data.set("testworld." + name + ".type", type);
             World world = loadTestWorld(name);
             if (world == null) {
                 Text.msg(sender, "&cKon testwereld niet maken.");
                 return true;
             }
             data.set("testworld." + name + ".world", TEST_WORLD_PREFIX + name);
+            data.set("testworld." + name + ".type", type);
             data.save();
-            Text.msg(sender, "&aTest world &f" + name + " &ais ready. Use &f/testworld join " + name + "&a.");
+            Text.msg(sender, "&aTest world &f" + name + " &7(" + type + ") &ais ready. Use &f/testworld join " + name + "&a.");
             audit(sender instanceof Player player ? player : null, "testworld-create", name);
             return true;
         }
@@ -3392,6 +3671,14 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             resetTestWorld(sender, name);
             return true;
         }
+        if (sub.equals("delete")) {
+            if (args.length < 3 || !args[2].equalsIgnoreCase("confirm")) {
+                Text.msg(sender, "&cConfirm delete with: &f/testworld delete " + name + " confirm");
+                return true;
+            }
+            deleteTestWorld(sender, name);
+            return true;
+        }
         Text.msg(sender, "&cUnknown testworld subcommand.");
         return true;
     }
@@ -3407,7 +3694,15 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             Class<?> creatorClass = Class.forName("org.bukkit.WorldCreator");
             Constructor<?> constructor = creatorClass.getConstructor(String.class);
             Object creator = constructor.newInstance(worldName);
-            creatorClass.getMethod("generateStructures", boolean.class).invoke(creator, true);
+            String type = data.getString("testworld." + safeTestWorld(name) + ".type", "normal").toLowerCase(Locale.ROOT);
+            if (type.equals("void")) {
+                creatorClass.getMethod("generator", ChunkGenerator.class).invoke(creator, new VoidChunkGenerator());
+                creatorClass.getMethod("generateStructures", boolean.class).invoke(creator, false);
+            } else if (type.equals("flat")) {
+                creatorClass.getMethod("generateStructures", boolean.class).invoke(creator, false);
+            } else {
+                creatorClass.getMethod("generateStructures", boolean.class).invoke(creator, true);
+            }
             Bukkit.class.getMethod("createWorld", creatorClass).invoke(null, creator);
         } catch (ReflectiveOperationException exception) {
             getLogger().warning("Could not create test world " + worldName + ": " + exception.getMessage());
@@ -3440,6 +3735,32 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         World fresh = loadTestWorld(name);
         Text.msg(sender, fresh == null ? "&cTest world reset geprobeerd, maar kon niet opnieuw laden." : "&aTest world &f" + name + " &ais volledig gereset.");
         audit(sender instanceof Player player ? player : null, "testworld-reset", name);
+    }
+
+    private void deleteTestWorld(CommandSender sender, String name) {
+        String worldName = TEST_WORLD_PREFIX + safeTestWorld(name);
+        World world = Bukkit.getWorld(worldName);
+        if (world != null) {
+            for (Player player : new ArrayList<>(Bukkit.getOnlinePlayers())) {
+                if (player.getWorld().getName().equals(worldName)) {
+                    restoreTestWorldPlayer(player, true);
+                }
+            }
+            try {
+                Bukkit.class.getMethod("unloadWorld", World.class, boolean.class).invoke(null, world, false);
+            } catch (ReflectiveOperationException exception) {
+                getLogger().warning("Could not unload test world " + worldName + ": " + exception.getMessage());
+            }
+        }
+        deleteWorldFolder(worldName);
+        for (String key : new ArrayList<>(data.keys())) {
+            if (key.startsWith("testworld." + name + ".")) {
+                data.set(key, null);
+            }
+        }
+        data.save();
+        Text.msg(sender, "&aTest world &f" + name + " &ahas been deleted.");
+        audit(sender instanceof Player player ? player : null, "testworld-delete", name);
     }
 
     private void saveTestWorldPlayer(Player player) {
@@ -4123,7 +4444,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         addMenuButton(player, holder, inventory, 3, Material.RED_BED, "&eHomes", "homes", "&7Manage your saved homes.");
         addMenuButton(player, holder, inventory, 4, Material.ENDER_CHEST, "&dTeleport Requests", "tpa", "&7Request player teleports.");
         addMenuButton(player, holder, inventory, 5, Material.WOODEN_SWORD, "&aStarter Kit", "starterkit", "&7Claim your early-game kit.");
-        addMenuButton(player, holder, inventory, 6, Material.NETHER_STAR, "&6Hub", "hub", "&7Open the server hub navigator.");
+        addMenuButton(player, holder, inventory, 6, Material.NETHER_STAR, "&6Server Spawn", "spawn", "&7Return to the protected server spawn.");
         addMenuButton(player, holder, inventory, 7, Material.COMPASS, "&6Personal Goals", "goals", "&7See your next recommended objectives.");
         addMenuButton(player, holder, inventory, 8, Material.SHIELD, "&cRecovery Kit", "recoverykit", "&7Rookie and low-heart recovery supplies.");
 
@@ -4303,6 +4624,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             case "copy" -> bbCopy(player, false);
             case "paste" -> bbPaste(player);
             case "sphere" -> bbSphere(player, args);
+            case "brush" -> bbBrush(player, args);
             case "undo" -> bbUndo(player);
             case "limit" -> {
                 if (args.length > 2 && args[1].equalsIgnoreCase("max")) {
@@ -4310,7 +4632,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
                         Text.msg(player, "&cOnly the Owner rank can change the BBEdit maximum limit.");
                         return;
                     }
-                    int maxLimit = parseInt(args[2], bbMaxLimit(), 100, 5_000_000);
+                    int maxLimit = parseInt(args[2], bbMaxLimit(), 100, 25_000_000);
                     data.set("bbedit.limit.max", maxLimit);
                     if (bbLimit() > maxLimit) {
                         data.set("bbedit.limit", maxLimit);
@@ -4328,10 +4650,116 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
                 Text.msg(player, "&4BloodboundEdit &7commands:");
                 Text.msg(player, "&f//permission <player> yes|no &7Owner only");
                 Text.msg(player, "&f//wand //pos1 //pos2 //set //replace //walls //outline");
-                Text.msg(player, "&f//copy //paste //cut //sphere //undo //limit [blocks]");
+                Text.msg(player, "&f//copy //paste //cut //sphere //brush //undo //limit [blocks]");
                 Text.msg(player, "&f//limit max <blocks> &7Owner only");
             }
         }
+    }
+
+    private List<String> bbEditTabComplete(CommandSender sender, String[] args) {
+        if (!(sender instanceof Player player)) {
+            return List.of();
+        }
+        boolean owner = MitchSMP.ranks().getRank(player.getUniqueId()) == MitchRank.OWNER;
+        boolean access = hasBbEditAccess(player);
+        if (args.length == 1) {
+            List<String> options = new ArrayList<>();
+            if (owner) {
+                options.add("permission");
+            }
+            if (access) {
+                options.addAll(List.of("wand", "pos1", "pos2", "set", "replace", "walls", "outline", "copy", "paste", "cut", "sphere", "brush", "undo", "limit"));
+            }
+            return Tab.complete(args[0], options);
+        }
+        String sub = args[0].toLowerCase(Locale.ROOT);
+        if (sub.equals("permission")) {
+            if (!owner) {
+                return List.of();
+            }
+            if (args.length == 2) {
+                return Tab.onlinePlayers(args[1]);
+            }
+            if (args.length == 3) {
+                return Tab.complete(args[2], "yes", "no");
+            }
+            return List.of();
+        }
+        if (!access) {
+            return List.of();
+        }
+        if (sub.matches("set|walls|outline|sphere")) {
+            if (args.length == 2) {
+                return materialTab(args[1]);
+            }
+            if (sub.equals("sphere") && args.length == 3) {
+                return Tab.complete(args[2], "1", "2", "3", "5", "8", "12");
+            }
+        }
+        if (sub.equals("replace")) {
+            if (args.length == 2 || args.length == 3) {
+                return materialTab(args[args.length - 1]);
+            }
+        }
+        if (sub.equals("brush")) {
+            if (args.length == 2) {
+                return Tab.complete(args[1], "sphere", "none");
+            }
+            if (args.length == 3 && args[1].equalsIgnoreCase("sphere")) {
+                return materialTab(args[2]);
+            }
+            if (args.length == 4 && args[1].equalsIgnoreCase("sphere")) {
+                return Tab.complete(args[3], "1", "2", "3", "5", "8", "12");
+            }
+        }
+        if (sub.equals("limit")) {
+            if (args.length == 2) {
+                List<String> result = new ArrayList<>(Tab.complete(args[1], "1000", "10000", "50000", "250000", "1000000"));
+                if (owner) {
+                    result.addAll(Tab.complete(args[1], "max"));
+                }
+                return result;
+            }
+            if (args.length == 3 && owner && args[1].equalsIgnoreCase("max")) {
+                return Tab.complete(args[2], "2500000", "5000000", "10000000", "25000000");
+            }
+        }
+        return List.of();
+    }
+
+    private List<String> materialTab(String input) {
+        String lower = input == null ? "" : input.toLowerCase(Locale.ROOT).replace("minecraft:", "");
+        List<String> materials = new ArrayList<>();
+        for (Material material : Material.values()) {
+            String name = material.name().toLowerCase(Locale.ROOT);
+            if (name.startsWith(lower)) {
+                materials.add(name);
+            }
+            if (materials.size() >= 80) {
+                break;
+            }
+        }
+        return materials;
+    }
+
+    private void bbBrush(Player player, String[] args) {
+        if (args.length >= 2 && args[1].equalsIgnoreCase("none")) {
+            bbBrushes.remove(player.getUniqueId());
+            Text.msg(player, "&aBBEdit brush disabled.");
+            return;
+        }
+        if (args.length < 4 || !args[1].equalsIgnoreCase("sphere")) {
+            Text.msg(player, "&cUsage: //brush sphere <material> <radius> OR //brush none");
+            return;
+        }
+        Material material = parseMaterial(args[2]);
+        int radius = parseInt(args[3], 3, 1, 12);
+        if (material == null) {
+            Text.msg(player, "&cUnknown material.");
+            return;
+        }
+        bbBrushes.put(player.getUniqueId(), new BbBrush(material, radius));
+        Text.msg(player, "&aBBEdit brush set: &f" + material.name().toLowerCase(Locale.ROOT) + " &7radius &f" + radius + "&a. Right-click blocks with the BBEdit wand.");
     }
 
     private void bbEditPermission(Player owner, String[] args) {
@@ -4373,11 +4801,43 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
             return true;
         }
         if (event.getAction() == Action.RIGHT_CLICK_BLOCK) {
+            BbBrush brush = bbBrushes.get(player.getUniqueId());
+            if (brush != null) {
+                applyBrush(player, event.getClickedBlock().getLocation(), brush);
+                return true;
+            }
             selection.pos2 = event.getClickedBlock().getLocation();
             Text.msg(player, "&aBBEdit pos2 set to &f" + shortLocation(selection.pos2));
             return true;
         }
         return true;
+    }
+
+    private void applyBrush(Player player, Location center, BbBrush brush) {
+        if (center == null || center.getWorld() == null) {
+            return;
+        }
+        int radius = brush.radius();
+        int radiusSquared = radius * radius;
+        List<BbBlockChange> changes = new ArrayList<>();
+        for (int x = -radius; x <= radius; x++) {
+            for (int y = -radius; y <= radius; y++) {
+                for (int z = -radius; z <= radius; z++) {
+                    if (x * x + y * y + z * z > radiusSquared) {
+                        continue;
+                    }
+                    Block block = center.getWorld().getBlockAt(center.getBlockX() + x, center.getBlockY() + y, center.getBlockZ() + z);
+                    if (block.getType() != brush.material()) {
+                        changes.add(new BbBlockChange(block.getLocation(), block.getType(), brush.material()));
+                    }
+                }
+            }
+        }
+        if (changes.size() > bbLimit()) {
+            Text.msg(player, "&cBrush change too large: &f" + changes.size() + " &cblocks. Limit: &f" + bbLimit());
+            return;
+        }
+        queueBbChanges(player, changes, "brush");
     }
 
     private boolean isBbEditWand(ItemStack item) {
@@ -4401,7 +4861,7 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
     }
 
     private int bbMaxLimit() {
-        return Math.max(100, data.getInt("bbedit.limit.max", 250000));
+        return Math.max(100, data.getInt("bbedit.limit.max", 2_500_000));
     }
 
     private Material parseMaterial(String input) {
@@ -4829,6 +5289,51 @@ public final class EssentialsPlugin extends JavaPlugin implements Listener, TabC
         public Location getFixedSpawnLocation(World world, java.util.Random random) {
             return new Location(world, 0.5D, 82.0D, 0.5D);
         }
+    }
+
+    private static final class VoidChunkGenerator extends ChunkGenerator {
+        @Override
+        public boolean shouldGenerateNoise() {
+            return false;
+        }
+
+        @Override
+        public boolean shouldGenerateSurface() {
+            return false;
+        }
+
+        @Override
+        public boolean shouldGenerateBedrock() {
+            return false;
+        }
+
+        @Override
+        public boolean shouldGenerateCaves() {
+            return false;
+        }
+
+        @Override
+        public boolean shouldGenerateDecorations() {
+            return false;
+        }
+
+        @Override
+        public boolean shouldGenerateMobs() {
+            return false;
+        }
+
+        @Override
+        public boolean shouldGenerateStructures() {
+            return false;
+        }
+
+        @Override
+        public Location getFixedSpawnLocation(World world, java.util.Random random) {
+            return new Location(world, 0.5D, 100.0D, 0.5D);
+        }
+    }
+
+    private record BbBrush(Material material, int radius) {
     }
 
     private static final class AdminMenu implements InventoryHolder {

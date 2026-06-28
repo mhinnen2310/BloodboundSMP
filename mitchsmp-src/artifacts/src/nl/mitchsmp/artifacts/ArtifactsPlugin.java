@@ -1,14 +1,18 @@
 package nl.mitchsmp.artifacts;
 
 import java.util.HashMap;
+import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Random;
+import java.util.Set;
 import java.util.UUID;
 
 import nl.mitchsmp.core.api.MitchSMP;
 import nl.mitchsmp.core.api.BossShardService;
+import nl.mitchsmp.core.storage.PropertiesFile;
 import nl.mitchsmp.core.util.Tab;
 import nl.mitchsmp.core.util.Text;
 import org.bukkit.Bukkit;
@@ -46,19 +50,27 @@ public final class ArtifactsPlugin extends JavaPlugin implements Listener, TabCo
     private final Map<UUID, Long> pendingPhoenix = new HashMap<>();
     private NamespacedKey shardKey;
     private NamespacedKey phoenixKey;
+    private PropertiesFile shopData;
 
     @Override
     public void onEnable() {
         shardKey = new NamespacedKey(this, "boss_shard");
         phoenixKey = new NamespacedKey(this, "phoenix_totem");
+        shopData = new PropertiesFile(getDataFolder().toPath().resolve("opshop.properties"));
+        ensureShopDefaults();
         MitchSMP.registerService(BossShardService.class, this);
         Bukkit.getPluginManager().registerEvents(this, this);
-        for (String command : List.of("opshop", "bossshards")) {
+        for (String command : List.of("opshop", "opshopadmin", "bossshards")) {
             if (getCommand(command) != null) {
                 getCommand(command).setExecutor(this);
                 getCommand(command).setTabCompleter(this);
             }
         }
+    }
+
+    @Override
+    public void onDisable() {
+        shopData.save();
     }
 
     @Override
@@ -72,8 +84,11 @@ public final class ArtifactsPlugin extends JavaPlugin implements Listener, TabCo
                 Text.msg(player, "&cYou do not have permission.");
                 return true;
             }
-            openShop(player);
+            openShop(player, args.length >= 1 ? args[0] : firstTab());
             return true;
+        }
+        if (command.getName().equalsIgnoreCase("opshopadmin")) {
+            return opShopAdmin(sender, args);
         }
         if (!MitchSMP.permissions().has(sender, "mitchsmp.artifacts.admin")) {
             Text.msg(sender, "&cYou do not have permission.");
@@ -96,6 +111,29 @@ public final class ArtifactsPlugin extends JavaPlugin implements Listener, TabCo
 
     @Override
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
+        if (command.getName().equalsIgnoreCase("opshop")) {
+            return args.length == 1 ? Tab.complete(args[0], shopTabs()) : List.of();
+        }
+        if (command.getName().equalsIgnoreCase("opshopadmin")) {
+            if (!MitchSMP.permissions().has(sender, "mitchsmp.artifacts.admin")) {
+                return List.of();
+            }
+            if (args.length == 1) {
+                return Tab.complete(args[0], "tab", "set", "remove", "reload", "list");
+            }
+            if (args.length == 2 && args[0].equalsIgnoreCase("tab")) {
+                return Tab.complete(args[1], "add", "remove", "list");
+            }
+            if (args.length == 2 && args[0].matches("(?i)set|remove")) {
+                return Tab.complete(args[1], shopTabs());
+            }
+            if (args.length == 3 && args[0].equalsIgnoreCase("tab") && args[1].equalsIgnoreCase("remove")) {
+                return Tab.complete(args[2], shopTabs());
+            }
+            if (args.length == 4 && args[0].equalsIgnoreCase("set")) {
+                return Tab.complete(args[3], "1", "2", "4", "8", "16", "24");
+            }
+        }
         if (command.getName().equalsIgnoreCase("bossshards")) {
             if (args.length == 1) {
                 return Tab.complete(args[0], "give");
@@ -133,11 +171,15 @@ public final class ArtifactsPlugin extends JavaPlugin implements Listener, TabCo
         if (!(event.getWhoClicked() instanceof Player player)) {
             return;
         }
-        ShopItem item = shopItem(event.getRawSlot());
-        if (item == null) {
+        ShopMenu menu = (ShopMenu) top.getHolder();
+        if (event.getRawSlot() >= 0 && event.getRawSlot() < 9) {
+            String tab = tabAtSlot(event.getRawSlot());
+            if (tab != null) {
+                openShop(player, tab);
+            }
             return;
         }
-        buy(player, item);
+        buy(player, menu.tab(), event.getRawSlot());
     }
 
     @EventHandler
@@ -179,17 +221,31 @@ public final class ArtifactsPlugin extends JavaPlugin implements Listener, TabCo
         return random.nextDouble() <= chance ? 1 : 0;
     }
 
-    private void openShop(Player player) {
-        ShopMenu holder = new ShopMenu();
-        Inventory inventory = Bukkit.createInventory(holder, 54, Text.color("&8Boss Shard Shop"));
+    private void openShop(Player player, String requestedTab) {
+        String tab = shopTabs().contains(normalize(requestedTab)) ? normalize(requestedTab) : firstTab();
+        ShopMenu holder = new ShopMenu(tab);
+        Inventory inventory = Bukkit.createInventory(holder, 54, Text.color("&8Boss Shard Shop &7- &f" + tabDisplay(tab)));
         holder.inventory(inventory);
         inventory.setItem(4, shopInfo(player));
-        inventory.setItem(9, tierInfo("&aPro Tier", "&73-6 shards, sterke starter OP gear."));
-        inventory.setItem(18, tierInfo("&bElite Tier", "&78-13 shards, high-end PVP gear."));
-        inventory.setItem(27, tierInfo("&6God Tier", "&716-26 shards, boven vanilla max."));
-        inventory.setItem(36, tierInfo("&dSpecials", "&7Phoenix en mobility items."));
-        for (ShopItem item : ShopItem.values()) {
-            inventory.setItem(item.slot(), shopIcon(item));
+        for (String shopTab : shopTabs()) {
+            int slot = tabSlot(shopTab);
+            if (slot >= 0 && slot < 9) {
+                inventory.setItem(slot, icon(tabIcon(shopTab), (shopTab.equals(tab) ? "&a" : "&7") + tabDisplay(shopTab), List.of("&7Click to open this tab.")));
+            }
+        }
+        for (String key : shopData.keys()) {
+            String prefix = "tabs." + tab + ".slots.";
+            if (!key.startsWith(prefix) || !key.endsWith(".item")) {
+                continue;
+            }
+            int slot = parseInt(key.substring(prefix.length(), key.length() - ".item".length()), -1);
+            if (slot < 9 || slot >= 54) {
+                continue;
+            }
+            ItemStack item = decodeItem(shopData.getString(key, ""));
+            if (item != null) {
+                inventory.setItem(slot, shopIcon(tab, slot, item));
+            }
         }
         player.openInventory(inventory);
     }
@@ -216,16 +272,13 @@ public final class ArtifactsPlugin extends JavaPlugin implements Listener, TabCo
         return item;
     }
 
-    private ItemStack shopIcon(ShopItem shopItem) {
-        ItemStack item = shopItem.icon();
+    private ItemStack shopIcon(String tab, int slot, ItemStack source) {
+        ItemStack item = source.clone();
         ItemMeta meta = item.getItemMeta();
         if (meta != null) {
-            List<String> lore = new java.util.ArrayList<>();
-            lore.add(Text.color("&7Tier: &f" + shopItem.tier()));
-            lore.add(Text.color("&7Cost: &d" + shopItem.cost() + " Boss Shards"));
-            if (shopItem == ShopItem.PHOENIX_TOTEM) {
-                lore.add(Text.color("&6Trigger: lethal damage, like a normal totem."));
-            }
+            List<String> lore = meta.getLore() != null ? new ArrayList<>(meta.getLore()) : new ArrayList<>();
+            lore.add(Text.color("&8"));
+            lore.add(Text.color("&7Cost: &d" + shopCost(tab, slot) + " Boss Shards"));
             lore.add(Text.color("&eClick to buy."));
             meta.setLore(lore);
             item.setItemMeta(meta);
@@ -242,26 +295,27 @@ public final class ArtifactsPlugin extends JavaPlugin implements Listener, TabCo
         return null;
     }
 
-    private void buy(Player player, ShopItem shopItem) {
-        if (countShards(player) < shopItem.cost()) {
-            Text.msg(player, "&cJe hebt &f" + shopItem.cost() + " &cBoss Shards nodig.");
+    private void buy(Player player, String tab, int slot) {
+        ItemStack reward = decodeItem(shopData.getString("tabs." + tab + ".slots." + slot + ".item", ""));
+        if (reward == null) {
             return;
         }
-        removeShards(player, shopItem.cost());
-        player.getInventory().addItem(rewardItems(shopItem)).values().forEach(left -> player.getWorld().dropItemNaturally(player.getLocation(), left));
-        Text.msg(player, "&aGekocht: &f" + shopItem.displayName() + "&a.");
-    }
-
-    private ItemStack[] rewardItems(ShopItem shopItem) {
-        ItemStack[] items = shopItem.items();
-        for (int index = 0; index < items.length; index++) {
-            items[index] = decorateReward(items[index], shopItem);
+        int cost = shopCost(tab, slot);
+        if (countShards(player) < cost) {
+            Text.msg(player, "&cYou need &f" + cost + " &cBoss Shards.");
+            return;
         }
-        return items;
+        removeShards(player, cost);
+        player.getInventory().addItem(decorateReward(reward.clone())).values().forEach(left -> player.getWorld().dropItemNaturally(player.getLocation(), left));
+        Text.msg(player, "&aPurchased &f" + displayName(reward) + "&a.");
     }
 
-    private ItemStack decorateReward(ItemStack item, ShopItem shopItem) {
-        if (shopItem != ShopItem.PHOENIX_TOTEM) {
+    private ItemStack decorateReward(ItemStack item) {
+        if (item == null || item.getType() != Material.TOTEM_OF_UNDYING) {
+            return item;
+        }
+        String plain = displayName(item).toLowerCase(Locale.ROOT);
+        if (!plain.contains("phoenix")) {
             return item;
         }
         ItemMeta meta = item.getItemMeta();
@@ -430,6 +484,251 @@ public final class ArtifactsPlugin extends JavaPlugin implements Listener, TabCo
         }
     }
 
+    private boolean opShopAdmin(CommandSender sender, String[] args) {
+        if (!MitchSMP.permissions().has(sender, "mitchsmp.artifacts.admin")) {
+            Text.msg(sender, "&cYou do not have permission.");
+            return true;
+        }
+        if (args.length == 0 || args[0].equalsIgnoreCase("list")) {
+            Text.msg(sender, "&7Tabs: &f" + String.join("&7, &f", shopTabs()));
+            Text.msg(sender, "&7Use &f/opshopadmin set <tab> <slot> <cost> [display] &7with an item in hand.");
+            return true;
+        }
+        if (args[0].equalsIgnoreCase("reload")) {
+            shopData.load();
+            ensureShopDefaults();
+            Text.msg(sender, "&aOP shop config reloaded.");
+            return true;
+        }
+        if (args[0].equalsIgnoreCase("tab")) {
+            return opShopAdminTab(sender, args);
+        }
+        if (args[0].equalsIgnoreCase("remove")) {
+            if (args.length < 3) {
+                Text.msg(sender, "&cUsage: /opshopadmin remove <tab> <slot>");
+                return true;
+            }
+            String tab = normalize(args[1]);
+            int slot = parseInt(args[2], -1);
+            shopData.set("tabs." + tab + ".slots." + slot + ".item", null);
+            shopData.set("tabs." + tab + ".slots." + slot + ".cost", null);
+            shopData.save();
+            Text.msg(sender, "&aRemoved shop slot &f" + slot + " &afrom tab &f" + tab + "&a.");
+            return true;
+        }
+        if (!args[0].equalsIgnoreCase("set") || args.length < 4) {
+            Text.msg(sender, "&cUsage: /opshopadmin set <tab> <slot> <cost> [display]");
+            return true;
+        }
+        if (!(sender instanceof Player player)) {
+            Text.msg(sender, "&cPlayers only for setting items.");
+            return true;
+        }
+        ItemStack hand = player.getInventory().getItemInMainHand();
+        if (hand == null || hand.getType() == Material.AIR) {
+            Text.msg(player, "&cHold the shop reward item in your main hand.");
+            return true;
+        }
+        String tab = normalize(args[1]);
+        if (!shopTabs().contains(tab)) {
+            Text.msg(player, "&cUnknown tab. Add it first with &f/opshopadmin tab add " + tab + " <display>&c.");
+            return true;
+        }
+        int slot = parseInt(args[2], -1);
+        if (slot < 9 || slot >= 54) {
+            Text.msg(player, "&cSlot must be 9-53. The top row is reserved for tabs.");
+            return true;
+        }
+        int cost = Math.max(0, parseInt(args[3], 0));
+        ItemStack stored = hand.clone();
+        if (args.length >= 5) {
+            ItemMeta meta = stored.getItemMeta();
+            if (meta != null) {
+                meta.setDisplayName(Text.color(String.join(" ", java.util.Arrays.copyOfRange(args, 4, args.length))));
+                stored.setItemMeta(meta);
+            }
+        }
+        shopData.set("tabs." + tab + ".slots." + slot + ".item", encodeItem(stored));
+        shopData.set("tabs." + tab + ".slots." + slot + ".cost", cost);
+        shopData.save();
+        Text.msg(player, "&aSaved &f" + displayName(stored) + " &ain tab &f" + tab + " &aslot &f" + slot + " &afor &d" + cost + " shards&a.");
+        return true;
+    }
+
+    private boolean opShopAdminTab(CommandSender sender, String[] args) {
+        if (args.length < 2 || args[1].equalsIgnoreCase("list")) {
+            Text.msg(sender, "&7Tabs: &f" + String.join("&7, &f", shopTabs()));
+            return true;
+        }
+        if (args[1].equalsIgnoreCase("add")) {
+            if (args.length < 3) {
+                Text.msg(sender, "&cUsage: /opshopadmin tab add <id> [display]");
+                return true;
+            }
+            String tab = normalize(args[2]);
+            if (tab.isBlank()) {
+                Text.msg(sender, "&cInvalid tab id.");
+                return true;
+            }
+            String display = args.length >= 4 ? String.join(" ", java.util.Arrays.copyOfRange(args, 3, args.length)) : tabDisplay(tab);
+            shopData.set("tabs." + tab + ".display", display);
+            shopData.set("tabs." + tab + ".slot", nextTabSlot());
+            shopData.set("tabs." + tab + ".icon", Material.NETHER_STAR.name());
+            shopData.save();
+            Text.msg(sender, "&aAdded OP shop tab &f" + tab + "&a.");
+            return true;
+        }
+        if (args[1].equalsIgnoreCase("remove")) {
+            if (args.length < 3) {
+                Text.msg(sender, "&cUsage: /opshopadmin tab remove <id>");
+                return true;
+            }
+            String tab = normalize(args[2]);
+            for (String key : new ArrayList<>(shopData.keys())) {
+                if (key.startsWith("tabs." + tab + ".")) {
+                    shopData.set(key, null);
+                }
+            }
+            shopData.save();
+            Text.msg(sender, "&aRemoved OP shop tab &f" + tab + "&a.");
+            return true;
+        }
+        Text.msg(sender, "&cUsage: /opshopadmin tab <add|remove|list>");
+        return true;
+    }
+
+    private void ensureShopDefaults() {
+        if (!shopData.keys().stream().noneMatch(key -> key.startsWith("tabs."))) {
+            return;
+        }
+        addDefaultTab("pro", "&aPro", Material.DIAMOND_SWORD, 0);
+        addDefaultTab("elite", "&bElite", Material.NETHERITE_SWORD, 1);
+        addDefaultTab("god", "&6God", Material.NETHERITE_CHESTPLATE, 2);
+        addDefaultTab("special", "&dSpecials", Material.TOTEM_OF_UNDYING, 3);
+        for (ShopItem item : ShopItem.values()) {
+            String tab = item.tier().toLowerCase(Locale.ROOT);
+            setDefaultShopItem(tab, item.slot(), item.cost(), decorateReward(item.single()));
+        }
+        shopData.save();
+    }
+
+    private void addDefaultTab(String tab, String display, Material icon, int slot) {
+        shopData.set("tabs." + tab + ".display", display);
+        shopData.set("tabs." + tab + ".icon", icon.name());
+        shopData.set("tabs." + tab + ".slot", slot);
+    }
+
+    private void setDefaultShopItem(String tab, int slot, int cost, ItemStack item) {
+        shopData.set("tabs." + tab + ".slots." + slot + ".item", encodeItem(item));
+        shopData.set("tabs." + tab + ".slots." + slot + ".cost", cost);
+    }
+
+    private List<String> shopTabs() {
+        List<String> tabs = new ArrayList<>();
+        for (String key : shopData.keys()) {
+            if (key.startsWith("tabs.") && key.endsWith(".display")) {
+                String tab = key.substring("tabs.".length(), key.length() - ".display".length());
+                if (!tabs.contains(tab)) {
+                    tabs.add(tab);
+                }
+            }
+        }
+        tabs.sort(java.util.Comparator.comparingInt(this::tabSlot).thenComparing(String::compareToIgnoreCase));
+        return tabs;
+    }
+
+    private String firstTab() {
+        List<String> tabs = shopTabs();
+        return tabs.isEmpty() ? "pro" : tabs.get(0);
+    }
+
+    private int tabSlot(String tab) {
+        return shopData.getInt("tabs." + tab + ".slot", 0);
+    }
+
+    private int nextTabSlot() {
+        Set<Integer> used = new java.util.HashSet<>();
+        for (String tab : shopTabs()) {
+            used.add(tabSlot(tab));
+        }
+        for (int slot = 0; slot < 9; slot++) {
+            if (!used.contains(slot)) {
+                return slot;
+            }
+        }
+        return 8;
+    }
+
+    private String tabAtSlot(int slot) {
+        for (String tab : shopTabs()) {
+            if (tabSlot(tab) == slot) {
+                return tab;
+            }
+        }
+        return null;
+    }
+
+    private String tabDisplay(String tab) {
+        return Text.color(shopData.getString("tabs." + tab + ".display", tab));
+    }
+
+    private Material tabIcon(String tab) {
+        return material(shopData.getString("tabs." + tab + ".icon", "NETHER_STAR"), Material.NETHER_STAR);
+    }
+
+    private int shopCost(String tab, int slot) {
+        return Math.max(0, shopData.getInt("tabs." + tab + ".slots." + slot + ".cost", 1));
+    }
+
+    private ItemStack icon(Material material, String name, List<String> lore) {
+        ItemStack item = new ItemStack(material);
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.setDisplayName(Text.color(name));
+            meta.setLore(lore.stream().map(Text::color).toList());
+            item.setItemMeta(meta);
+        }
+        return item;
+    }
+
+    private String displayName(ItemStack item) {
+        if (item == null) {
+            return "Item";
+        }
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null && meta.hasDisplayName()) {
+            return Text.stripColorCodes(meta.getDisplayName());
+        }
+        return item.getType().name().toLowerCase(Locale.ROOT).replace('_', ' ');
+    }
+
+    private String encodeItem(ItemStack item) {
+        return Base64.getEncoder().encodeToString(item.serializeAsBytes());
+    }
+
+    private ItemStack decodeItem(String encoded) {
+        if (encoded == null || encoded.isBlank()) {
+            return null;
+        }
+        try {
+            return ItemStack.deserializeBytes(Base64.getDecoder().decode(encoded));
+        } catch (IllegalArgumentException exception) {
+            return null;
+        }
+    }
+
+    private Material material(String input, Material fallback) {
+        try {
+            return Material.valueOf(input.toUpperCase(Locale.ROOT).replace('-', '_'));
+        } catch (IllegalArgumentException exception) {
+            return fallback;
+        }
+    }
+
+    private String normalize(String input) {
+        return input == null ? "" : input.toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_\\-]", "");
+    }
+
     private enum ShopItem {
         PRO_SWORD("&aPro Sword", 4, Material.DIAMOND_SWORD, GearType.SWORD, "Pro", 10, 4),
         PRO_AXE("&aPro Axe", 4, Material.DIAMOND_AXE, GearType.AXE, "Pro", 11, 4),
@@ -594,6 +893,15 @@ public final class ArtifactsPlugin extends JavaPlugin implements Listener, TabCo
 
     private static final class ShopMenu implements InventoryHolder {
         private Inventory inventory;
+        private final String tab;
+
+        private ShopMenu(String tab) {
+            this.tab = tab;
+        }
+
+        String tab() {
+            return tab;
+        }
 
         void inventory(Inventory inventory) {
             this.inventory = inventory;

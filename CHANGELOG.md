@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.22 Spawners, OP Shop Editor and World Management
+
+- Added `MitchSMP-Spawners`, an inventory-based AFK spawner system. Placed custom spawners no longer spawn mobs; right-click opens a GUI with stored output and upgrades.
+- Added configurable spawner types in `plugins/MitchSMP-Spawners/spawners.properties`, including output material, interval, capacity, max level and per-level upgrade costs.
+- Added `/spawner give <player> <type> [level]`, `/spawner types` and `/spawner reload` for staff-managed shop distribution.
+- Made `/plugins`, `/pl`, Bukkit plugin aliases and version commands hidden/blocked from non-staff command visibility.
+- Added `/opshopadmin` so staff can add/remove OP shop tabs, place the held item into a specific slot, set Boss Shard costs and reload the shop config.
+- Converted `/opshop` to a tabbed, config-backed Boss Shard shop while preserving the existing Pro, Elite, God and Specials defaults on first boot.
+- Added `/enchant <enchantment> <level>` for admins to apply vanilla enchantments, including above-normal levels, to the item in hand. The existing portable `/enchant` UI remains available when no enchant arguments are given.
+- Added `/worldmanager` for non-test managed worlds, including normal/flat/void creation, teleporting, spawn setting and double-confirm deletion.
+
 ## 1.0.21 Skilltree Icons, MOTD Controls and EndBoss Config Polish
 
 - Added chat-editable Bloodbound MOTD controls with `/motd show`, `/motd set 1`, `/motd set 2`, `/motd frames` and `/motd reload`.

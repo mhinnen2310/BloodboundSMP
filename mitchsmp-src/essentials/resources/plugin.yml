@@ -141,11 +141,19 @@ commands:
     usage: /killall
   testworld:
     aliases: [tworld, sandbox]
-    description: Create, join and reset isolated staff test worlds.
-    usage: /testworld <create|join|leave|reset|list>
+    description: Create, join, reset and delete isolated staff test worlds.
+    usage: /testworld <create|join|leave|reset|delete|list>
+  bbedit:
+    aliases: [bbe]
+    description: Owner-approved Bloodbound world editing tools with selection, brush and undo.
+    usage: /bbedit <permission|wand|set|replace|walls|outline|brush|undo|limit>
   smpworld:
     description: Owner-only creation and activation of a new SMP wilderness world.
     usage: /smpworld <load <name> [confirm confirm]|active>
+  worldmanager:
+    aliases: [wm]
+    description: Create, teleport to and delete managed non-test worlds.
+    usage: /worldmanager <create|tp|delete|setspawn|list>
   ownerconfirm:
     description: Permanently bind the staff audit to the current Owner UUID.
     usage: /ownerconfirm confirm

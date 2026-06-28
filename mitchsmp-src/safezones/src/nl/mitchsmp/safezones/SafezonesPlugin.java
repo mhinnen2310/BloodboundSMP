@@ -3,9 +3,11 @@ package nl.mitchsmp.safezones;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 
 import nl.mitchsmp.core.api.MitchSMP;
@@ -16,6 +18,7 @@ import org.bukkit.Bukkit;
 import org.bukkit.Location;
 import org.bukkit.Material;
 import org.bukkit.World;
+import org.bukkit.attribute.Attribute;
 import org.bukkit.block.Block;
 import org.bukkit.command.Command;
 import org.bukkit.command.CommandSender;
@@ -56,6 +59,11 @@ public final class SafezonesPlugin extends JavaPlugin implements Listener, TabCo
             getCommand("safezone").setExecutor(this);
             getCommand("safezone").setTabCompleter(this);
         }
+        if (getCommand("commandsign") != null) {
+            getCommand("commandsign").setExecutor(this);
+            getCommand("commandsign").setTabCompleter(this);
+        }
+        Bukkit.getScheduler().runTaskTimer(this, this::tickZoneEffects, 100L, 100L);
         getLogger().info("Loaded " + zones.size() + " Bloodbound safezones.");
     }
 
@@ -69,6 +77,9 @@ public final class SafezonesPlugin extends JavaPlugin implements Listener, TabCo
         if (args.length == 0) {
             help(sender);
             return true;
+        }
+        if (command.getName().equalsIgnoreCase("commandsign")) {
+            return commandSign(sender, args);
         }
         String sub = args[0].toLowerCase(Locale.ROOT);
         if (sub.equals("list")) {
@@ -94,6 +105,7 @@ public final class SafezonesPlugin extends JavaPlugin implements Listener, TabCo
             case "create" -> create((Player) sender, args);
             case "delete", "remove" -> delete(sender, args);
             case "flag" -> flag(sender, args);
+            case "allow" -> allow(sender, args);
             case "tp" -> teleport((Player) sender, args);
             case "reload" -> {
                 loadZones();
@@ -108,17 +120,35 @@ public final class SafezonesPlugin extends JavaPlugin implements Listener, TabCo
     public List<String> onTabComplete(CommandSender sender, Command command, String alias, String[] args) {
         boolean admin = isAdmin(sender);
         if (args.length == 1) {
+            if (command.getName().equalsIgnoreCase("commandsign")) {
+                return isAdmin(sender) ? Tab.complete(args[0], "set", "text", "remove", "info") : List.of();
+            }
             List<String> base = new ArrayList<>(List.of("list", "info"));
             if (admin) {
-                base.addAll(List.of("wand", "pos1", "pos2", "create", "delete", "flag", "tp", "reload"));
+                base.addAll(List.of("wand", "pos1", "pos2", "create", "delete", "flag", "allow", "tp", "reload"));
             }
             return Tab.complete(args[0], base);
+        }
+        if (command.getName().equalsIgnoreCase("commandsign")) {
+            if (!admin) {
+                return List.of();
+            }
+            if (args.length == 2 && args[0].equalsIgnoreCase("text")) {
+                return Tab.complete(args[1], "1", "2", "3", "4");
+            }
+            return List.of();
         }
         if (args.length == 2 && List.of("info", "delete", "remove", "flag", "tp").contains(args[0].toLowerCase(Locale.ROOT))) {
             return Tab.complete(args[1], zones.keySet());
         }
+        if (args.length == 2 && args[0].equalsIgnoreCase("allow")) {
+            return Tab.onlinePlayers(args[1]);
+        }
+        if (args.length == 3 && args[0].equalsIgnoreCase("allow")) {
+            return Tab.complete(args[2], zones.keySet());
+        }
         if (args.length == 3 && args[0].equalsIgnoreCase("flag")) {
-            return Tab.complete(args[2], "pvp", "mobspawn", "hunger", "build", "explosions", "fall_damage", "hostile_damage");
+            return Tab.complete(args[2], "pvp", "mobspawn", "hunger", "build", "explosions", "fall_damage", "hostile_damage", "healing", "fixed_day");
         }
         if (args.length == 4 && args[0].equalsIgnoreCase("flag")) {
             return Tab.complete(args[3], "true", "false");
@@ -128,6 +158,9 @@ public final class SafezonesPlugin extends JavaPlugin implements Listener, TabCo
 
     @EventHandler
     public void onInteract(PlayerInteractEvent event) {
+        if (handleCommandSignClick(event)) {
+            return;
+        }
         if (!isAdmin(event.getPlayer()) || !isWand(event.getItem()) || event.getClickedBlock() == null) {
             return;
         }
@@ -218,7 +251,7 @@ public final class SafezonesPlugin extends JavaPlugin implements Listener, TabCo
     @EventHandler
     public void onBreak(BlockBreakEvent event) {
         Safezone zone = zoneAt(event.getBlock().getLocation());
-        if (zone != null && !zone.flag("build") && !isAdmin(event.getPlayer())) {
+        if (zone != null && !zone.flag("build") && !canBuild(event.getPlayer(), zone)) {
             event.setCancelled(true);
             Text.msg(event.getPlayer(), "&cThis safezone is protected.");
         }
@@ -227,7 +260,7 @@ public final class SafezonesPlugin extends JavaPlugin implements Listener, TabCo
     @EventHandler
     public void onPlace(BlockPlaceEvent event) {
         Safezone zone = zoneAt(event.getBlock().getLocation());
-        if (zone != null && !zone.flag("build") && !isAdmin(event.getPlayer())) {
+        if (zone != null && !zone.flag("build") && !canBuild(event.getPlayer(), zone)) {
             event.setCancelled(true);
             Text.msg(event.getPlayer(), "&cThis safezone is protected.");
         }
@@ -267,7 +300,9 @@ public final class SafezonesPlugin extends JavaPlugin implements Listener, TabCo
         Text.msg(sender, "&7/safezone info [id] &8- &finspect current/selected zone");
         if (isAdmin(sender)) {
             Text.msg(sender, "&7/safezone wand, pos1, pos2, create <id>, delete <id>");
-            Text.msg(sender, "&7/safezone flag <id> <pvp|mobspawn|hunger|build|explosions|fall_damage|hostile_damage> <true|false>");
+            Text.msg(sender, "&7/safezone flag <id> <flag> <true|false>");
+            Text.msg(sender, "&7/safezone allow <player> <id> [true|false]");
+            Text.msg(sender, "&7/commandsign set <command>, text <line> <text>, remove, info");
         }
     }
 
@@ -287,7 +322,8 @@ public final class SafezonesPlugin extends JavaPlugin implements Listener, TabCo
         }
         Text.msg(sender, "&6Safezone &f" + zone.id() + " &7in &f" + zone.world());
         Text.msg(sender, "&7Bounds: &f" + zone.minX() + "," + zone.minY() + "," + zone.minZ() + " &7to &f" + zone.maxX() + "," + zone.maxY() + "," + zone.maxZ());
-        Text.msg(sender, "&7Flags: &fpvp=" + zone.flag("pvp") + " mobspawn=" + zone.flag("mobspawn") + " hunger=" + zone.flag("hunger") + " build=" + zone.flag("build") + " explosions=" + zone.flag("explosions") + " fall_damage=" + zone.flag("fall_damage") + " hostile_damage=" + zone.flag("hostile_damage"));
+        Text.msg(sender, "&7Flags: &fpvp=" + zone.flag("pvp") + " mobspawn=" + zone.flag("mobspawn") + " hunger=" + zone.flag("hunger") + " build=" + zone.flag("build") + " healing=" + zone.flag("healing") + " fixed_day=" + zone.flag("fixed_day"));
+        Text.msg(sender, "&7Allowed builders: &f" + (zone.allowed().isEmpty() ? "none" : String.join(", ", zone.allowed())));
     }
 
     private void wand(Player player) {
@@ -329,7 +365,7 @@ public final class SafezonesPlugin extends JavaPlugin implements Listener, TabCo
         Safezone zone = new Safezone(id, a.getWorld().getName(),
             Math.min(a.getBlockX(), b.getBlockX()), Math.min(a.getBlockY(), b.getBlockY()), Math.min(a.getBlockZ(), b.getBlockZ()),
             Math.max(a.getBlockX(), b.getBlockX()), Math.max(a.getBlockY(), b.getBlockY()), Math.max(a.getBlockZ(), b.getBlockZ()),
-            flags);
+            flags, new HashSet<>());
         zones.put(id, zone);
         saveZones();
         Text.msg(player, "&aSafezone created: &f" + id);
@@ -369,6 +405,27 @@ public final class SafezonesPlugin extends JavaPlugin implements Listener, TabCo
         Text.msg(sender, "&aSafezone flag updated: &f" + zone.id() + " " + flag + "=" + zone.flag(flag));
     }
 
+    private void allow(CommandSender sender, String[] args) {
+        if (args.length < 3) {
+            Text.msg(sender, "&cUsage: /safezone allow <player> <safezone> [true|false]");
+            return;
+        }
+        String playerName = normalize(args[1]);
+        Safezone zone = zones.get(normalize(args[2]));
+        if (playerName.isBlank() || zone == null) {
+            Text.msg(sender, "&cPlayer or safezone not found.");
+            return;
+        }
+        boolean allow = args.length < 4 || Boolean.parseBoolean(args[3]);
+        if (allow) {
+            zone.allowed().add(playerName);
+        } else {
+            zone.allowed().remove(playerName);
+        }
+        saveZones();
+        Text.msg(sender, "&aSafezone build access for &f" + playerName + " &ain &f" + zone.id() + " &ais now &f" + allow);
+    }
+
     private void teleport(Player player, String[] args) {
         if (args.length < 2) {
             Text.msg(player, "&cUsage: /safezone tp <id>");
@@ -394,10 +451,18 @@ public final class SafezonesPlugin extends JavaPlugin implements Listener, TabCo
             for (String flag : flags.keySet()) {
                 flags.put(flag, Boolean.parseBoolean(data.getString("zone." + id + ".flag." + flag, String.valueOf(flags.get(flag)))));
             }
+            Set<String> allowed = new HashSet<>();
+            String rawAllowed = data.getString("zone." + id + ".allowed", "");
+            for (String part : rawAllowed.split(",")) {
+                String normalized = normalize(part);
+                if (!normalized.isBlank()) {
+                    allowed.add(normalized);
+                }
+            }
             zones.put(id, new Safezone(id, data.getString("zone." + id + ".world", "world"),
                 data.getInt("zone." + id + ".minX", 0), data.getInt("zone." + id + ".minY", -64), data.getInt("zone." + id + ".minZ", 0),
                 data.getInt("zone." + id + ".maxX", 0), data.getInt("zone." + id + ".maxY", 320), data.getInt("zone." + id + ".maxZ", 0),
-                flags));
+                flags, allowed));
         }
     }
 
@@ -419,8 +484,142 @@ public final class SafezonesPlugin extends JavaPlugin implements Listener, TabCo
             for (Map.Entry<String, Boolean> entry : zone.flags().entrySet()) {
                 data.set(prefix + "flag." + entry.getKey(), entry.getValue());
             }
+            data.set(prefix + "allowed", String.join(",", zone.allowed()));
         }
         data.save();
+    }
+
+    private boolean commandSign(CommandSender sender, String[] args) {
+        if (!isAdmin(sender)) {
+            Text.msg(sender, "&cYou do not have permission.");
+            return true;
+        }
+        if (!(sender instanceof Player player)) {
+            Text.msg(sender, "&cPlayers only.");
+            return true;
+        }
+        Block block = targetedBlock(player, 6);
+        if (block == null || !isSignBlock(block)) {
+            Text.msg(player, "&cLook at a sign within 6 blocks.");
+            return true;
+        }
+        String key = commandSignKey(block);
+        if (args.length == 0 || args[0].equalsIgnoreCase("info")) {
+            Text.msg(player, "&6Command sign: &f" + key);
+            Text.msg(player, "&7Command: &f" + data.getString("commandsign." + key + ".command", "none"));
+            return true;
+        }
+        if (args[0].equalsIgnoreCase("remove")) {
+            for (String stored : new ArrayList<>(data.keys())) {
+                if (stored.startsWith("commandsign." + key + ".")) {
+                    data.set(stored, null);
+                }
+            }
+            data.save();
+            Text.msg(player, "&aCommand sign removed.");
+            return true;
+        }
+        if (args[0].equalsIgnoreCase("set")) {
+            if (args.length < 2) {
+                Text.msg(player, "&cUsage: /commandsign set <command without slash>");
+                return true;
+            }
+            String command = String.join(" ", java.util.Arrays.copyOfRange(args, 1, args.length)).replaceFirst("^/", "");
+            data.set("commandsign." + key + ".command", command);
+            data.save();
+            Text.msg(player, "&aCommand sign command set to &f/" + command);
+            return true;
+        }
+        if (args[0].equalsIgnoreCase("text")) {
+            if (args.length < 3) {
+                Text.msg(player, "&cUsage: /commandsign text <1-4> <text>");
+                return true;
+            }
+            int line = Math.max(1, Math.min(4, parseInt(args[1], 1))) - 1;
+            String text = String.join(" ", java.util.Arrays.copyOfRange(args, 2, args.length));
+            setSignLine(block, line, Text.color(text));
+            data.set("commandsign." + key + ".line." + (line + 1), text);
+            data.save();
+            Text.msg(player, "&aCommand sign text updated.");
+            return true;
+        }
+        Text.msg(player, "&cUsage: /commandsign <set|text|remove|info>");
+        return true;
+    }
+
+    private boolean handleCommandSignClick(PlayerInteractEvent event) {
+        if (event.getAction() != Action.RIGHT_CLICK_BLOCK || event.getClickedBlock() == null || !isSignBlock(event.getClickedBlock())) {
+            return false;
+        }
+        String command = data.getString("commandsign." + commandSignKey(event.getClickedBlock()) + ".command", "");
+        if (command.isBlank()) {
+            return false;
+        }
+        event.setCancelled(true);
+        Bukkit.dispatchCommand(event.getPlayer(), command.replaceFirst("^/", ""));
+        return true;
+    }
+
+    private Block targetedBlock(Player player, int range) {
+        Location eye = player.getEyeLocation();
+        double yaw = Math.toRadians(eye.getYaw());
+        double pitch = Math.toRadians(eye.getPitch());
+        double horizontal = Math.cos(pitch);
+        double dx = -Math.sin(yaw) * horizontal * 0.35D;
+        double dy = -Math.sin(pitch) * 0.35D;
+        double dz = Math.cos(yaw) * horizontal * 0.35D;
+        double x = eye.getX();
+        double y = eye.getY();
+        double z = eye.getZ();
+        for (int i = 0; i < range * 3; i++) {
+            x += dx;
+            y += dy;
+            z += dz;
+            Block block = new Location(eye.getWorld(), x, y, z).getBlock();
+            if (block.getType() != Material.AIR) {
+                return block;
+            }
+        }
+        return null;
+    }
+
+    private boolean isSignBlock(Block block) {
+        if (block == null) {
+            return false;
+        }
+        String type = block.getType().name();
+        return type.endsWith("_SIGN") || type.endsWith("_WALL_SIGN") || type.equals("SIGN") || type.equals("WALL_SIGN");
+    }
+
+    private void setSignLine(Block block, int line, String text) {
+        try {
+            Object state = block.getState();
+            state.getClass().getMethod("setLine", int.class, String.class).invoke(state, line, text);
+            state.getClass().getMethod("update", boolean.class, boolean.class).invoke(state, true, false);
+        } catch (ReflectiveOperationException | RuntimeException exception) {
+            Text.msg(Bukkit.getConsoleSender(), "&cCould not update command sign text: " + exception.getMessage());
+        }
+    }
+
+    private String commandSignKey(Block block) {
+        Location location = block.getLocation();
+        return location.getWorld().getName() + "_" + location.getBlockX() + "_" + location.getBlockY() + "_" + location.getBlockZ();
+    }
+
+    private void tickZoneEffects() {
+        for (Safezone zone : zones.values()) {
+            World world = Bukkit.getWorld(zone.world());
+            if (world != null && zone.flag("fixed_day")) {
+                world.setTime(1000L);
+            }
+        }
+        for (Player player : Bukkit.getOnlinePlayers()) {
+            Safezone zone = zoneAt(player.getLocation());
+            double maxHealth = player.getAttribute(Attribute.MAX_HEALTH) == null ? 20.0D : player.getAttribute(Attribute.MAX_HEALTH).getBaseValue();
+            if (zone != null && zone.flag("healing") && player.getHealth() < maxHealth) {
+                player.setHealth(Math.min(maxHealth, player.getHealth() + 1.0D));
+            }
+        }
     }
 
     private Safezone zoneAt(Location location) {
@@ -463,6 +662,10 @@ public final class SafezonesPlugin extends JavaPlugin implements Listener, TabCo
         return MitchSMP.permissions().has(sender, "mitchsmp.safezones.admin");
     }
 
+    private boolean canBuild(Player player, Safezone zone) {
+        return isAdmin(player) || zone.allowed().contains(normalize(player.getName()));
+    }
+
     private Map<String, Boolean> defaultFlags() {
         Map<String, Boolean> flags = new HashMap<>();
         flags.put("pvp", false);
@@ -472,7 +675,17 @@ public final class SafezonesPlugin extends JavaPlugin implements Listener, TabCo
         flags.put("explosions", false);
         flags.put("fall_damage", true);
         flags.put("hostile_damage", true);
+        flags.put("healing", false);
+        flags.put("fixed_day", false);
         return flags;
+    }
+
+    private int parseInt(String input, int fallback) {
+        try {
+            return Integer.parseInt(input);
+        } catch (NumberFormatException exception) {
+            return fallback;
+        }
     }
 
     private Location blockLocation(Location location) {
@@ -498,7 +711,7 @@ public final class SafezonesPlugin extends JavaPlugin implements Listener, TabCo
         private Location pos2;
     }
 
-    private record Safezone(String id, String world, int minX, int minY, int minZ, int maxX, int maxY, int maxZ, Map<String, Boolean> flags) {
+    private record Safezone(String id, String world, int minX, int minY, int minZ, int maxX, int maxY, int maxZ, Map<String, Boolean> flags, Set<String> allowed) {
         boolean contains(String worldName, int x, int y, int z) {
             return world.equals(worldName) && x >= minX && x <= maxX && y >= minY && y <= maxY && z >= minZ && z <= maxZ;
         }

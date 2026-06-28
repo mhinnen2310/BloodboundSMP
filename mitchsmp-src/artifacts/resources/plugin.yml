@@ -10,7 +10,11 @@ commands:
   opshop:
     aliases: [bossShop, shardshop]
     description: Open the Boss Shard shop.
-    usage: /opshop
+    usage: /opshop [tab]
+  opshopadmin:
+    aliases: [bossShopAdmin, shardshopadmin]
+    description: Configure the Boss Shard shop tabs and slots.
+    usage: /opshopadmin <tab|set|remove|reload|list>
   bossshards:
     aliases: [shards]
     description: Admin Boss Shard command.

@@ -233,6 +233,12 @@ public final class AntiCheatPlugin extends JavaPlugin implements Listener, TabCo
             alert(player, "CommandSpam", window.count() + " commands/5s", 1);
         }
         if (SENSITIVE_COMMANDS.contains(command)) {
+            if (command.matches("^/(plugins|pl|bukkit:plugins|bukkit:pl|minecraft:plugins|minecraft:pl)$")
+                && !MitchSMP.permissions().has(player, "mitchsmp.essentials.admin")) {
+                event.setCancelled(true);
+                Text.msg(player, "&cYou do not have permission.");
+                return;
+            }
             alert(player, "SensitiveCommand", message, 1);
         }
     }

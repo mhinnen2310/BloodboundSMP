@@ -174,6 +174,9 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
                 Text.msg(sender, "&cPlayers only.");
                 return true;
             }
+            if (name.equals("enchant") && args.length >= 2 && MitchSMP.permissions().has(player, "mitchsmp.skills.admin")) {
+                return applyAdminEnchant(player, args);
+            }
             return openPortableStation(player, name);
         }
         if (name.equals("abilities")) {
@@ -290,7 +293,79 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
                 return Tab.complete(args[3], "0", "2", "5", "10", "15", "30", "60", "1800");
             }
         }
+        if (name.equals("enchant") && MitchSMP.permissions().has(sender, "mitchsmp.skills.admin")) {
+            if (args.length == 1) {
+                return Tab.complete(args[0], enchantmentNames());
+            }
+            if (args.length == 2) {
+                return Tab.complete(args[1], "1", "2", "3", "5", "10", "25", "50", "100");
+            }
+        }
         return List.of();
+    }
+
+    private boolean applyAdminEnchant(Player player, String[] args) {
+        ItemStack item = player.getInventory().getItemInMainHand();
+        if (item == null || item.getType() == Material.AIR) {
+            Text.msg(player, "&cHold an item first.");
+            return true;
+        }
+        Enchantment enchantment = enchantment(args[0]);
+        if (enchantment == null) {
+            Text.msg(player, "&cUnknown enchantment. Use tab completion for valid names.");
+            return true;
+        }
+        int level = parseInt(args[1], 1, 1, 32767);
+        ItemMeta meta = item.getItemMeta();
+        if (meta == null) {
+            Text.msg(player, "&cThat item cannot be enchanted.");
+            return true;
+        }
+        meta.addEnchant(enchantment, level, true);
+        item.setItemMeta(meta);
+        player.updateInventory();
+        Text.msg(player, "&aApplied &f" + enchantmentName(enchantment) + " " + level + "&a.");
+        return true;
+    }
+
+    private Enchantment enchantment(String input) {
+        String normalized = input == null ? "" : input.toUpperCase(Locale.ROOT).replace("MINECRAFT:", "").replace('-', '_');
+        for (java.lang.reflect.Field field : Enchantment.class.getFields()) {
+            if (!Enchantment.class.isAssignableFrom(field.getType()) || !field.getName().equalsIgnoreCase(normalized)) {
+                continue;
+            }
+            try {
+                return (Enchantment) field.get(null);
+            } catch (IllegalAccessException ignored) {
+            }
+        }
+        return null;
+    }
+
+    private List<String> enchantmentNames() {
+        List<String> names = new ArrayList<>();
+        for (java.lang.reflect.Field field : Enchantment.class.getFields()) {
+            if (Enchantment.class.isAssignableFrom(field.getType())) {
+                names.add(field.getName().toLowerCase(Locale.ROOT));
+            }
+        }
+        names.sort(String::compareToIgnoreCase);
+        return names;
+    }
+
+    private String enchantmentName(Enchantment enchantment) {
+        for (java.lang.reflect.Field field : Enchantment.class.getFields()) {
+            if (!Enchantment.class.isAssignableFrom(field.getType())) {
+                continue;
+            }
+            try {
+                if (field.get(null) == enchantment) {
+                    return field.getName().toLowerCase(Locale.ROOT);
+                }
+            } catch (IllegalAccessException ignored) {
+            }
+        }
+        return "enchantment";
     }
 
     private boolean skills(CommandSender sender, String[] args) {
@@ -1142,9 +1217,17 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             }
             Perk perk = specializationPerkAt(specialization, event.getRawSlot());
             if (perk != null) {
+                if (isRightInventoryClick(event) && MitchSMP.permissions().has(player, "mitchsmp.skills.admin")) {
+                    openIconPicker(player, "node", perk.key(), "node." + perk.key() + ".item_model", 0);
+                    return;
+                }
                 buyPerk(player, perk);
                 openSpecialization(player, specialization);
             }
+            return;
+        }
+        if (menu.type().startsWith("icon:")) {
+            handleIconPickerClick(player, menu.type(), event.getRawSlot());
             return;
         }
         if (menu.type().startsWith("choose:")) {
@@ -1178,6 +1261,10 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             }
             Perk perk = perkSlot(lane, event.getRawSlot());
             if (perk != null) {
+                if (isRightInventoryClick(event) && MitchSMP.permissions().has(player, "mitchsmp.skills.admin")) {
+                    openIconPicker(player, "node", perk.key(), "node." + perk.key() + ".item_model", 0);
+                    return;
+                }
                 buyPerk(player, perk);
                 openLane(player, lane);
             }
@@ -1210,6 +1297,10 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             }
             Perk perk = perkSlot(category, page, event.getRawSlot());
             if (perk != null) {
+                if (isRightInventoryClick(event) && MitchSMP.permissions().has(player, "mitchsmp.skills.admin")) {
+                    openIconPicker(player, "node", perk.key(), "node." + perk.key() + ".item_model", 0);
+                    return;
+                }
                 buyPerk(player, perk);
                 openCategory(player, category, page);
             }
@@ -1249,6 +1340,76 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         )));
         inventory.setItem(53, icon(Material.ANVIL, "&dTool Abilities", List.of("&7Click to inspect your held item ability.", "&7Abilities unlock through rare Bloodbound enchants.")));
         player.openInventory(inventory);
+    }
+
+    private void openIconPicker(Player player, String scope, String id, String configKey, int page) {
+        if (!MitchSMP.permissions().has(player, "mitchsmp.skills.admin")) {
+            Text.msg(player, "&cYou do not have permission.");
+            return;
+        }
+        List<String> icons = skillIconModels();
+        int maxPage = Math.max(0, (icons.size() - 1) / 45);
+        page = Math.max(0, Math.min(maxPage, page));
+        SkillsMenu holder = new SkillsMenu("icon:" + scope + ":" + id + ":" + configKey + ":" + page);
+        Inventory inventory = Bukkit.createInventory(holder, 54, Text.color("&4Icon Picker &8- &f" + id));
+        holder.inventory(inventory);
+        int start = page * 45;
+        int end = Math.min(icons.size(), start + 45);
+        for (int index = start; index < end; index++) {
+            String model = icons.get(index);
+            inventory.setItem(index - start, modelIcon(Material.PAPER, model, "&d" + model, List.of(
+                "&7Click to assign this icon.",
+                "&7Target: &f" + id,
+                "&7Config: &f" + configKey
+            )));
+        }
+        inventory.setItem(45, icon(Material.ARROW, "&aBack", List.of("&7Return without changing.")));
+        inventory.setItem(49, icon(Material.COMPASS, "&ePage &f" + (page + 1) + "&7/&f" + (maxPage + 1), List.of(
+            "&7Right-click a skill node to open this editor.",
+            "&7This changes only the icon model."
+        )));
+        if (page < maxPage) {
+            inventory.setItem(53, icon(Material.ARROW, "&aNext page", List.of("&7More icons.")));
+        }
+        if (page > 0) {
+            inventory.setItem(46, icon(Material.ARROW, "&aPrevious page", List.of("&7Previous icons.")));
+        }
+        player.openInventory(inventory);
+    }
+
+    private void handleIconPickerClick(Player player, String type, int slot) {
+        String[] parts = type.split(":", 5);
+        if (parts.length < 5) {
+            openSkills(player);
+            return;
+        }
+        String scope = parts[1];
+        String id = parts[2];
+        String configKey = parts[3];
+        int page = parseInt(parts[4], 0, 0, 99);
+        if (slot == 45) {
+            openSkills(player);
+            return;
+        }
+        if (slot == 46) {
+            openIconPicker(player, scope, id, configKey, page - 1);
+            return;
+        }
+        if (slot == 53) {
+            openIconPicker(player, scope, id, configKey, page + 1);
+            return;
+        }
+        int index = page * 45 + slot;
+        List<String> icons = skillIconModels();
+        if (slot < 0 || slot >= 45 || index < 0 || index >= icons.size()) {
+            return;
+        }
+        String model = icons.get(index);
+        skillConfig.set(configKey, model);
+        skillConfig.save();
+        Text.msg(player, "&aSkill icon updated: &f" + id + " &7-> &d" + model);
+        player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.45F, 1.4F);
+        openIconPicker(player, scope, id, configKey, page);
     }
 
     private void openSpecialization(Player player, Specialization specialization) {
@@ -2770,6 +2931,22 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         return action == Action.RIGHT_CLICK_AIR || action == Action.RIGHT_CLICK_BLOCK;
     }
 
+    private boolean isRightInventoryClick(InventoryClickEvent event) {
+        try {
+            Object value = event.getClass().getMethod("isRightClick").invoke(event);
+            if (value instanceof Boolean result) {
+                return result;
+            }
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+        }
+        try {
+            Object click = event.getClass().getMethod("getClick").invoke(event);
+            return click != null && click.toString().toUpperCase(Locale.ROOT).contains("RIGHT");
+        } catch (ReflectiveOperationException | RuntimeException ignored) {
+            return false;
+        }
+    }
+
     private boolean isSneaking(Player player) {
         if (player == null) {
             return false;
@@ -3676,6 +3853,23 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             return fallback;
         }
         return value.startsWith("bloodbound:") ? value.substring("bloodbound:".length()) : value;
+    }
+
+    private List<String> skillIconModels() {
+        List<String> models = new ArrayList<>();
+        for (Perk perk : Perk.values()) {
+            models.add(modelKey("node." + perk.key() + ".item_model", "skills/node_" + perk.key()));
+        }
+        for (Specialization specialization : Specialization.values()) {
+            models.add(modelKey("specialization." + specialization.key() + ".item_model", "skills/spec_" + specialization.key()));
+        }
+        for (MainBranch branch : MainBranch.values()) {
+            models.add(modelKey("branch." + branch.key() + ".item_model", "skills/branch_" + branch.key()));
+        }
+        models.add("skills/frame");
+        models.add("skills/link_foundation");
+        models.add("skills/link_specialization");
+        return models.stream().filter(value -> value != null && !value.isBlank()).distinct().sorted().toList();
     }
 
     private List<String> configLines(String key, List<String> fallback) {
