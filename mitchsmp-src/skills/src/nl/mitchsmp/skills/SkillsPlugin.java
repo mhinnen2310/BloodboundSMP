@@ -222,7 +222,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
                 return List.of();
             }
             if (args.length == 2 && args[0].equalsIgnoreCase("admin")) {
-                return Tab.complete(args[1], "addxp", "givepoint", "points", "reset", "unlock", "setbranch", "clearbranch", "debug", "testgui", "reload");
+                return Tab.complete(args[1], "addxp", "givepoint", "points", "reset", "unlock", "setbranch", "clearbranch", "debug", "testgui", "editor", "reload");
             }
             if (args.length == 3 && args[0].equalsIgnoreCase("admin")) {
                 return Tab.onlinePlayers(args[2]);
@@ -236,9 +236,9 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
                 return List.of();
             }
             if (args.length == 1) {
-                return Tab.complete(args[0], "addxp", "givepoint", "points", "reset", "unlock", "setbranch", "clearbranch", "debug", "testgui", "reload");
+                return Tab.complete(args[0], "addxp", "givepoint", "points", "reset", "unlock", "setbranch", "clearbranch", "debug", "testgui", "editor", "reload");
             }
-            if (args.length == 2 && !args[0].equalsIgnoreCase("reload")) {
+            if (args.length == 2 && !args[0].matches("(?i)reload|editor")) {
                 return Tab.onlinePlayers(args[1]);
             }
             if (args.length == 3 && args[0].equalsIgnoreCase("addxp")) {
@@ -1230,6 +1230,18 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             handleIconPickerClick(player, menu.type(), event.getRawSlot());
             return;
         }
+        if (menu.type().startsWith("nodeeditor:")) {
+            handleNodeEditorClick(player, menu.type(), event.getRawSlot());
+            return;
+        }
+        if (menu.type().startsWith("nodeedit:")) {
+            handleNodeEditClick(player, menu.type(), event.getRawSlot());
+            return;
+        }
+        if (menu.type().startsWith("nodepos:")) {
+            handleNodePositionClick(player, menu.type(), event.getRawSlot());
+            return;
+        }
         if (menu.type().startsWith("choose:")) {
             Specialization specialization = Specialization.valueOf(menu.type().split(":")[1]);
             if (event.getRawSlot() == 11) {
@@ -1342,6 +1354,237 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         player.openInventory(inventory);
     }
 
+    private void openNodeEditor(Player player, int page) {
+        if (!MitchSMP.permissions().has(player, "mitchsmp.skills.admin")) {
+            Text.msg(player, "&cYou do not have permission.");
+            return;
+        }
+        List<Perk> perks = editablePerks();
+        int maxPage = Math.max(0, (perks.size() - 1) / 45);
+        page = Math.max(0, Math.min(maxPage, page));
+        SkillsMenu holder = new SkillsMenu("nodeeditor:" + page);
+        Inventory inventory = Bukkit.createInventory(holder, 54, Text.color("&4Skill Node Editor"));
+        holder.inventory(inventory);
+        int start = page * 45;
+        int end = Math.min(perks.size(), start + 45);
+        for (int index = start; index < end; index++) {
+            Perk perk = perks.get(index);
+            inventory.setItem(index - start, nodeAdminIcon(player, perk));
+        }
+        if (page > 0) {
+            inventory.setItem(45, icon(Material.ARROW, "&aPrevious page", List.of("&7Open page &f" + page + "&7.")));
+        } else {
+            inventory.setItem(45, icon(Material.ARROW, "&aBack", List.of("&7Return to the skilltree.")));
+        }
+        inventory.setItem(49, icon(Material.REDSTONE, "&eEditor controls", List.of(
+            "&7Click a node to edit it.",
+            "&7You can change position, icon,",
+            "&7enabled state, level, cost and max level.",
+            "&8Writes directly to skilltree.properties."
+        )));
+        if (page < maxPage) {
+            inventory.setItem(53, icon(Material.ARROW, "&aNext page", List.of("&7Open page &f" + (page + 2) + "&7.")));
+        }
+        player.openInventory(inventory);
+    }
+
+    private void handleNodeEditorClick(Player player, String type, int slot) {
+        int page = parseInt(type.substring("nodeeditor:".length()), 0, 0, 99);
+        if (slot == 45) {
+            if (page > 0) {
+                openNodeEditor(player, page - 1);
+            } else {
+                openSkills(player);
+            }
+            return;
+        }
+        if (slot == 53) {
+            openNodeEditor(player, page + 1);
+            return;
+        }
+        int index = page * 45 + slot;
+        List<Perk> perks = editablePerks();
+        if (slot < 0 || slot >= 45 || index < 0 || index >= perks.size()) {
+            return;
+        }
+        openNodeEditMenu(player, perks.get(index));
+    }
+
+    private void openNodeEditMenu(Player player, Perk perk) {
+        SkillsMenu holder = new SkillsMenu("nodeedit:" + perk.key());
+        Inventory inventory = Bukkit.createInventory(holder, 54, Text.color("&4Edit Node &8- &f" + perk.key()));
+        holder.inventory(inventory);
+        inventory.setItem(4, nodeAdminIcon(player, perk));
+        inventory.setItem(10, icon(perkEnabled(perk) ? Material.GREEN_STAINED_GLASS_PANE : Material.GLASS_PANE, perkEnabled(perk) ? "&aEnabled" : "&7Disabled", List.of(
+            "&7Click to toggle this node.",
+            "&7Config: &fnode." + perk.key() + ".enabled"
+        )));
+        inventory.setItem(12, icon(Material.COMPASS, "&eChoose Slot", List.of(
+            "&7Click to open a 54-slot picker.",
+            "&7Current slot: &f" + perkSlotConfig(perk),
+            "&7This only moves this node in the GUI."
+        )));
+        inventory.setItem(14, icon(Material.PAPER, "&dChoose Icon", List.of(
+            "&7Open the custom icon picker.",
+            "&7Current model: &f" + skillConfig.getString("node." + perk.key() + ".item_model", "")
+        )));
+        inventory.setItem(16, icon(Material.REDSTONE_TORCH, "&6Cycle Branch", List.of(
+            "&7Moves this node between branches.",
+            "&7Current: &f" + skillConfig.getString("node." + perk.key() + ".specialization", "foundation"),
+            "&8Use carefully: this changes its tree section."
+        )));
+        inventory.setItem(19, icon(Material.RED_STAINED_GLASS_PANE, "&cRequired Level -1", List.of("&7Current: &f" + perkRequiredLevel(perk))));
+        inventory.setItem(20, icon(Material.GREEN_STAINED_GLASS_PANE, "&aRequired Level +1", List.of("&7Current: &f" + perkRequiredLevel(perk))));
+        inventory.setItem(22, icon(Material.RED_STAINED_GLASS_PANE, "&cMax Level -1", List.of("&7Current: &f" + perkMax(perk))));
+        inventory.setItem(23, icon(Material.GREEN_STAINED_GLASS_PANE, "&aMax Level +1", List.of("&7Current: &f" + perkMax(perk))));
+        inventory.setItem(25, icon(Material.RED_STAINED_GLASS_PANE, "&cSkillpoint Cost -1", List.of("&7Current: &f" + perkCost(perk))));
+        inventory.setItem(26, icon(Material.GREEN_STAINED_GLASS_PANE, "&aSkillpoint Cost +1", List.of("&7Current: &f" + perkCost(perk))));
+        inventory.setItem(31, icon(Material.NAME_TAG, "&fCurrent Config", List.of(
+            "&7Display: &f" + perkDisplay(perk),
+            "&7Slot: &f" + perkSlotConfig(perk),
+            "&7Required level: &f" + perkRequiredLevel(perk),
+            "&7Max level: &f" + perkMax(perk),
+            "&7Cost: &f" + perkCost(perk),
+            "&7Enabled: &f" + perkEnabled(perk)
+        )));
+        inventory.setItem(45, icon(Material.ARROW, "&aBack", List.of("&7Return to the node editor.")));
+        inventory.setItem(49, icon(Material.WRITTEN_BOOK, "&eText is config-driven", List.of(
+            "&7Display names, descriptions and",
+            "&7tooltips are still edited in",
+            "&fskilltree.properties&7.",
+            "&7This GUI edits layout/meta safely."
+        )));
+        inventory.setItem(53, icon(Material.BARRIER, "&cClose", List.of("&7Close this editor.")));
+        player.openInventory(inventory);
+    }
+
+    private void handleNodeEditClick(Player player, String type, int slot) {
+        Perk perk = Perk.from(type.substring("nodeedit:".length()));
+        if (perk == null) {
+            openNodeEditor(player, 0);
+            return;
+        }
+        switch (slot) {
+            case 10 -> toggleNodeEnabled(player, perk);
+            case 12 -> openNodePositionMenu(player, perk);
+            case 14 -> openIconPicker(player, "nodeedit", perk.key(), "node." + perk.key() + ".item_model", 0);
+            case 16 -> {
+                cycleNodeBranch(perk);
+                Text.msg(player, "&aNode branch cycled: &f" + perk.key());
+                openNodeEditMenu(player, perk);
+            }
+            case 19 -> adjustNodeInt(player, perk, "required_level", -1, 1, MAX_LEVEL);
+            case 20 -> adjustNodeInt(player, perk, "required_level", 1, 1, MAX_LEVEL);
+            case 22 -> adjustNodeInt(player, perk, "max_level", -1, 1, 100);
+            case 23 -> adjustNodeInt(player, perk, "max_level", 1, 1, 100);
+            case 25 -> adjustNodeInt(player, perk, "skillpoint_cost", -1, 0, 100);
+            case 26 -> adjustNodeInt(player, perk, "skillpoint_cost", 1, 0, 100);
+            case 45 -> openNodeEditor(player, 0);
+            case 53 -> player.closeInventory();
+            default -> {
+            }
+        }
+    }
+
+    private void openNodePositionMenu(Player player, Perk perk) {
+        SkillsMenu holder = new SkillsMenu("nodepos:" + perk.key());
+        Inventory inventory = Bukkit.createInventory(holder, 54, Text.color("&4Choose Slot &8- &f" + perk.key()));
+        holder.inventory(inventory);
+        fillSpecializationFrame(inventory);
+        int current = perkSlotConfig(perk);
+        inventory.setItem(current, icon(Material.GREEN_STAINED_GLASS_PANE, "&aCurrent Slot &f" + current, List.of("&7Click another slot to move.")));
+        inventory.setItem(49, nodeAdminIcon(player, perk));
+        player.openInventory(inventory);
+    }
+
+    private void handleNodePositionClick(Player player, String type, int slot) {
+        Perk perk = Perk.from(type.substring("nodepos:".length()));
+        if (perk == null) {
+            openNodeEditor(player, 0);
+            return;
+        }
+        if (slot < 0 || slot > 53) {
+            return;
+        }
+        skillConfig.set("node." + perk.key() + ".slot", slot);
+        skillConfig.save();
+        Text.msg(player, "&aNode slot updated: &f" + perk.key() + " &7-> &f" + slot);
+        player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.35F, 1.6F);
+        openNodeEditMenu(player, perk);
+    }
+
+    private List<Perk> editablePerks() {
+        return java.util.Arrays.stream(Perk.values())
+            .sorted(Comparator.comparing(Perk::key))
+            .toList();
+    }
+
+    private ItemStack nodeAdminIcon(Player player, Perk perk) {
+        ItemStack item = treeNodeIcon(player, perk, "&6Admin Editor", List.of(
+            "&8",
+            "&7Slot: &f" + perkSlotConfig(perk),
+            "&7Enabled: " + (perkEnabled(perk) ? "&aYes" : "&cNo"),
+            "&7Required level: &f" + perkRequiredLevel(perk),
+            "&7Max level: &f" + perkMax(perk),
+            "&7Cost: &f" + perkCost(perk),
+            "&7Branch: &f" + skillConfig.getString("node." + perk.key() + ".specialization", "foundation"),
+            "&8",
+            "&eClick to edit this node."
+        ));
+        ItemMeta meta = item.getItemMeta();
+        if (meta != null) {
+            meta.setDisplayName(Text.color("&d" + perkDisplay(perk)));
+            item.setItemMeta(meta);
+        }
+        return item;
+    }
+
+    private void toggleNodeEnabled(Player player, Perk perk) {
+        boolean enabled = !perkEnabled(perk);
+        skillConfig.set("node." + perk.key() + ".enabled", enabled);
+        skillConfig.save();
+        Text.msg(player, enabled ? "&aNode enabled: &f" + perk.key() : "&cNode disabled: &f" + perk.key());
+        openNodeEditMenu(player, perk);
+    }
+
+    private void adjustNodeInt(Player player, Perk perk, String field, int delta, int min, int max) {
+        String key = "node." + perk.key() + "." + field;
+        int value = parseInt(skillConfig.getString(key, String.valueOf(switch (field) {
+            case "required_level" -> perk.requiredLevel();
+            case "max_level" -> perk.max();
+            case "skillpoint_cost" -> 1;
+            default -> 0;
+        })), min, min, max);
+        int next = Math.max(min, Math.min(max, value + delta));
+        skillConfig.set(key, next);
+        skillConfig.save();
+        Text.msg(player, "&aUpdated &f" + field + " &7for &f" + perk.key() + " &7-> &f" + next);
+        openNodeEditMenu(player, perk);
+    }
+
+    private void cycleNodeBranch(Perk perk) {
+        List<String> branches = new ArrayList<>();
+        branches.add("foundation");
+        for (Specialization specialization : Specialization.values()) {
+            branches.add(specialization.key());
+        }
+        String current = skillConfig.getString("node." + perk.key() + ".specialization", "foundation");
+        int index = branches.indexOf(current.toLowerCase(Locale.ROOT));
+        String next = branches.get((index + 1 + branches.size()) % branches.size());
+        skillConfig.set("node." + perk.key() + ".specialization", next);
+        if (next.equals("foundation")) {
+            skillConfig.set("node." + perk.key() + ".main_branch", "foundation");
+            skillConfig.set("node." + perk.key() + ".page", "foundation");
+        } else {
+            Specialization specialization = Specialization.from(next);
+            if (specialization != null) {
+                skillConfig.set("node." + perk.key() + ".main_branch", specialization.main().key());
+                skillConfig.set("node." + perk.key() + ".page", specialization.key() + "_1");
+            }
+        }
+        skillConfig.save();
+    }
+
     private void openIconPicker(Player player, String scope, String id, String configKey, int page) {
         if (!MitchSMP.permissions().has(player, "mitchsmp.skills.admin")) {
             Text.msg(player, "&cYou do not have permission.");
@@ -1388,6 +1631,13 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         String configKey = parts[3];
         int page = parseInt(parts[4], 0, 0, 99);
         if (slot == 45) {
+            if (scope.equalsIgnoreCase("nodeedit")) {
+                Perk perk = Perk.from(id);
+                if (perk != null) {
+                    openNodeEditMenu(player, perk);
+                    return;
+                }
+            }
             openSkills(player);
             return;
         }
@@ -1409,6 +1659,13 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         skillConfig.save();
         Text.msg(player, "&aSkill icon updated: &f" + id + " &7-> &d" + model);
         player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.45F, 1.4F);
+        if (scope.equalsIgnoreCase("nodeedit")) {
+            Perk perk = Perk.from(id);
+            if (perk != null) {
+                openNodeEditMenu(player, perk);
+                return;
+            }
+        }
         openIconPicker(player, scope, id, configKey, page);
     }
 
@@ -1570,13 +1827,21 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             return true;
         }
         if (args.length < 2) {
-            Text.msg(sender, "&cUsage: /skillsadmin <addxp|givepoint|points|reset|unlock|setbranch|clearbranch|debug|testgui|reload> ...");
+            Text.msg(sender, "&cUsage: /skillsadmin <addxp|givepoint|points|reset|unlock|setbranch|clearbranch|debug|testgui|editor|reload> ...");
             return true;
         }
         if (args[1].equalsIgnoreCase("reload")) {
             skillConfig.load();
             writeDefaultSkilltreeConfig();
             Text.msg(sender, "&aBloodbound skilltree config reloaded.");
+            return true;
+        }
+        if (args[1].equalsIgnoreCase("editor")) {
+            if (!(sender instanceof Player player)) {
+                Text.msg(sender, "&cPlayers only.");
+                return true;
+            }
+            openNodeEditor(player, 0);
             return true;
         }
         Player target = args.length >= 3 ? Bukkit.getPlayerExact(args[2]) : null;
@@ -1982,6 +2247,10 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         return Math.min(perkMax(perk), data.getInt("perk." + profileKey(player.getUniqueId()) + "." + perk.key(), 0));
     }
 
+    private int perkCost(Perk perk) {
+        return Math.max(0, Math.min(100, skillConfig.getInt("node." + perk.key() + ".skillpoint_cost", 1)));
+    }
+
     private void buyPerk(Player player, Perk perk) {
         if (perk == Perk.WORKERS_INSTINCT) {
             buyRootSkill(player);
@@ -2001,8 +2270,9 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             Text.msg(player, "&cThis perk is maxed.");
             return;
         }
-        if (points(player) <= 0) {
-            Text.msg(player, "&cYou do not have skillpoints.");
+        int cost = perkCost(perk);
+        if (points(player) < cost) {
+            Text.msg(player, "&cYou need &f" + cost + " &cskillpoint" + (cost == 1 ? "" : "s") + ".");
             return;
         }
         if (level(player, perk.category()) < perkRequiredLevel(perk)) {
@@ -2024,7 +2294,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             return;
         }
         data.set("perk." + profileKey(player.getUniqueId()) + "." + perk.key(), current + 1);
-        data.set("points." + profileKey(player.getUniqueId()), points(player) - 1);
+        data.set("points." + profileKey(player.getUniqueId()), Math.max(0, points(player) - cost));
         saveSkillDataSoon();
         Text.msg(player, "&aPerk purchased: &f" + perkDisplay(perk) + " " + (current + 1) + "/" + perkMax(perk) + " &8[" + lane.display() + "]");
         player.playSound(player.getLocation(), Sound.BLOCK_NOTE_BLOCK_PLING, 0.8F, 1.5F);
@@ -2035,12 +2305,13 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             Text.msg(player, "&cWorker's Instinct is already unlocked.");
             return;
         }
-        if (points(player) <= 0) {
-            Text.msg(player, "&cYou need 1 skillpoint to unlock Worker's Instinct.");
+        int cost = perkCost(Perk.WORKERS_INSTINCT);
+        if (points(player) < cost) {
+            Text.msg(player, "&cYou need &f" + cost + " &cskillpoint" + (cost == 1 ? "" : "s") + " to unlock Worker's Instinct.");
             return;
         }
         data.set("tree." + profileKey(player.getUniqueId()) + ".root", true);
-        data.set("points." + profileKey(player.getUniqueId()), points(player) - 1);
+        data.set("points." + profileKey(player.getUniqueId()), Math.max(0, points(player) - cost));
         saveSkillDataSoon();
         Text.msg(player, "&aUnlocked: &fWorker's Instinct&a. Choose Frontier or Warpath next.");
         player.playSound(player.getLocation(), Sound.ENTITY_PLAYER_LEVELUP, 0.7F, 1.4F);
@@ -3508,7 +3779,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
             "&7Page: &f" + (specialization == null ? "FOUNDATION" : specialization.name() + "_1"),
             "&7Status: " + state.label(),
             "&7Current: &f" + current + "/" + max,
-            "&7Cost: &f" + (current >= max ? "0" : "1") + " skillpoint",
+            "&7Cost: &f" + (current >= max ? "0" : perkCost(perk)) + " skillpoint",
             "&7XP track: &f" + perk.category().display(),
             "&7Systems: &f" + linkedSystems(perk)
         ));
@@ -3530,7 +3801,7 @@ public final class SkillsPlugin extends JavaPlugin implements Listener, TabCompl
         placeholders.put("status", state.label());
         placeholders.put("current", String.valueOf(current));
         placeholders.put("max", String.valueOf(max));
-        placeholders.put("cost", current >= max ? "0" : "1");
+        placeholders.put("cost", current >= max ? "0" : String.valueOf(perkCost(perk)));
         placeholders.put("category", perk.category().display());
         placeholders.put("systems", linkedSystems(perk));
         placeholders.put("description", String.join("|", perkDescriptionLines(perk)));

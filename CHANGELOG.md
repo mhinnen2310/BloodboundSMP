@@ -10,6 +10,7 @@
 - Converted `/opshop` to a tabbed, config-backed Boss Shard shop while preserving the existing Pro, Elite, God and Specials defaults on first boot.
 - Added `/enchant <enchantment> <level>` for admins to apply vanilla enchantments, including above-normal levels, to the item in hand. The existing portable `/enchant` UI remains available when no enchant arguments are given.
 - Added `/worldmanager` for non-test managed worlds, including normal/flat/void creation, teleporting, spawn setting and double-confirm deletion.
+- Added `/skillsadmin editor`, a GUI-driven skill node editor for changing node positions, icons, enabled state, required level, max level, branch section and skillpoint cost without hand-editing `skilltree.properties`.
 
 ## 1.0.21 Skilltree Icons, MOTD Controls and EndBoss Config Polish
 
